@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -16,6 +16,37 @@ from sqlalchemy.orm import selectinload
 
 
 router = APIRouter()
+
+
+def calculate_progress(project: Project) -> dict:
+    """计算项目处理进度"""
+    if project.status == "completed":
+        return {"progress": 100, "current_step": "已完成", "estimated_remaining": "0 分钟"}
+    
+    if project.status == "pending":
+        return {"progress": 0, "current_step": "等待开始", "estimated_remaining": "未知"}
+    
+    if project.status == "failed":
+        return {"progress": 0, "current_step": "处理失败", "estimated_remaining": "-"}
+    
+    # processing 状态：根据已有数据估算进度
+    clip_count = len(project.clips)
+    collection_count = len(project.collections)
+    
+    # 完整流程：字幕生成 (20%) → 大纲/时间线 (20%) → 评分 (10%) → 切割 (30%) → 合集 (15%) → 写入数据库 (5%)
+    if clip_count == 0 and collection_count == 0:
+        return {"progress": 15, "current_step": "生成字幕中...", "estimated_remaining": "约 8-12 分钟"}
+    
+    if clip_count > 0 and collection_count == 0:
+        # 已有切片记录，正在切割或刚完成切割
+        progress = 50 + min(clip_count / 162 * 30, 30)  # 假设 162 是典型切片数
+        return {"progress": int(progress), "current_step": f"切割视频中... ({clip_count} 切片)", "estimated_remaining": "约 1-3 分钟"}
+    
+    if collection_count > 0:
+        progress = 80 + min(collection_count / 21 * 15, 15)
+        return {"progress": int(progress), "current_step": f"合并合集中... ({collection_count} 合集)", "estimated_remaining": "约 30 秒"}
+    
+    return {"progress": 50, "current_step": "处理中...", "estimated_remaining": "未知"}
 
 
 @router.get("/")
@@ -40,6 +71,7 @@ async def list_projects(db: AsyncSession = Depends(get_db)):
                 "collection_count": len(p.collections),
                 "created_at": p.created_at.isoformat(),
                 "completed_at": p.completed_at.isoformat() if p.completed_at else None,
+                **calculate_progress(p)
             }
             for p in projects
         ]

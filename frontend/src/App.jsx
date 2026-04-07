@@ -137,12 +137,23 @@ function App() {
             <h3>{project.name}</h3>
             <p><strong>状态:</strong> {
               project.status === 'completed' ? '✅ 完成' :
-              project.status === 'processing' ? '⏳ 处理中' :
+              project.status === 'processing' ? `⏳ ${project.current_step || '处理中'}` :
               project.status === 'failed' ? '❌ 失败' : '⏸️ 待处理'
             }</p>
+            
+            {project.status === 'processing' && (
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '12px', color: '#666' }}>进度</span>
+                  <span style={{ fontSize: '12px', color: '#666' }}>{project.progress || 0}% - {project.estimated_remaining || '未知'}</span>
+                </div>
+                <progress value={project.progress || 0} max="100" style={{ width: '100%' }} />
+              </div>
+            )}
+            
             <p><strong>切片:</strong> {project.clip_count} 个</p>
             <p><strong>合集:</strong> {project.collection_count} 个</p>
-            <p><strong>创建时间:</strong> {new Date(project.created_at).toLocaleString('zh-CN')}</p>
+            <p><strong>创建时间:</strong> {new Date(project.created_at + 'Z').toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>
             
             <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
               {project.status === 'pending' && (

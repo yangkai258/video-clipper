@@ -26,17 +26,19 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path):
             logger.info(f"切割切片 {i+1}: {start}s - {start+duration}s")
             
             # 方案一：流复制（最快，10-20 倍速，不重新编码）
+            # 注意：FFmpeg 8.x 移除了 -avoid_negative_ts make_one，改用 -copyts
             subprocess.run([
                 "ffmpeg", "-y",
                 "-i", str(input_video),
                 "-ss", str(start),
                 "-t", str(duration),
                 "-c", "copy",
-                "-avoid_negative_ts", "make_one",
+                "-copyts",
                 str(output_path)
             ], check=True, capture_output=True)
             
-            clip["video_path"] = str(output_path)
+            # 保存相对路径
+            clip["video_path"] = str(output_path.relative_to(output_path.parent.parent.parent))
             
         except Exception as e:
             logger.error(f"切割切片 {i+1} 失败：{e}")
@@ -75,7 +77,8 @@ def merge_collections(collections: List[Dict], clips_dir: Path, output_dir: Path
                 str(output_path)
             ], check=True, capture_output=True)
             
-            collection["video_path"] = str(output_path)
+            # 保存相对路径
+            collection["video_path"] = str(output_path.relative_to(output_path.parent.parent.parent))
             logger.info(f"合集 {i+1} 合并完成：{output_path}")
             
             # 清理临时文件

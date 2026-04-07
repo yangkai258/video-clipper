@@ -2,6 +2,7 @@
 import gc
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
 from celery import shared_task
 
@@ -93,8 +94,41 @@ def process_video_pipeline(
         logger.info("Step 8: 合并合集")
         merge_collections(collections, clips_dir, collections_dir)
         
-        # Step 9: 写入数据库
-        logger.info("Step 9: 写入数据库")
+        # Step 9: 验证文件完整性
+        logger.info("Step 9: 验证文件完整性")
+        missing_files = []
+        for clip in titled_clips:
+            # 优先检查 video_path 字段，如果不存在则根据索引构建预期路径
+            video_path = clip.get("video_path")
+            if video_path and Path(video_path).exists():
+                continue
+            # 构建预期路径并检查
+            safe_title = "".join(c for c in clip.get("title", f"clip_{clip.get('index', 1)}") if c not in '<>:"/\\|？*')
+            expected_path = clips_dir / f"{clip.get('index', 1)}_{safe_title[:50]}.mp4"
+            if not expected_path.exists():
+                missing_files.append(str(expected_path))
+        
+        # 合集为可选，只记录警告不阻止完成
+        missing_collections = []
+        for coll in collections:
+            video_path = coll.get("video_path")
+            if video_path and Path(video_path).exists():
+                continue
+            expected_path = collections_dir / f"{coll.get('title', '合集')}.mp4"
+            if not expected_path.exists():
+                missing_collections.append(str(expected_path))
+        
+        if missing_collections:
+            logger.warning(f"合集生成失败 {len(missing_collections)} 个，但切片正常，继续完成：{missing_collections[:3]}")
+        
+        if missing_files:
+            logger.error(f"文件生成不完整，缺失 {len(missing_files)} 个文件：{missing_files[:5]}...")
+            raise Exception(f"文件生成失败，缺失：{missing_files[:3]}")
+        
+        logger.info(f"文件完整性验证通过：{len(titled_clips)} clips + {len(collections) - len(missing_collections)} collections")
+        
+        # Step 10: 写入数据库
+        logger.info("Step 10: 写入数据库")
         db = None
         try:
             db = next(sync_get_db())
@@ -112,7 +146,7 @@ def process_video_pipeline(
                     end_time=clip_data.get("end", 0),
                     duration=clip_data.get("duration", 0),
                     score=clip_data.get("score", 50),
-                    video_path=f"output/clips/{clip_data.get('index', 1)}_片段.mp4",
+                    video_path=clip_data.get("video_path", f"output/clips/{clip_data.get('index', 1)}_片段.mp4"),
                 )
                 db.add(clip)
             
@@ -128,6 +162,13 @@ def process_video_pipeline(
                     video_path=f"output/collections/{coll_data.get('title', '合集')}.mp4",
                 )
                 db.add(coll)
+            
+            # 更新项目状态为 completed
+            from ..models.database import Project
+            project = db.query(Project).filter(Project.id == project_id).first()
+            if project:
+                project.status = "completed"
+                project.completed_at = datetime.utcnow()
             
             db.commit()
             logger.info(f"数据库写入完成：{len(titled_clips)} clips, {len(collections)} collections")

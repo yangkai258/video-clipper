@@ -8,6 +8,10 @@ function ProjectDetail() {
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('clips') // 'clips' or 'collections'
+  
+  // 分页状态
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(8) // 每页显示 8 个切片
 
   const API_BASE = '/api/v1'
 
@@ -61,9 +65,9 @@ function ProjectDetail() {
         <p><strong>视频大小:</strong> {(project.video_size / 1024 / 1024).toFixed(1)} MB</p>
         <p><strong>切片数量:</strong> {project.clips?.length || 0} 个</p>
         <p><strong>合集数量:</strong> {project.collections?.length || 0} 个</p>
-        <p><strong>创建时间:</strong> {new Date(project.created_at).toLocaleString('zh-CN')}</p>
+        <p><strong>创建时间:</strong> {new Date(project.created_at + 'Z').toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>
         {project.completed_at && (
-          <p><strong>完成时间:</strong> {new Date(project.completed_at).toLocaleString('zh-CN')}</p>
+          <p><strong>完成时间:</strong> {new Date(project.completed_at + 'Z').toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>
         )}
       </div>
 
@@ -71,7 +75,7 @@ function ProjectDetail() {
       {project.clips?.length > 0 && (
         <div style={{ marginBottom: '20px' }}>
           <button 
-            onClick={() => setActiveTab('clips')}
+            onClick={() => { setActiveTab('clips'); setCurrentPage(1); }}
             style={{ 
               padding: '10px 20px', 
               marginRight: '10px',
@@ -85,7 +89,7 @@ function ProjectDetail() {
             🎬 切片视频 ({project.clips.length})
           </button>
           <button 
-            onClick={() => setActiveTab('collections')}
+            onClick={() => { setActiveTab('collections'); setCurrentPage(1); }}
             style={{ 
               padding: '10px 20px',
               backgroundColor: activeTab === 'collections' ? '#007bff' : '#fff',
@@ -102,33 +106,108 @@ function ProjectDetail() {
 
       {/* 切片列表 */}
       {activeTab === 'clips' && project.clips?.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
-          {project.clips.map((clip, index) => (
-            <div 
-              key={clip.id || index}
-              style={{ 
-                border: '1px solid #ddd', 
-                padding: '15px', 
-                borderRadius: '8px',
-                backgroundColor: '#fff'
-              }}
-            >
-              <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {clip.title}
-              </h4>
-              <p style={{ margin: '5px 0', fontSize: '12px', color: '#666' }}>
-                ⏱️ {formatTime(clip.start_time)} - {formatTime(clip.end_time)} ({clip.duration.toFixed(1)}秒)
-              </p>
-              <p style={{ margin: '5px 0', fontSize: '12px', color: '#666' }}>
-                📊 评分：{clip.score}
-              </p>
-              <video 
-                controls 
-                style={{ width: '100%', marginTop: '10px', borderRadius: '4px' }}
-                src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
-              />
+        <div>
+          {/* 分页信息 */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            marginBottom: '15px',
+            padding: '10px',
+            backgroundColor: '#f8f9fa',
+            borderRadius: '4px'
+          }}>
+            <span style={{ fontSize: '14px', color: '#666' }}>
+              显示 {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, project.clips.length)} / {project.clips.length} 个切片
+            </span>
+            <div style={{ display: 'flex', gap: '5px' }}>
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                style={{ 
+                  padding: '5px 12px', 
+                  border: '1px solid #ddd', 
+                  borderRadius: '4px',
+                  backgroundColor: currentPage === 1 ? '#eee' : '#fff',
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                ← 上一页
+              </button>
+              <span style={{ padding: '5px 12px', fontSize: '14px' }}>
+                第 {currentPage} / {Math.ceil(project.clips.length / itemsPerPage)} 页
+              </span>
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(Math.ceil(project.clips.length / itemsPerPage), p + 1))}
+                disabled={currentPage >= Math.ceil(project.clips.length / itemsPerPage)}
+                style={{ 
+                  padding: '5px 12px', 
+                  border: '1px solid #ddd', 
+                  borderRadius: '4px',
+                  backgroundColor: currentPage >= Math.ceil(project.clips.length / itemsPerPage) ? '#eee' : '#fff',
+                  cursor: currentPage >= Math.ceil(project.clips.length / itemsPerPage) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                下一页 →
+              </button>
             </div>
-          ))}
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
+            {project.clips
+              .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+              .map((clip, index) => (
+                <div 
+                  key={clip.id || index}
+                  style={{ 
+                    border: '1px solid #ddd', 
+                    padding: '15px', 
+                    borderRadius: '8px',
+                    backgroundColor: '#fff'
+                  }}
+                >
+                  <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {clip.title}
+                  </h4>
+                  <p style={{ margin: '5px 0', fontSize: '12px', color: '#666' }}>
+                    ⏱️ {formatTime(clip.start_time)} - {formatTime(clip.end_time)} ({clip.duration.toFixed(1)}秒)
+                  </p>
+                  <p style={{ margin: '5px 0', fontSize: '12px', color: '#666' }}>
+                    📊 评分：{clip.score}
+                  </p>
+                  <video 
+                    controls 
+                    style={{ width: '100%', marginTop: '10px', borderRadius: '4px' }}
+                    src={`${API_BASE}/projects/${id}/files/${clip.video_path.split('/').map(encodeURIComponent).join('/')}`}
+                  />
+                </div>
+              ))}
+          </div>
+          
+          {/* 底部分页 */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'center', 
+            marginTop: '20px',
+            gap: '5px'
+          }}>
+            {Array.from({ length: Math.ceil(project.clips.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                style={{
+                  padding: '5px 12px',
+                  border: '1px solid #007bff',
+                  borderRadius: '4px',
+                  backgroundColor: currentPage === page ? '#007bff' : '#fff',
+                  color: currentPage === page ? '#fff' : '#007bff',
+                  cursor: 'pointer'
+                }}
+              >
+                {page}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -149,11 +228,19 @@ function ProjectDetail() {
               <p style={{ margin: '5px 0', fontSize: '14px', color: '#666' }}>
                 📦 包含 {coll.clip_count} 个切片
               </p>
-              <video 
-                controls 
-                style={{ width: '100%', marginTop: '10px', borderRadius: '4px' }}
-                src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(coll.video_path)}`}
-              />
+              {coll.video_path ? (
+                <video 
+                  controls 
+                  style={{ width: '100%', marginTop: '10px', borderRadius: '4px' }}
+                  src={`${API_BASE}/projects/${id}/files/${coll.video_path.split('/').map(encodeURIComponent).join('/')}`}
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.parentElement.innerHTML += `<p style="color: #ff4444; font-size: 12px; margin-top: 10px;">⚠️ 视频文件不存在（合集生成失败）</p>`;
+                  }}
+                />
+              ) : (
+                <p style={{ color: '#ff4444', fontSize: '14px', marginTop: '10px' }}>⚠️ 视频文件不存在（合集生成失败）</p>
+              )}
             </div>
           ))}
         </div>
