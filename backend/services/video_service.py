@@ -56,13 +56,18 @@ def merge_collections(collections: List[Dict], clips_dir: Path, output_dir: Path
             if not clips:
                 continue
             
-            # 创建合并列表
+            # 创建合并列表 - 使用绝对路径
             list_path = output_dir / f"concat_list_{i}.txt"
             with open(list_path, "w") as f:
                 for clip in clips:
+                    # 如果是相对路径，转换为绝对路径
                     clip_path = clip.get("video_path")
-                    if clip_path and Path(clip_path).exists():
-                        f.write(f"file '{clip_path}'\n")
+                    if clip_path:
+                        clip_path_obj = Path(clip_path)
+                        if not clip_path_obj.is_absolute():
+                            clip_path_obj = clips_dir / clip_path_obj.name
+                        if clip_path_obj.exists():
+                            f.write(f"file '{clip_path_obj.absolute()}'\n")
             
             # 合并视频
             output_path = output_dir / f"{title}.mp4"
