@@ -1,0 +1,27 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.25
+aiosqlite==0.19.0
+
+# Task Queue
+celery==5.3.6
+redis==5.0.1
+
+# Video Processing (使用 subprocess 调用 ffmpeg，不需要 av 包)
+ffmpeg-python==0.2.0
+pysrt==1.1.2
+
+# AI/ML
+faster-whisper==0.10.0
+dashscope==1.14.1
+httpx==0.26.0
+
+# Utilities
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+aiofiles==23.2.1
