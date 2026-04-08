@@ -21,6 +21,12 @@ echo "🚀 启动测试版 Worker..."
 python3 -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing_beta &
 WORKER_PID=$!
 
+# 等待 Worker 启动完成
+sleep 3
+
+echo "🚀 预加载 faster-whisper 模型..."
+python3 scripts/preload_whisper_model.py tiny &
+
 echo "🚀 启动测试版前端 (3030)..."
 cd frontend && npm run dev -- --port 3030 &
 FRONTEND_PID=$!
