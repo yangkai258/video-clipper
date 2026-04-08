@@ -28,7 +28,7 @@ echo "🚀 预加载 faster-whisper 模型..."
 python3 scripts/preload_whisper_model.py tiny &
 
 echo "🚀 启动正式版前端 (3000)..."
-cd frontend && npm run dev -- --port 3000 &
+cd frontend && rm -rf node_modules/.vite && npm run dev -- --port 3000 &
 FRONTEND_PID=$!
 
 echo "✅ 正式版服务已启动"
