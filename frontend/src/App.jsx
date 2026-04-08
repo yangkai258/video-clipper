@@ -93,8 +93,13 @@ function App() {
     }
   }
 
+  // 版本标识（用于区分正式版/测试版）
+  const VERSION_LABEL = window.location.port === '3030' ? '🧪 测试版 v1.1-beta' : '✅ 正式版 v1.0'
+  const VERSION_STYLE = window.location.port === '3030' ? { color: '#f59e0b' } : { color: '#10b981' }
+
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+      <div style={{ ...VERSION_STYLE, marginBottom: '10px', fontWeight: 'bold' }}>{VERSION_LABEL}</div>
       <h1>🎬 Video Clipper - 智能视频切片</h1>
       
       {/* 上传区域 */}
