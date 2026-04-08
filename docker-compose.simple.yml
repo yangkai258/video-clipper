@@ -1,0 +1,192 @@
+version: '3.8'
+
+# Video Clipper Docker Compose - 简化版（国内网络优化）
+# 使用本地构建，不依赖 Docker Hub 拉取
+
+services:
+  # ==================== 正式版 ====================
+  
+  # Redis（正式版专用）
+  redis-release:
+    image: redis:7-alpine
+    container_name: vc-redis-release
+    pull_policy: never  # 不使用远程拉取
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_release_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vc-network
+
+  # 后端 API（正式版）
+  backend-release:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vc-backend-release
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/video_clipper.db
+      - CELERY_BROKER_URL=redis://redis-release:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-release:6379/0
+      - CELERY_QUEUE_NAME=processing
+    volumes:
+      - release_data:/app/data
+    depends_on:
+      redis-release:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # Celery Worker（正式版）
+  worker-release:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vc-worker-release
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/video_clipper.db
+      - CELERY_BROKER_URL=redis://redis-release:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-release:6379/0
+      - CELERY_QUEUE_NAME=processing
+    volumes:
+      - release_data:/app/data
+    depends_on:
+      - backend-release
+      - redis-release
+    command: celery -A backend.core.celery_app worker --loglevel=info --concurrency=4 -Q processing
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # 前端（正式版）- 开发模式
+  frontend-release:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend.dev
+    container_name: vc-frontend-release
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_PORT=8000
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    depends_on:
+      - backend-release
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # ==================== 测试版 ====================
+  
+  # Redis（测试版专用）
+  redis-beta:
+    image: redis:7-alpine
+    container_name: vc-redis-beta
+    pull_policy: never
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_beta_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vc-network
+
+  # 后端 API（测试版）
+  backend-beta:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vc-backend-beta
+    ports:
+      - "8030:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/video_clipper_beta.db
+      - CELERY_BROKER_URL=redis://redis-beta:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-beta:6379/0
+      - CELERY_QUEUE_NAME=processing_beta
+    volumes:
+      - beta_data:/app/data
+    depends_on:
+      redis-beta:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # Celery Worker（测试版）
+  worker-beta:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vc-worker-beta
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/video_clipper_beta.db
+      - CELERY_BROKER_URL=redis://redis-beta:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-beta:6379/0
+      - CELERY_QUEUE_NAME=processing_beta
+    volumes:
+      - beta_data:/app/data
+    depends_on:
+      - backend-beta
+      - redis-beta
+    command: celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing_beta
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # 前端（测试版）- 开发模式
+  frontend-beta:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend.dev
+    container_name: vc-frontend-beta
+    ports:
+      - "3030:3000"
+    environment:
+      - VITE_API_PORT=8030
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    depends_on:
+      - backend-beta
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+volumes:
+  # 正式版数据
+  release_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+  redis_release_data:
+
+  # 测试版数据
+  beta_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+  redis_beta_data:
+
+networks:
+  vc-network:
+    driver: bridge
