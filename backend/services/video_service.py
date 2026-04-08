@@ -25,15 +25,19 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path):
             
             logger.info(f"切割切片 {i+1}: {start}s - {start+duration}s")
             
-            # 方案一：流复制（最快，10-20 倍速，不重新编码）
-            # 注意：FFmpeg 8.x 移除了 -avoid_negative_ts make_one，改用 -copyts
+            # 方案二：重新编码关键帧（解决卡顿问题）
+            # 强制每 2 秒一个关键帧（60fps × 2 = 120 帧）
+            # 使用 VideoToolbox 硬件加速（macOS），速度约 3-5 倍
             subprocess.run([
                 "ffmpeg", "-y",
                 "-i", str(input_video),
                 "-ss", str(start),
                 "-t", str(duration),
-                "-c", "copy",
-                "-copyts",
+                "-c:v", "h264_videotoolbox",
+                "-keyint_min", "120",
+                "-g", "120",
+                "-c:a", "copy",
+                "-reset_timestamps", "1",
                 str(output_path)
             ], check=True, capture_output=True)
             
