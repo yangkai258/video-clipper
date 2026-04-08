@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import './index.css'
 
 function App() {
   const [projects, setProjects] = useState([])
@@ -9,6 +10,11 @@ function App() {
   const navigate = useNavigate()
 
   const API_BASE = '/api/v1'
+
+  // 版本标识
+  const isBeta = window.location.port === '3030'
+  const VERSION_LABEL = isBeta ? '🧪 测试版 v1.1-beta' : '✅ 正式版 v1.0'
+  const VERSION_CLASS = isBeta ? 'version-beta' : 'version-release'
 
   // 加载项目列表
   const loadProjects = async () => {
@@ -93,95 +99,117 @@ function App() {
     }
   }
 
-  // 版本标识（用于区分正式版/测试版）
-  const VERSION_LABEL = window.location.port === '3030' ? '🧪 测试版 v1.1-beta' : '✅ 正式版 v1.0'
-  const VERSION_STYLE = window.location.port === '3030' ? { color: '#f59e0b' } : { color: '#10b981' }
+  // 获取状态标签样式
+  const getStatusClass = (status) => {
+    switch (status) {
+      case 'completed': return 'status-completed'
+      case 'processing': return 'status-processing'
+      case 'failed': return 'status-error'
+      default: return 'status-pending'
+    }
+  }
+
+  // 获取状态文案
+  const getStatusText = (status, currentStep) => {
+    switch (status) {
+      case 'completed': return '✅ 已完成'
+      case 'processing': return `⏳ ${currentStep || '处理中'}`
+      case 'failed': return '❌ 失败'
+      default: return '⏸️ 待处理'
+    }
+  }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ ...VERSION_STYLE, marginBottom: '10px', fontWeight: 'bold' }}>{VERSION_LABEL}</div>
+    <div className="container fade-in">
+      {/* 版本标识 */}
+      <div className={`version-badge ${VERSION_CLASS}`}>{VERSION_LABEL}</div>
+      
+      {/* 页面标题 */}
       <h1>🎬 Video Clipper - 智能视频切片</h1>
       
       {/* 上传区域 */}
-      <div style={{ 
-        border: '2px dashed #ccc', 
-        padding: '40px', 
-        textAlign: 'center',
-        marginBottom: '20px',
-        borderRadius: '8px'
-      }}>
+      <div className="upload-zone">
         <h3>上传视频</h3>
+        <p style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
+          支持 MP4、MOV、AVI、MKV 等格式
+        </p>
         <input 
           type="file" 
           accept="video/*" 
           onChange={handleUpload}
           disabled={uploading}
+          style={{ marginTop: '16px' }}
         />
         {uploading && (
-          <div style={{ marginTop: '10px' }}>
-            上传中：{uploadProgress}%
-            <progress value={uploadProgress} max="100" style={{ width: '200px' }} />
+          <div className="progress-container">
+            <div className="progress-bar">
+              <div className="progress-fill" style={{ width: `${uploadProgress}%` }}></div>
+            </div>
+            <div className="progress-text">上传中：{uploadProgress}%</div>
           </div>
         )}
       </div>
 
       {/* 项目列表 */}
       <h2>项目列表 ({projects.length})</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-        {projects.map(project => (
-          <div 
-            key={project.id} 
-            style={{ 
-              border: '1px solid #ddd', 
-              padding: '15px', 
-              borderRadius: '8px',
-              backgroundColor: project.status === 'completed' ? '#f0fff0' : 
-                               project.status === 'processing' ? '#fff8e1' : '#fff'
-            }}
-          >
-            <h3>{project.name}</h3>
-            <p><strong>状态:</strong> {
-              project.status === 'completed' ? '✅ 完成' :
-              project.status === 'processing' ? `⏳ ${project.current_step || '处理中'}` :
-              project.status === 'failed' ? '❌ 失败' : '⏸️ 待处理'
-            }</p>
-            
-            {project.status === 'processing' && (
-              <div style={{ marginBottom: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '12px', color: '#666' }}>进度</span>
-                  <span style={{ fontSize: '12px', color: '#666' }}>{project.progress || 0}% - {project.estimated_remaining || '未知'}</span>
-                </div>
-                <progress value={project.progress || 0} max="100" style={{ width: '100%' }} />
+      
+      {projects.length > 0 ? (
+        <div className="project-grid">
+          {projects.map(project => (
+            <div key={project.id} className="card fade-in">
+              {/* 卡片头部 */}
+              <div className="project-card-header">
+                <h3 className="project-title">{project.name}</h3>
+                <span className={`status-badge ${getStatusClass(project.status)}`}>
+                  {getStatusText(project.status, project.current_step)}
+                </span>
               </div>
-            )}
-            
-            <p><strong>切片:</strong> {project.clip_count} 个</p>
-            <p><strong>合集:</strong> {project.collection_count} 个</p>
-            <p><strong>创建时间:</strong> {new Date(project.created_at + 'Z').toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</p>
-            
-            <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
-              {project.status === 'pending' && (
-                <button onClick={() => startProcessing(project.id)}>
-                  ▶️ 开始处理
-                </button>
+              
+              {/* 进度条 */}
+              {project.status === 'processing' && (
+                <div className="progress-container">
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${project.progress || 0}%` }}></div>
+                  </div>
+                  <div className="progress-text">
+                    {project.progress || 0}% · {project.estimated_remaining || '剩余时间未知'}
+                  </div>
+                </div>
               )}
-              <button onClick={() => navigate(`/project/${project.id}`)}>
-                📁 查看详情
-              </button>
-              <button 
-                onClick={() => deleteProject(project.id, project.name)}
-                style={{ backgroundColor: '#ff4444', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}
-              >
-                🗑️ 删除
-              </button>
+              
+              {/* 项目信息 */}
+              <div className="project-info">
+                <span>📹 {project.clip_count || 0} 个切片</span>
+                <span>📁 {project.collection_count || 0} 个合集</span>
+              </div>
+              
+              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                创建时间：{new Date(project.created_at + 'Z').toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+              </div>
+              
+              {/* 操作按钮 */}
+              <div className="project-actions">
+                {project.status === 'pending' && (
+                  <button className="btn btn-primary btn-sm" onClick={() => startProcessing(project.id)}>
+                    ▶️ 开始处理
+                  </button>
+                )}
+                <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/project/${project.id}`)}>
+                  📁 查看详情
+                </button>
+                <button className="btn btn-danger btn-sm" onClick={() => deleteProject(project.id, project.name)}>
+                  🗑️ 删除
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-
-      {projects.length === 0 && (
-        <p style={{ textAlign: 'center', color: '#999' }}>暂无项目，上传第一个视频开始吧！</p>
+          ))}
+        </div>
+      ) : (
+        <div className="card" style={{ textAlign: 'center', padding: '48px' }}>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-lg)' }}>
+            暂无项目，上传第一个视频开始吧！
+          </p>
+        </div>
       )}
     </div>
   )
