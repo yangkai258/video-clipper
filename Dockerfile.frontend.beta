@@ -1,0 +1,19 @@
+# Video Clipper 测试版前端 Docker 镜像
+FROM node:20-alpine
+
+WORKDIR /app/frontend
+
+# 复制 package.json
+COPY package.json package-lock.json* ./
+
+# 安装依赖
+RUN npm ci
+
+# 复制源代码
+COPY . .
+
+# 暴露端口
+EXPOSE 3030
+
+# 启动开发服务器
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3030"]

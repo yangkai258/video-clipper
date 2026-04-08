@@ -1,0 +1,29 @@
+# Video Clipper 测试版 Docker 镜像
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 安装 FFmpeg（视频处理依赖）
+RUN apk add --no-cache ffmpeg python3 py3-pip git
+
+# 安装 Python 依赖
+COPY backend/requirements.txt /app/backend/
+RUN pip3 install --no-cache-dir -r /app/backend/requirements.txt
+
+# 复制前端代码
+COPY frontend/package.json frontend/package-lock.json* /app/frontend/
+WORKDIR /app/frontend
+RUN npm ci
+
+# 复制后端代码
+WORKDIR /app
+COPY backend/ /app/backend/
+
+# 暴露端口
+EXPOSE 8030 3030
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8030/health || exit 1
+
+CMD ["/bin/sh", "-c", "python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8030"]
