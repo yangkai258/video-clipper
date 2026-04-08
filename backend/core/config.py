@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     CACHE_DIR: Path = DATA_DIR / "cache"
     
     # 数据库配置
-    DATABASE_URL: str = "sqlite+aiosqlite:///./data/video_clipper.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/video_clipper.db")
     
     # Celery 配置
     CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
