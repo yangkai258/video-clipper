@@ -1,0 +1,198 @@
+version: '3.8'
+
+# Video Clipper 完整 Docker Compose 配置
+# 包含正式版和测试版，完全隔离
+
+services:
+  # ==================== 正式版 ====================
+  
+  # Redis（正式版专用）
+  redis-release:
+    image: redis:7-alpine
+    container_name: vc-redis-release
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_release_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vc-network
+
+  # 后端 API（正式版）
+  backend-release:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vc-backend-release
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/video_clipper.db
+      - CELERY_BROKER_URL=redis://redis-release:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-release:6379/0
+      - CELERY_QUEUE_NAME=processing
+    volumes:
+      - release_data:/app/data
+    depends_on:
+      redis-release:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # Celery Worker（正式版）
+  worker-release:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vc-worker-release
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/video_clipper.db
+      - CELERY_BROKER_URL=redis://redis-release:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-release:6379/0
+      - CELERY_QUEUE_NAME=processing
+    volumes:
+      - release_data:/app/data
+    depends_on:
+      - backend-release
+      - redis-release
+    command: celery -A backend.core.celery_app worker --loglevel=info --concurrency=4 -Q processing
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # 前端（正式版）
+  frontend-release:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend
+    container_name: vc-frontend-release
+    ports:
+      - "80:80"
+    depends_on:
+      - backend-release
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # ==================== 测试版 ====================
+  
+  # Redis（测试版专用）
+  redis-beta:
+    image: redis:7-alpine
+    container_name: vc-redis-beta
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_beta_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vc-network
+
+  # 后端 API（测试版）
+  backend-beta:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vc-backend-beta
+    ports:
+      - "8030:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/video_clipper_beta.db
+      - CELERY_BROKER_URL=redis://redis-beta:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-beta:6379/0
+      - CELERY_QUEUE_NAME=processing_beta
+    volumes:
+      - beta_data:/app/data
+    depends_on:
+      redis-beta:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # Celery Worker（测试版）
+  worker-beta:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vc-worker-beta
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/video_clipper_beta.db
+      - CELERY_BROKER_URL=redis://redis-beta:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-beta:6379/0
+      - CELERY_QUEUE_NAME=processing_beta
+    volumes:
+      - beta_data:/app/data
+    depends_on:
+      - backend-beta
+      - redis-beta
+    command: celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing_beta
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # 前端（测试版）
+  frontend-beta:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend
+    container_name: vc-frontend-beta
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend-beta
+    restart: unless-stopped
+    networks:
+      - vc-network
+
+  # ==================== 监控（可选） ====================
+  
+  # Redis Commander（Redis 可视化工具）
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: vc-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis-release:6379,beta:redis-beta:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis-release
+      - redis-beta
+    networks:
+      - vc-network
+    profiles:
+      - monitoring
+
+volumes:
+  # 正式版数据
+  release_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+  redis_release_data:
+
+  # 测试版数据
+  beta_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+  redis_beta_data:
+
+networks:
+  vc-network:
+    driver: bridge
