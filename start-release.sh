@@ -9,6 +9,10 @@ export CELERY_BROKER_URL="redis://localhost:6379/0"
 export CELERY_RESULT_BACKEND="redis://localhost:6379/0"
 export CELERY_QUEUE_NAME="processing"
 
+# 前端配置
+export VITE_PORT="3000"
+export VITE_API_PORT="8000"
+
 echo "🚀 启动正式版后端 (8000)..."
 python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
@@ -17,9 +21,14 @@ echo "🚀 启动正式版 Worker..."
 python3 -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing &
 WORKER_PID=$!
 
+echo "🚀 启动正式版前端 (3000)..."
+cd frontend && npm run dev -- --port 3000 &
+FRONTEND_PID=$!
+
 echo "✅ 正式版服务已启动"
 echo "   后端 PID: $BACKEND_PID"
 echo "   Worker PID: $WORKER_PID"
+echo "   前端 PID: $FRONTEND_PID"
 echo "   前端：http://localhost:3000"
 echo "   后端：http://localhost:8000"
 
