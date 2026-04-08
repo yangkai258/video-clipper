@@ -25,19 +25,22 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path):
             
             logger.info(f"切割切片 {i+1}: {start}s - {start+duration}s")
             
-            # 方案二：重新编码关键帧（解决卡顿问题）
-            # 强制每 2 秒一个关键帧（60fps × 2 = 120 帧）
-            # 使用 VideoToolbox 硬件加速（macOS），速度约 3-5 倍
+            # 方案：VideoToolbox 硬件加速重新编码
+            # 关键帧间隔 30 帧（1 秒），保证流畅 seek 和播放
+            # H.264 High Profile 4.0，兼容所有浏览器
             subprocess.run([
                 "ffmpeg", "-y",
                 "-i", str(input_video),
                 "-ss", str(start),
                 "-t", str(duration),
                 "-c:v", "h264_videotoolbox",
-                "-keyint_min", "120",
-                "-g", "120",
-                "-c:a", "copy",
-                "-reset_timestamps", "1",
+                "-keyint_min", "30",
+                "-g", "30",
+                "-profile:v", "high",
+                "-level", "4.0",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-movflags", "+faststart",
                 str(output_path)
             ], check=True, capture_output=True)
             
@@ -76,13 +79,21 @@ def merge_collections(collections: List[Dict], clips_dir: Path, output_dir: Path
             # 合并视频
             output_path = output_dir / f"{title}.mp4"
             
-            # 方案一：流复制（最快，不重新编码）
+            # VideoToolbox 硬件加速重新编码
+            # 关键帧间隔 30 帧（1 秒），保证流畅播放
             subprocess.run([
                 "ffmpeg", "-y",
                 "-f", "concat",
                 "-safe", "0",
                 "-i", str(list_path),
-                "-c", "copy",
+                "-c:v", "h264_videotoolbox",
+                "-keyint_min", "30",
+                "-g", "30",
+                "-profile:v", "high",
+                "-level", "4.0",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-movflags", "+faststart",
                 str(output_path)
             ], check=True, capture_output=True)
             

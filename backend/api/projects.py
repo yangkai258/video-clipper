@@ -250,9 +250,14 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     if project.subtitle_path:
         srt_path = str(settings.PROJECTS_DIR / project.subtitle_path)
     
-    # 直接配置 Celery broker
+    # 直接配置 Celery broker（从环境变量读取，支持版本隔离）
+    import os
     from celery import Celery
-    temp_app = Celery("temp", broker="redis://127.0.0.1:6379/0", backend="redis://127.0.0.1:6379/0")
+    broker_url = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+    result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0")
+    queue_name = os.getenv("CELERY_QUEUE_NAME", "processing")
+    
+    temp_app = Celery("temp", broker=broker_url, backend=result_backend)
     temp_app.config_from_object({
         "task_serializer": "json",
         "result_serializer": "json",
@@ -263,7 +268,7 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     celery_task = temp_app.send_task(
         "backend.tasks.processing.process_video_pipeline",
         args=[project_id, str(video_path), srt_path, task.id],
-        queue="processing",
+        queue=queue_name,
     )
     
     # 更新任务
