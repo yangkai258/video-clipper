@@ -1,4 +1,5 @@
 """项目 API 路由"""
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -152,6 +153,35 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.put("/{project_id}/config")
+async def update_project_config(
+    project_id: str,
+    config: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """更新项目处理配置（如切片策略）"""
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # 更新 processing_config
+    project.processing_config = {
+        **project.processing_config,
+        **config
+    }
+    project.updated_at = datetime.utcnow()
+    
+    await db.commit()
+    await db.refresh(project)
+    
+    return {
+        "message": "配置已更新",
+        "processing_config": project.processing_config
+    }
+
+
 @router.post("/")
 async def create_project(
     name: str = Form(...),
@@ -227,7 +257,11 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     
     # 检查视频文件是否存在
     video_path = settings.PROJECTS_DIR / project.video_path
+    logger = logging.getLogger(__name__)
+    logger.info(f"项目 {project_id} 视频路径：{video_path.absolute()}")
+    
     if not video_path.exists():
+        logger.error(f"视频文件不存在：{video_path.absolute()}")
         raise HTTPException(status_code=404, detail="Video file not found")
     
     # 更新项目状态

@@ -202,6 +202,12 @@ class SpeechRecognizer:
         gc.collect()
         
         logger.info(f"字幕生成完成：{output_path}")
+        logger.info(f"字幕行数：{len(list(open(output_path, 'r', encoding='utf-8').readlines()))}")
+        
+        # 刷新日志
+        for handler in logger.handlers:
+            handler.flush()
+        
         return output_path
     
     def _format_srt_time(self, seconds: float) -> str:

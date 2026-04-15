@@ -7,6 +7,10 @@ function App() {
   const [projects, setProjects] = useState([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [showStrategyModal, setShowStrategyModal] = useState(false)
+  const [pendingProject, setPendingProject] = useState(null)
+  const [presets, setPresets] = useState([])
+  const [customStyles, setCustomStyles] = useState([])
   const navigate = useNavigate()
 
   const API_BASE = '/api/v1'
@@ -26,8 +30,23 @@ function App() {
     }
   }
 
+  // 加载预设策略和自定义风格
+  const loadStrategies = async () => {
+    try {
+      const [presetsRes, stylesRes] = await Promise.all([
+        axios.get(`${API_BASE}/strategies/presets`),
+        axios.get(`${API_BASE}/styles`)
+      ])
+      setPresets(presetsRes.data.strategies)
+      setCustomStyles(stylesRes.data)
+    } catch (error) {
+      console.error('加载策略失败:', error)
+    }
+  }
+
   useEffect(() => {
     loadProjects()
+    loadStrategies()
   }, [])
 
   // 处理文件上传
@@ -55,15 +74,8 @@ function App() {
       })
 
       const projectId = res.data.project_id
-      alert(`项目创建成功！\n项目 ID: ${projectId}\n\n即将自动开始处理...`)
-      
-      // 自动开始处理
-      try {
-        const processRes = await axios.post(`${API_BASE}/projects/${projectId}/process`)
-        alert(`✅ 处理已开始！\n任务 ID: ${processRes.data.task_id}`)
-      } catch (error) {
-        alert(`⚠️ 项目已创建，但处理启动失败：${error.response?.data?.detail || error.message}\n\n请稍后在项目列表中手动点击"开始处理"`)
-      }
+      setPendingProject({ id: projectId, name })
+      setShowStrategyModal(true)  // 上传成功后显示策略选择
       
       setUploading(false)
       loadProjects()
@@ -73,7 +85,44 @@ function App() {
     }
   }
 
-  // 开始处理
+  // 选择策略并开始处理
+  const selectStrategy = async (strategy) => {
+    if (!pendingProject) return
+
+    setShowStrategyModal(false)
+    
+    // 如果是自定义风格，先更新项目配置
+    if (strategy.id.startsWith('style_')) {
+      try {
+        await axios.put(`${API_BASE}/projects/${pendingProject.id}/config`, {
+          style_id: strategy.id,
+          strategy_name: strategy.name,
+          target_duration: strategy.target_duration,
+          max_clips: strategy.max_clips,
+          content_types: strategy.content_types,
+          rules: strategy.rules,
+          content_guidelines: strategy.content_guidelines,
+          keep_rules: strategy.keep_rules,
+          remove_rules: strategy.remove_rules,
+          style_positioning: strategy.style_positioning
+        })
+      } catch (error) {
+        console.error('更新配置失败:', error)
+      }
+    }
+
+    // 开始处理
+    try {
+      const processRes = await axios.post(`${API_BASE}/projects/${pendingProject.id}/process`)
+      alert(`✅ 处理已开始！\n策略：${strategy.name}\n任务 ID: ${processRes.data.task_id}`)
+    } catch (error) {
+      alert(`⚠️ 处理启动失败：${error.response?.data?.detail || error.message}`)
+    }
+    
+    setPendingProject(null)
+  }
+
+  // 开始处理（项目列表）
   const startProcessing = async (projectId) => {
     if (!confirm('确定要开始处理这个项目吗？')) return
 
@@ -125,7 +174,12 @@ function App() {
       <div className={`version-badge ${VERSION_CLASS}`}>{VERSION_LABEL}</div>
       
       {/* 页面标题 */}
-      <h1>🎬 Video Clipper - 智能视频切片</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1>🎬 Video Clipper - 智能视频切片</h1>
+        <button className="btn btn-secondary" onClick={() => navigate('/styles')} style={{ fontSize: 'var(--text-sm)', padding: '8px 16px' }}>
+          ✂️ 风格管理
+        </button>
+      </div>
       
       {/* 上传区域 */}
       <div className="upload-zone">
@@ -209,6 +263,142 @@ function App() {
           <p style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-lg)' }}>
             暂无项目，上传第一个视频开始吧！
           </p>
+        </div>
+      )}
+
+      {/* 策略选择弹窗 */}
+      {showStrategyModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          overflow: 'auto'
+        }}>
+          <div className="card" style={{
+            maxWidth: '1000px',
+            width: '90%',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            margin: '20px'
+          }}>
+            <h2 style={{ marginBottom: '8px' }}>📦 选择切片策略</h2>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '24px' }}>
+              选择一个适合你内容的切片方式，处理开始后将根据此策略自动生成切片
+            </p>
+
+            {/* 预设策略 */}
+            <h3 style={{ marginBottom: '16px' }}>🎯 预设策略</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+              {presets.map(preset => (
+                <button
+                  key={preset.id}
+                  onClick={() => selectStrategy(preset)}
+                  style={{
+                    textAlign: 'left',
+                    padding: '16px',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--bg-primary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.borderColor = 'var(--color-primary)'
+                    e.target.style.transform = 'translateY(-2px)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.borderColor = 'var(--border-color)'
+                    e.target.style.transform = 'translateY(0)'
+                  }}
+                >
+                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>{preset.name.split(' ')[0]}</div>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{preset.name.split(' ').slice(1).join(' ')}</div>
+                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                    {preset.description}
+                  </div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+                    ⏱️ {preset.target_duration}秒/切片 · 📹 最多{preset.max_clips}个
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* 自定义风格 */}
+            {customStyles.length > 0 && (
+              <>
+                <h3 style={{ marginBottom: '16px' }}>📋 我的风格 ({customStyles.length})</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                  {customStyles.map(style => (
+                    <button
+                      key={style.id}
+                      onClick={() => selectStrategy(style)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '16px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        backgroundColor: 'var(--bg-primary)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.borderColor = 'var(--color-primary)'
+                        e.target.style.transform = 'translateY(-2px)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.borderColor = 'var(--border-color)'
+                        e.target.style.transform = 'translateY(0)'
+                      }}
+                    >
+                      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: 'var(--text-lg)' }}>
+                        {style.name}
+                      </div>
+                      {style.description && (
+                        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                          {style.description}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
+                        ⏱️ {style.target_duration}秒/切片 · 📹 最多{style.max_clips}个
+                      </div>
+                      {style.content_guidelines && (
+                        <div style={{ 
+                          fontSize: 'var(--text-xs)', 
+                          color: 'var(--text-secondary)', 
+                          padding: '6px', 
+                          backgroundColor: 'rgba(59, 130, 246, 0.05)', 
+                          borderRadius: '4px',
+                          marginTop: '8px'
+                        }}>
+                          📌 {style.content_guidelines.substring(0, 50)}{style.content_guidelines.length > 50 ? '...' : ''}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* 取消按钮 */}
+            <div style={{ marginTop: '24px', textAlign: 'center' }}>
+              <button 
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowStrategyModal(false)
+                  setPendingProject(null)
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

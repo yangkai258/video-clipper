@@ -24,9 +24,28 @@ def process_video_pipeline(
     from ..services.llm_service import extract_outline, create_timeline, score_clips, generate_titles, cluster_collections
     from ..services.video_service import cut_clips, merge_collections
     from ..core.database import sync_get_db
-    from ..models.database import Clip, Collection
+    from ..models.database import Clip, Collection, Project
+    from sqlalchemy import select
     
     logger.info(f"开始处理项目：{project_id}")
+    
+    # 读取项目配置（包含切片策略 + 字幕配置）
+    db_gen = sync_get_db()
+    db = next(db_gen)
+    try:
+        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
+        if project:
+            strategy_config = project.processing_config or {}
+            subtitle_config = strategy_config.get("subtitle_config", {})
+            logger.info(f"使用切片策略：{strategy_config.get('strategy_name', '默认')}")
+            logger.info(f"策略参数：target_duration={strategy_config.get('target_duration', 60)}s, max_clips={strategy_config.get('max_clips', 20)}")
+            logger.info(f"字幕配置：{subtitle_config}")
+        else:
+            strategy_config = {}
+            subtitle_config = {}
+            logger.warning("项目配置不存在，使用默认策略")
+    finally:
+        db.close()
     
     try:
         project_dir = Path(input_video_path).parent.parent
@@ -46,7 +65,11 @@ def process_video_pipeline(
         if input_srt_path and Path(input_srt_path).exists():
             logger.info(f"使用现有字幕文件：{input_srt_path}")
             import shutil
-            shutil.copy(input_srt_path, srt_path)
+            # 检查是否是同一个文件
+            if Path(input_srt_path).resolve() != srt_path.resolve():
+                shutil.copy(input_srt_path, srt_path)
+            else:
+                logger.info("字幕文件已在正确位置，跳过复制")
         else:
             logger.info("自动生成字幕")
             srt_path = generate_subtitle(input_video_path, srt_path)
@@ -57,6 +80,22 @@ def process_video_pipeline(
         # 清理内存
         gc.collect()
         
+        # 更新进度到 50%
+        from ..core.database import sync_get_db
+        
+        db_gen = sync_get_db()
+        db = next(db_gen)  # 获取 session
+        try:
+            from ..models.database import Task
+            from sqlalchemy import select
+            task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+            if task:
+                task.progress = 50
+                task.current_step = "分析内容结构"
+                db.commit()
+        finally:
+            db.close()  # ✅ 修复：确保连接释放
+        
         # Step 2: 大纲提取（可选，失败时使用本地备用方案）
         logger.info("Step 2: 提取大纲")
         outlines = extract_outline(srt_path, metadata_dir)
@@ -65,7 +104,7 @@ def process_video_pipeline(
             logger.warning("AI 大纲提取失败，使用本地备用方案（基于字幕段落自动切片）")
             # 使用本地方案：直接从字幕生成时间线
             from ..services.local_processor import generate_clips_from_subtitle
-            clips_data = generate_clips_from_subtitle(srt_path, metadata_dir)
+            clips_data = generate_clips_from_subtitle(srt_path, metadata_dir, strategy_config)
             outlines = clips_data.get("outlines", [])
             titled_clips = clips_data.get("clips", [])
             collections = clips_data.get("collections", [])
@@ -74,25 +113,25 @@ def process_video_pipeline(
             logger.info("Step 3: 创建时间线")
             timeline = create_timeline(outlines, srt_path, metadata_dir)
             
-            # Step 4: 切片评分
+            # Step 4: 切片评分（使用策略参数）
             logger.info("Step 4: 切片评分")
-            scored_clips = score_clips(timeline, metadata_dir)
+            scored_clips = score_clips(timeline, metadata_dir, strategy_config)
             
             # Step 5: 生成标题
             logger.info("Step 5: 生成标题")
             titled_clips = generate_titles(scored_clips, metadata_dir)
             
-            # Step 6: 主题聚类
+            # Step 6: 主题聚类（使用策略参数）
             logger.info("Step 6: 主题聚类")
-            collections = cluster_collections(titled_clips, metadata_dir)
+            collections = cluster_collections(titled_clips, metadata_dir, strategy_config)
         
-        # Step 7: 切割视频
+        # Step 7: 切割视频（传入字幕配置）
         logger.info("Step 7: 切割视频")
-        cut_clips(titled_clips, input_video_path, clips_dir)
+        cut_clips(titled_clips, input_video_path, clips_dir, input_srt=srt_path, task_id=task_id, subtitle_config=subtitle_config)
         
         # Step 8: 合并合集
         logger.info("Step 8: 合并合集")
-        merge_collections(collections, clips_dir, collections_dir)
+        merge_collections(collections, clips_dir, collections_dir, task_id=task_id)
         
         # Step 9: 验证文件完整性
         logger.info("Step 9: 验证文件完整性")

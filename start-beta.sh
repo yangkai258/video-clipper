@@ -14,21 +14,21 @@ export VITE_PORT="3030"
 export VITE_API_PORT="8030"
 
 echo "🚀 启动测试版后端 (8030)..."
-python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 &
 BACKEND_PID=$!
 
 echo "🚀 启动测试版 Worker..."
-python3 -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing_beta &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing_beta &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成
 sleep 3
 
 echo "🚀 预加载 faster-whisper 模型..."
-python3 scripts/preload_whisper_model.py tiny &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python scripts/preload_whisper_model.py tiny &
 
 echo "🚀 启动测试版前端 (3030)..."
-cd frontend && npm run dev -- --port 3030 &
+cd frontend && npm run dev -- --config vite.config.beta.js --port 3030 &
 FRONTEND_PID=$!
 
 echo "✅ 测试版服务已启动"
