@@ -162,22 +162,44 @@ def create_timeline(outlines: List[Dict], srt_path: Path, metadata_dir: Path) ->
     return timeline
 
 
-def score_clips(timeline: List[Dict], metadata_dir: Path) -> List[Dict]:
-    """切片评分"""
-    logger.info("切片评分（简化版）")
+def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:
+    """切片评分
+    
+    Args:
+        timeline: 时间线数据
+        metadata_dir: 元数据目录
+        strategy_config: 策略配置（可选）
+    """
+    strategy_config = strategy_config or {}
+    min_score = strategy_config.get("rules", {}).get("min_score", 0.7)
+    
+    logger.info(f"切片评分（简化版）- 最低评分阈值：{min_score}")
     
     scored = []
     for item in timeline:
-        scored.append({
-            **item,
-            "score": 0.8,  # 假设评分
-            "score_reason": "基于话题重要性"
-        })
+        # 根据策略规则调整评分
+        base_score = 0.8
+        
+        # 如果策略有关键词优先级，检查是否包含关键词
+        priority_keywords = strategy_config.get("rules", {}).get("priority_keywords", [])
+        if priority_keywords:
+            title_lower = item.get("title", "").lower()
+            if any(kw.lower() in title_lower for kw in priority_keywords):
+                base_score = min(base_score + 0.15, 1.0)  # 包含关键词加分
+        
+        # 只保留高于阈值的切片
+        if base_score >= min_score:
+            scored.append({
+                **item,
+                "score": base_score,
+                "score_reason": f"基于话题重要性 (阈值:{min_score})"
+            })
     
     scored_path = metadata_dir / "step3_scored.json"
     with open(scored_path, "w", encoding="utf-8") as f:
         json.dump(scored, f, ensure_ascii=False, indent=2)
     
+    logger.info(f"评分完成：{len(scored)} 个切片通过阈值")
     return scored
 
 
@@ -199,18 +221,35 @@ def generate_titles(scored_clips: List[Dict], metadata_dir: Path) -> List[Dict]:
     return titled
 
 
-def cluster_collections(titled_clips: List[Dict], metadata_dir: Path) -> List[Dict]:
-    """主题聚类"""
-    logger.info("主题聚类（简化版）")
+def cluster_collections(titled_clips: List[Dict], metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:
+    """主题聚类
     
-    # 简单分组：每 5 个切片为一组
+    Args:
+        titled_clips: 带标题的切片数据
+        metadata_dir: 元数据目录
+        strategy_config: 策略配置（可选）
+    """
+    strategy_config = strategy_config or {}
+    max_clips = strategy_config.get("max_clips", 20)
+    
+    logger.info(f"主题聚类（简化版）- 最大切片数：{max_clips}")
+    
+    # 根据策略的最大切片数限制
+    limited_clips = titled_clips[:max_clips]
+    if len(limited_clips) < len(titled_clips):
+        logger.info(f"根据策略限制切片数：{len(titled_clips)} → {len(limited_clips)}")
+    
+    # 计算每组合集的大小（根据目标时长估算）
+    target_duration = strategy_config.get("target_duration", 60)
+    clips_per_collection = max(3, min(8, target_duration // 15))  # 假设每个切片约 15 秒
+    
     collections = []
-    for i in range(0, len(titled_clips), 5):
-        group = titled_clips[i:i+5]
+    for i in range(0, len(limited_clips), clips_per_collection):
+        group = limited_clips[i:i+clips_per_collection]
         if group:
             collections.append({
                 "title": f"合集{len(collections)+1}",
-                "clip_ids": [c["title"] for c in group],
+                "clip_ids": [c.get("title", f"clip_{j}") for j, c in enumerate(group)],
                 "clips": group
             })
     
@@ -218,4 +257,5 @@ def cluster_collections(titled_clips: List[Dict], metadata_dir: Path) -> List[Di
     with open(collections_path, "w", encoding="utf-8") as f:
         json.dump(collections, f, ensure_ascii=False, indent=2)
     
+    logger.info(f"聚类完成：{len(collections)} 个合集")
     return collections

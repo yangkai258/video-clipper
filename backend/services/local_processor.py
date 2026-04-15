@@ -8,8 +8,19 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 
-def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path) -> Dict:
-    """从字幕生成本地切片方案（不依赖 AI）"""
+def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_config: dict = None) -> Dict:
+    """从字幕生成本地切片方案（不依赖 AI）
+    
+    Args:
+        srt_path: 字幕文件路径
+        metadata_dir: 元数据目录
+        strategy_config: 策略配置（可选）
+    """
+    strategy_config = strategy_config or {}
+    target_duration = strategy_config.get("target_duration", 45.0)
+    max_clips = strategy_config.get("max_clips", 20)
+    
+    logger.info(f"本地处理 - 目标时长：{target_duration}s, 最大切片数：{max_clips}")
     
     # 解析字幕
     segments = parse_srt(srt_path)
@@ -22,16 +33,23 @@ def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path) -> Dict:
     merged = merge_short_segments(segments, min_duration=3.0)
     logger.info(f"合并后 {len(merged)} 个段落")
     
-    # 生成切片（每 30-60 秒一个）
-    clips = generate_clips(merged, target_duration=45.0)
+    # 生成切片（根据策略的目标时长）
+    clips = generate_clips(merged, target_duration=target_duration)
     logger.info(f"生成 {len(clips)} 个切片")
+    
+    # 根据策略限制最大切片数
+    if len(clips) > max_clips:
+        logger.info(f"根据策略限制切片数：{len(clips)} → {max_clips}")
+        clips = clips[:max_clips]
     
     # 生成简单标题
     titled_clips = generate_simple_titles(clips)
     
-    # 按时间分组为合集（每 5-10 个切片一组）
-    collections = group_into_collections(titled_clips, group_size=8)
-    logger.info(f"分组为 {len(collections)} 个合集")
+    # 按时间分组为合集（根据策略的目标时长计算每组大小）
+    # 假设每个切片约 15 秒，目标时长 60 秒 → 每组 4 个切片
+    clips_per_collection = max(3, min(8, int(target_duration) // 15))
+    collections = group_into_collections(titled_clips, group_size=clips_per_collection)
+    logger.info(f"分组为 {len(collections)} 个合集 (每组约{clips_per_collection}个切片)")
     
     # 生成大纲（简单版）
     outlines = [

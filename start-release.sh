@@ -14,18 +14,18 @@ export VITE_PORT="3000"
 export VITE_API_PORT="8000"
 
 echo "🚀 启动正式版后端 (8000)..."
-python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
 echo "🚀 启动正式版 Worker..."
-python3 -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成
 sleep 3
 
 echo "🚀 预加载 faster-whisper 模型..."
-python3 scripts/preload_whisper_model.py tiny &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python scripts/preload_whisper_model.py tiny &
 
 echo "🚀 启动正式版前端 (3000)..."
 cd frontend && rm -rf node_modules/.vite && npm run dev -- --port 3000 &

@@ -178,8 +178,26 @@ function ProjectDetail() {
                   <video 
                     controls 
                     style={{ width: '100%', marginTop: '10px', borderRadius: '4px' }}
-                    src={`${API_BASE}/projects/${id}/files/${clip.video_path.split('/').map(encodeURIComponent).join('/')}`}
-                  />
+                    src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
+                  >
+                    <track 
+                      label="中文" 
+                      kind="subtitles" 
+                      srclang="zh" 
+                      src={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`} 
+                      default 
+                    />
+                  </video>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+                    <a 
+                      href={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`} 
+                      download={`${project.name}_字幕.srt`}
+                      style={{ fontSize: '12px', color: '#007bff', textDecoration: 'none' }}
+                    >
+                      📥 下载字幕文件
+                    </a>
+                    <span style={{ fontSize: '12px', color: '#999' }}>💡 如字幕未显示，请在播放器中手动加载</span>
+                  </div>
                 </div>
               ))}
           </div>
@@ -229,15 +247,14 @@ function ProjectDetail() {
                 📦 包含 {coll.clip_count} 个切片
               </p>
               {coll.video_path ? (
-                <video 
-                  controls 
-                  style={{ width: '100%', marginTop: '10px', borderRadius: '4px' }}
-                  src={`${API_BASE}/projects/${id}/files/${coll.video_path.split('/').map(encodeURIComponent).join('/')}`}
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.parentElement.innerHTML += `<p style="color: #ff4444; font-size: 12px; margin-top: 10px;">⚠️ 视频文件不存在（合集生成失败）</p>`;
-                  }}
-                />
+                <div>
+                  <video 
+                    controls 
+                    style={{ width: '100%', marginTop: '10px', borderRadius: '4px' }}
+                    src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(coll.video_path)}`}
+                  />
+                  <p style={{ fontSize: '12px', color: '#999', marginTop: '8px' }}>💡 合集视频暂不支持字幕</p>
+                </div>
               ) : (
                 <p style={{ color: '#ff4444', fontSize: '14px', marginTop: '10px' }}>⚠️ 视频文件不存在（合集生成失败）</p>
               )}

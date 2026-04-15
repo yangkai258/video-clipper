@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from .core.config import settings
 from .core.database import init_db
-from .api import projects, clips, collections
+from .api import projects, clips, collections, styles, admin
 
 
 @asynccontextmanager
@@ -36,6 +36,8 @@ app.add_middleware(
 app.include_router(projects.router, prefix="/api/v1/projects", tags=["projects"])
 app.include_router(clips.router, prefix="/api/v1/clips", tags=["clips"])
 app.include_router(collections.router, prefix="/api/v1/collections", tags=["collections"])
+app.include_router(styles.router, prefix="/api/v1", tags=["styles"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 
 
 @app.get("/")
