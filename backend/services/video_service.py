@@ -61,13 +61,102 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
             # 留 0.05s buffer 防止浮点精度导致 moviepy 报
             # "end_time (X) should be smaller or equal to the clip's duration (Y)"
             if start_sec < duration and end_sec > 0:
-                subtitles.append((
-                    max(0, min(start_sec, duration - 0.05)),
-                    max(0.05, min(end_sec, duration - 0.05)),
-                    text
-                ))
+                s = max(0, min(start_sec, duration - 0.05))
+                e = max(0.05, min(end_sec, duration - 0.05))
+                # 断句 + 换行：长字幕拆成多条短字幕，时间均分
+                for piece_s, piece_e, piece_text in _split_subtitle(s, e, text):
+                    subtitles.append((piece_s, piece_e, piece_text))
 
         return subtitles
+
+    def _split_subtitle(s: float, e: float, text: str):
+        """把长字幕按标点拆短句，单句过长自动换行。
+
+        短视频字幕最佳实践：
+        - 每条 7-12 汉字
+        - 最多 2 行
+        - 显示 1-3 秒
+
+        例：「直播间右下方的小黄车,1号链接,可以报名,然后留下您的姓名跟联系方式」
+          → ['直播间右下方的小黄车', '1号链接 可以报名', '然后留下您的姓名跟联系方式']
+          → 3 段短字幕，时间窗口均分
+        """
+        import re
+        # 1) 去掉尾部标点（保留中间）
+        text = text.strip().rstrip('。！？!?,，;；.!?')
+        if not text:
+            return [(s, e, text)]
+        # 2) 按中文/英文标点切分
+        #    用零宽位置切，保留分隔符以便后续断句参考
+        parts = re.split(r'([。！？!?\.？!]+|[，,；;]+)', text)
+        sentences = []
+        buf = ''
+        for p in parts:
+            if not p:
+                continue
+            if re.match(r'^[。！？!?\.？!,，;；]+$', p):
+                buf += p  # 标点合并到前一句
+                if buf.strip():
+                    sentences.append(buf.strip())
+                    buf = ''
+            else:
+                buf += p
+        if buf.strip():
+            sentences.append(buf.strip())
+        # 3) 单句过长强制按字数切 + 换行
+        MAX_LINE = 10       # 每行最多 10 汉字
+        MAX_LINES = 2       # 最多 2 行
+        MAX_CHARS = MAX_LINE * MAX_LINES
+        pieces = []
+        for sent in sentences:
+            sent = sent.strip()
+            if not sent:
+                continue
+            if len(sent) <= MAX_CHARS:
+                pieces.append(sent)
+                continue
+            # 强制切：每 MAX_LINE 字一段，最后一段在剩余字数
+            for i in range(0, len(sent), MAX_LINE):
+                chunk = sent[i:i + MAX_LINE]
+                pieces.append(chunk)
+        if not pieces:  # 兜底：原文
+            pieces = [text]
+        # 4) 短句均分时间窗口
+        n = len(pieces)
+        step = (e - s) / n
+        out = []
+        for i, p in enumerate(pieces):
+            ps = s + i * step
+            pe = s + (i + 1) * step
+            # 短句如果还长，单句内换行（用 \n）
+            wrapped = _wrap_line(p, MAX_LINE, MAX_LINES)
+            out.append((ps, pe, wrapped))
+        return out
+
+    def _wrap_line(text: str, max_line: int, max_lines: int) -> str:
+        """单句超长按 max_line 字一行，最多 max_lines 行（用 \\n 换行）"""
+        if len(text) <= max_line * max_lines:
+            # 看是否需要换行
+            if len(text) > max_line:
+                mid = len(text) // 2
+                # 找最近的标点切
+                best = mid
+                for off in range(0, mid):
+                    if mid - off >= 0 and text[mid - off] in '，,。. ':
+                        best = mid - off
+                        break
+                    if mid + off < len(text) and text[mid + off] in '，,。. ':
+                        best = mid + off + 1
+                        break
+                return text[:best] + '\n' + text[best:].lstrip()
+            return text
+        # 太长：硬切
+        lines = []
+        for i in range(0, len(text), max_line):
+            lines.append(text[i:i + max_line])
+            if len(lines) >= max_lines:
+                break
+        return '\n'.join(lines)
 
     # 解析字幕
     subtitles = parse_srt(srt_path, start)
