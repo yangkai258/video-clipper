@@ -210,25 +210,162 @@ def _parse_outline_response(response: str) -> List[Dict]:
     return outlines
 
 
-def create_timeline(outlines: List[Dict], srt_path: Path, metadata_dir: Path) -> List[Dict]:
-    """创建时间线"""
-    # TODO: 实现时间线创建
-    logger.info("时间线创建（简化版）")
-    
+def create_timeline(outlines: List[Dict], srt_path: Path, metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:
+    """创建时间线 - 让 LLM 把话题大纲映射到字幕中的具体时间段
+
+    Args:
+        outlines: 从 extract_outline 得到的话题列表
+        srt_path: SRT 字幕文件路径（含时间戳）
+        metadata_dir: 元数据目录
+        strategy_config: 策略配置（可选）
+
+    Returns:
+        带 start_time / end_time 的 timeline 列表
+    """
+    # 优先尝试 LLM 真正映射；失败则回退到简化版（每话题 5 分钟等分）
+    try:
+        timeline = _create_timeline_with_llm(outlines, srt_path, strategy_config or {})
+        if timeline:
+            timeline_path = metadata_dir / "step2_timeline.json"
+            with open(timeline_path, "w", encoding="utf-8") as f:
+                json.dump(timeline, f, ensure_ascii=False, indent=2)
+            logger.info(f"时间线创建（LLM版）完成：{len(timeline)} 个话题")
+            return timeline
+    except Exception as e:
+        logger.warning(f"LLM 时间线创建失败：{e}，回退到简化版")
+
+    # 回退：简化版
+    logger.info("时间线创建（简化版）- 每话题 5 分钟等分")
     timeline = []
-    for i, outline in enumerate(outlines[:10]):  # 限制数量
+    for i, outline in enumerate(outlines[:10]):
         timeline.append({
             "title": outline["title"],
-            "start_time": i * 300,  # 假设每个话题 5 分钟
-            "end_time": (i + 1) * 300,
+            "start_time": float(i * 300),
+            "end_time": float((i + 1) * 300),
             "subtopics": outline.get("subtopics", [])
         })
-    
+
     timeline_path = metadata_dir / "step2_timeline.json"
     with open(timeline_path, "w", encoding="utf-8") as f:
         json.dump(timeline, f, ensure_ascii=False, indent=2)
-    
+
     return timeline
+
+
+def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_config: dict) -> List[Dict]:
+    """用 LLM 把话题映射到字幕中的具体时间戳"""
+    from ..core.config import settings
+    import dashscope
+
+    dashscope.api_key = settings.DASHSCOPE_API_KEY
+
+    # 读取 SRT（带时间戳的完整内容）
+    with open(srt_path, "r", encoding="utf-8") as f:
+        srt_content = f.read()
+
+    # 解析 SRT → 时间戳列表（减少传给 LLM 的 token）
+    parsed_segments = parse_srt_for_timeline(srt_path)
+    if not parsed_segments:
+        return []
+
+    # 转成简洁格式：[12.5-67.8] 文本...
+    srt_compact = "\n".join(
+        f"[{seg['start']:.1f}-{seg['end']:.1f}] {seg['text']}"
+        for seg in parsed_segments
+    )
+
+    # 限制大小（避免超 context）
+    MAX_CHARS = 25000
+    if len(srt_compact) > MAX_CHARS:
+        logger.warning(f"SRT 紧凑格式 {len(srt_compact)} 字符超过 {MAX_CHARS}，按比例截取")
+        # 等比例采样：每 N 条取一条
+        step = len(parsed_segments) * len(srt_compact) // MAX_CHARS // 2 + 1
+        sampled = parsed_segments[::step]
+        srt_compact = "\n".join(
+            f"[{seg['start']:.1f}-{seg['end']:.1f}] {seg['text']}"
+            for seg in sampled
+        )
+        logger.info(f"采样后 SRT：{len(sampled)} 段，{len(srt_compact)} 字符")
+
+    outlines_json = json.dumps(outlines, ensure_ascii=False, indent=2)
+
+    # 风格引导
+    style_block = _build_style_prompt_block(strategy_config)
+
+    prompt = f"""你是一位专业的视频内容编辑。请根据以下视频话题大纲和带时间戳的字幕文本，把每个话题映射到具体的开始/结束时间。
+{style_block}
+【话题大纲】
+{outlines_json}
+
+【字幕文本（时间戳-文本）】
+{srt_compact}
+
+要求：
+1. 每个话题必须映射到字幕中具体的时间段（精确到秒，浮点数）
+2. 时间要贴合话题内容的实际切换点（说话人/主题变化处）
+3. 如果大纲中某个话题在字幕里找不到对应内容，跳过它（不要强行映射）
+4. 同一个时间段不能被多个话题覆盖
+5. 严格按以下 JSON 格式输出（只输出 JSON，不要其他内容）：
+
+[
+  {{
+    "title": "话题标题（必须与大纲一致）",
+    "start_time": 12.5,
+    "end_time": 67.8,
+    "subtopics": ["子话题 1", "子话题 2"]
+  }}
+]
+"""
+
+    response = dashscope.Generation.call(
+        model=settings.MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    if response.status_code != 200:
+        logger.warning(f"LLM 调用失败：{response.code}")
+        return []
+
+    content = response.output.text
+    timeline = _parse_timeline_response(content)
+
+    # 验证：每个 item 必须有 title + start_time + end_time
+    valid = []
+    for item in timeline:
+        if not all(k in item for k in ("title", "start_time", "end_time")):
+            continue
+        try:
+            item["start_time"] = float(item["start_time"])
+            item["end_time"] = float(item["end_time"])
+        except (TypeError, ValueError):
+            continue
+        if item["end_time"] <= item["start_time"]:
+            continue
+        valid.append(item)
+
+    return valid
+
+
+def parse_srt_for_timeline(srt_path: Path) -> List[Dict]:
+    """解析 SRT 为 [{start, end, text}, ...]，供 timeline 映射用"""
+    # 复用 local_processor.parse_srt 但不依赖其 logger 配置
+    try:
+        from .local_processor import parse_srt
+        return parse_srt(srt_path)
+    except Exception as e:
+        logger.warning(f"解析 SRT 失败：{e}")
+        return []
+
+
+def _parse_timeline_response(response: str) -> List[Dict]:
+    """解析 LLM 返回的时间线 JSON"""
+    try:
+        match = re.search(r'\[.*\]', response, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+    except Exception as e:
+        logger.debug(f"解析 timeline JSON 失败：{e}")
+    return []
 
 
 def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:
@@ -294,22 +431,137 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
     return scored
 
 
-def generate_titles(scored_clips: List[Dict], metadata_dir: Path) -> List[Dict]:
-    """生成标题"""
-    logger.info("生成标题（简化版）")
-    
+def generate_titles(scored_clips: List[Dict], metadata_dir: Path, srt_path: Path = None, strategy_config: dict = None) -> List[Dict]:
+    """生成标题 - 优先用 LLM 生成吸引人的标题，失败回退简化版
+
+    Args:
+        scored_clips: 已评分的切片列表（来自 score_clips）
+        metadata_dir: 元数据目录
+        srt_path: SRT 字幕路径（可选，有则用 LLM 生成更有信息量的标题）
+        strategy_config: 策略配置（可选），包含 style_positioning / keep_rules / remove_rules
+    """
+    if not scored_clips:
+        return []
+
+    # 优先尝试 LLM 生成（需要 srt_path 提供文本上下文）
+    if srt_path and Path(srt_path).exists():
+        try:
+            titled = _generate_titles_with_llm(scored_clips, srt_path, strategy_config or {})
+            if titled:
+                titled_path = metadata_dir / "step4_titled.json"
+                with open(titled_path, "w", encoding="utf-8") as f:
+                    json.dump(titled, f, ensure_ascii=False, indent=2)
+                logger.info(f"标题生成（LLM版）完成：{len(titled)} 个")
+                return titled
+        except Exception as e:
+            logger.warning(f"LLM 标题生成失败：{e}，回退到简化版")
+
+    # 回退：简化版
+    logger.info("标题生成（简化版）")
     titled = []
     for i, clip in enumerate(scored_clips):
         titled.append({
             **clip,
-            "title": f"切片{i+1}: {clip['title']}"
+            "title": f"切片{i+1}: {clip.get('title', '')}"
         })
-    
+
     titled_path = metadata_dir / "step4_titled.json"
     with open(titled_path, "w", encoding="utf-8") as f:
         json.dump(titled, f, ensure_ascii=False, indent=2)
-    
+
     return titled
+
+
+def _generate_titles_with_llm(scored_clips: List[Dict], srt_path: Path, strategy_config: dict) -> List[Dict]:
+    """用 LLM 为每个切片生成吸引人的标题"""
+    from ..core.config import settings
+    import dashscope
+
+    dashscope.api_key = settings.DASHSCOPE_API_KEY
+
+    # 解析 SRT
+    segments = parse_srt_for_timeline(srt_path)
+    if not segments:
+        return []
+
+    # 为每个 clip 找到对应的字幕文本（按时间范围重叠）
+    clip_inputs = []
+    for i, clip in enumerate(scored_clips):
+        start = clip.get("start_time", 0)
+        end = clip.get("end_time", 0)
+
+        # 找到时间范围内所有字幕段
+        overlap_texts = [
+            seg["text"] for seg in segments
+            if seg["end"] > start and seg["start"] < end
+        ]
+        overlap_text = " ".join(overlap_texts)[:500]  # 限制每个 500 字
+
+        clip_inputs.append({
+            "index": i + 1,
+            "start": start,
+            "end": end,
+            "duration": end - start,
+            "current_title": clip.get("title", ""),
+            "text_preview": overlap_text or "(无字幕)",
+        })
+
+    style_block = _build_style_prompt_block(strategy_config)
+
+    prompt = f"""你是一位短视频标题专家。请为以下视频片段生成吸引人的标题。
+{style_block}
+【片段列表】
+{json.dumps(clip_inputs, ensure_ascii=False, indent=2)}
+
+要求：
+1. 每个片段生成 1 个最佳标题（选最吸引人的那个）
+2. 长度 15-25 字
+3. 突出内容亮点、引发好奇、适合短视频传播
+4. 严格遵守风格定位和保留/删除规则
+5. 严格按以下 JSON 格式输出（只输出 JSON，不要其他内容）：
+
+[
+  {{"index": 1, "title": "标题1"}},
+  {{"index": 2, "title": "标题2"}}
+]
+"""
+
+    response = dashscope.Generation.call(
+        model=settings.MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    if response.status_code != 200:
+        logger.warning(f"LLM 调用失败：{response.code}")
+        return []
+
+    titles_map = _parse_titles_response(response.output.text)
+    if not titles_map:
+        return []
+
+    # 合并到 clips
+    titled = []
+    for i, clip in enumerate(scored_clips):
+        idx = i + 1
+        new_title = titles_map.get(idx, f"切片{idx}: {clip.get('title', '')}")
+        titled.append({
+            **clip,
+            "title": new_title
+        })
+
+    return titled
+
+
+def _parse_titles_response(response: str) -> Dict[int, str]:
+    """解析 LLM 返回的标题 JSON 为 {index: title}"""
+    try:
+        match = re.search(r'\[.*\]', response, re.DOTALL)
+        if match:
+            items = json.loads(match.group())
+            return {int(item["index"]): item["title"] for item in items if "index" in item and "title" in item}
+    except Exception as e:
+        logger.debug(f"解析 titles JSON 失败：{e}")
+    return {}
 
 
 def cluster_collections(titled_clips: List[Dict], metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:

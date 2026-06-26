@@ -96,9 +96,9 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
     logger.info(f"字幕烧录完成：{output_path}")
 
 
-def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt: Path = None, task_id: str = None, subtitle_config: dict = None):
+def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt: Path = None, task_id: str = None, subtitle_config: dict = None, with_subtitle: bool = True):
     """切割视频切片
-    
+
     Args:
         clips: 切片数据列表
         input_video: 输入视频路径
@@ -106,14 +106,17 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
         input_srt: 字幕文件路径（可选，有则烧录字幕）
         task_id: 可选的任务 ID，用于更新进度
         subtitle_config: 字幕配置 {font_size, txt_color, stroke_color, stroke_width, font, position}
+        with_subtitle: 是否烧录字幕（False = 纯剪片子，不烧字幕，省时省力）
     """
     logger.info(f"开始切割 {len(clips)} 个切片")
-    
-    # 检查字幕文件是否存在
+
+    # 决定是否烧录字幕
     srt_path = None
-    if input_srt and input_srt.exists():
+    if with_subtitle and input_srt and Path(input_srt).exists():
         srt_path = input_srt
         logger.info(f"将烧录字幕：{srt_path}")
+    elif not with_subtitle:
+        logger.info("用户选择纯剪片子（不烧字幕）")
     else:
         logger.info("未提供字幕文件，跳过字幕烧录")
     

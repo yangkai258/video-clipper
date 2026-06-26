@@ -111,23 +111,34 @@ def process_video_pipeline(
         else:
             # Step 3: 时间线创建
             logger.info("Step 3: 创建时间线")
-            timeline = create_timeline(outlines, srt_path, metadata_dir)
-            
+            timeline = create_timeline(outlines, srt_path, metadata_dir, strategy_config)
+
             # Step 4: 切片评分（使用策略参数）
             logger.info("Step 4: 切片评分")
             scored_clips = score_clips(timeline, metadata_dir, strategy_config)
-            
-            # Step 5: 生成标题
+
+            # Step 5: 生成标题（传入 srt 让 LLM 看内容生成吸引人标题）
             logger.info("Step 5: 生成标题")
-            titled_clips = generate_titles(scored_clips, metadata_dir)
-            
+            titled_clips = generate_titles(scored_clips, metadata_dir, srt_path=srt_path, strategy_config=strategy_config)
+
             # Step 6: 主题聚类（使用策略参数）
             logger.info("Step 6: 主题聚类")
             collections = cluster_collections(titled_clips, metadata_dir, strategy_config)
-        
-        # Step 7: 切割视频（传入字幕配置）
+
+        # Step 7: 切割视频（传入字幕配置 + with_subtitle 标志）
         logger.info("Step 7: 切割视频")
-        cut_clips(titled_clips, input_video_path, clips_dir, input_srt=srt_path, task_id=task_id, subtitle_config=subtitle_config)
+        # 从 strategy_config 提取 with_subtitle 标志（默认 True 保持向后兼容）
+        with_subtitle = strategy_config.get("with_subtitle", True) if strategy_config else True
+        logger.info(f"字幕烧录：{'开启' if with_subtitle else '关闭（纯剪片子）'}")
+        cut_clips(
+            titled_clips,
+            input_video_path,
+            clips_dir,
+            input_srt=srt_path if with_subtitle else None,  # 不烧字幕就不传 SRT
+            task_id=task_id,
+            subtitle_config=subtitle_config,
+            with_subtitle=with_subtitle,
+        )
         
         # Step 8: 合并合集
         logger.info("Step 8: 合并合集")

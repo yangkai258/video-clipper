@@ -11,6 +11,7 @@ function App() {
   const [pendingProject, setPendingProject] = useState(null)
   const [presets, setPresets] = useState([])
   const [customStyles, setCustomStyles] = useState([])
+  const [withSubtitle, setWithSubtitle] = useState(true)  // 默认勾选（向后兼容）
   const navigate = useNavigate()
 
   const API_BASE = '/api/v1'
@@ -90,11 +91,14 @@ function App() {
     if (!pendingProject) return
 
     setShowStrategyModal(false)
-    
-    // 如果是自定义风格，先更新项目配置
-    if (strategy.id.startsWith('style_')) {
-      try {
-        await axios.put(`${API_BASE}/projects/${pendingProject.id}/config`, {
+
+    // 1) 总是更新项目配置（含 with_subtitle + 风格字段）
+    try {
+      const isCustomStyle = strategy.id.startsWith('style_')
+      const configPayload = {
+        with_subtitle: withSubtitle,
+        // 自定义风格才有的字段
+        ...(isCustomStyle && {
           style_id: strategy.id,
           strategy_name: strategy.name,
           target_duration: strategy.target_duration,
@@ -104,21 +108,23 @@ function App() {
           content_guidelines: strategy.content_guidelines,
           keep_rules: strategy.keep_rules,
           remove_rules: strategy.remove_rules,
-          style_positioning: strategy.style_positioning
-        })
-      } catch (error) {
-        console.error('更新配置失败:', error)
+          style_positioning: strategy.style_positioning,
+          subtitle_style: strategy.subtitle_config || null,
+        }),
       }
+      await axios.put(`${API_BASE}/projects/${pendingProject.id}/config`, configPayload)
+    } catch (error) {
+      console.error('更新配置失败:', error)
     }
 
-    // 开始处理
+    // 2) 开始处理
     try {
       const processRes = await axios.post(`${API_BASE}/projects/${pendingProject.id}/process`)
-      alert(`✅ 处理已开始！\n策略：${strategy.name}\n任务 ID: ${processRes.data.task_id}`)
+      alert(`✅ 处理已开始！\n策略：${strategy.name}\n字幕：${withSubtitle ? '开启' : '关闭（纯剪片子）'}\n任务 ID: ${processRes.data.task_id}`)
     } catch (error) {
       alert(`⚠️ 处理启动失败：${error.response?.data?.detail || error.message}`)
     }
-    
+
     setPendingProject(null)
   }
 
@@ -289,9 +295,38 @@ function App() {
             margin: '20px'
           }}>
             <h2 style={{ marginBottom: '8px' }}>📦 选择切片策略</h2>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '24px' }}>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '16px' }}>
               选择一个适合你内容的切片方式，处理开始后将根据此策略自动生成切片
             </p>
+
+            {/* 字幕开关 */}
+            <div style={{
+              marginBottom: '24px',
+              padding: '12px 16px',
+              backgroundColor: 'rgba(59, 130, 246, 0.08)',
+              borderRadius: '8px',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <input
+                type="checkbox"
+                id="with-subtitle-checkbox"
+                checked={withSubtitle}
+                onChange={(e) => setWithSubtitle(e.target.checked)}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+              <label
+                htmlFor="with-subtitle-checkbox"
+                style={{ cursor: 'pointer', userSelect: 'none', flex: 1 }}
+              >
+                <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>📝 需要字幕</div>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                  勾选：视频中烧录字幕 · 不勾：纯剪片子（更省时）
+                </div>
+              </label>
+            </div>
 
             {/* 预设策略 */}
             <h3 style={{ marginBottom: '16px' }}>🎯 预设策略</h3>
