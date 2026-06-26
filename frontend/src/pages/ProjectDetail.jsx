@@ -335,13 +335,16 @@ function ProjectDetail() {
                       }}
                       src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
                     >
-                      <track
-                        label="中文"
-                        kind="subtitles"
-                        srclang="zh"
-                        src={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
-                        default
-                      />
+                      {/* 只在没烧录字幕时显示 <track>，避免双层字幕叠加（烧录+track） */}
+                      {project.processing_config?.with_subtitle === false && (
+                        <track
+                          label="中文"
+                          kind="subtitles"
+                          srclang="zh"
+                          src={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
+                          default
+                        />
+                      )}
                     </video>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--text-xs)' }}>
