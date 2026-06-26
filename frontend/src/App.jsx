@@ -11,7 +11,7 @@ function App() {
   const [pendingProject, setPendingProject] = useState(null)
   const [presets, setPresets] = useState([])
   const [customStyles, setCustomStyles] = useState([])
-  const [withSubtitle, setWithSubtitle] = useState(false)
+  const [withSubtitle, setWithSubtitle] = useState(true)
   const [activeTab, setActiveTab] = useState('all')
   const [search, setSearch] = useState('')
   const navigate = useNavigate()
@@ -305,8 +305,18 @@ function App() {
             <div className="modal-body">
               <div className="toggle-row">
                 <div>
-                  <div className="toggle-info-label">烧录字幕到视频</div>
-                  <div className="toggle-info-hint">关 = 纯剪（更快）· 开 = 带字幕（更慢）</div>
+                  <div className="toggle-info-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    烧录字幕到视频
+                    <span style={{
+                      fontSize: 'var(--text-xs)', color: 'var(--accent)',
+                      background: 'var(--accent-soft)',
+                      padding: '1px var(--space-2)', borderRadius: '999px',
+                      fontWeight: 500
+                    }}>
+                      推荐开启
+                    </span>
+                  </div>
+                  <div className="toggle-info-hint">关 = 纯剪（更快）· 开 = 带字幕（更慢，但传播力更强）</div>
                 </div>
                 <div
                   className={`toggle-switch ${withSubtitle ? 'on' : ''}`}

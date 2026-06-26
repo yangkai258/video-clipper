@@ -36,7 +36,8 @@ def process_video_pipeline(
         project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
         if project:
             strategy_config = project.processing_config or {}
-            subtitle_config = strategy_config.get("subtitle_config", {})
+            # 字段名兼容：DB 存的是 subtitle_style，老字段叫 subtitle_config
+            subtitle_config = strategy_config.get("subtitle_style") or strategy_config.get("subtitle_config") or {}
             logger.info(f"使用切片策略：{strategy_config.get('strategy_name', '默认')}")
             logger.info(f"策略参数：target_duration={strategy_config.get('target_duration', 60)}s, max_clips={strategy_config.get('max_clips', 20)}")
             logger.info(f"字幕配置：{subtitle_config}")
