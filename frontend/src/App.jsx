@@ -120,7 +120,7 @@ function App() {
     // 2) 开始处理
     try {
       const processRes = await axios.post(`${API_BASE}/projects/${pendingProject.id}/process`)
-      alert(`✅ 处理已开始！\n策略：${strategy.name}\n字幕：${withSubtitle ? '开启' : '关闭（纯剪片子）'}\n任务 ID: ${processRes.data.task_id}`)
+      alert(`✅ 处理已开始！\n策略：${strategy.name}\n字幕烧录：${withSubtitle ? '开启' : '关闭（视频不含字幕）'}\n任务 ID: ${processRes.data.task_id}`)
     } catch (error) {
       alert(`⚠️ 处理启动失败：${error.response?.data?.detail || error.message}`)
     }
@@ -321,9 +321,9 @@ function App() {
                 htmlFor="with-subtitle-checkbox"
                 style={{ cursor: 'pointer', userSelect: 'none', flex: 1 }}
               >
-                <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>📝 需要字幕</div>
+                <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>🎬 视频烧录字幕</div>
                 <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  勾选：视频中烧录字幕 · 不勾：纯剪片子（更省时）
+                  勾选：AI 分析后把字幕烧到视频里 · 不勾：纯剪片子（字幕仍会生成，仅供 AI 分析用）
                 </div>
               </label>
             </div>
