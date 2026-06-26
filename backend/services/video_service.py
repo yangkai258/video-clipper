@@ -58,17 +58,27 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
             end_sec = time_to_seconds(end_time) - start_offset
             # 清理字幕文本（移除 HTML 标签等）
             text = re.sub(r'<[^>]+>', '', text).strip()
+            # 留 0.05s buffer 防止浮点精度导致 moviepy 报
+            # "end_time (X) should be smaller or equal to the clip's duration (Y)"
             if start_sec < duration and end_sec > 0:
-                subtitles.append((max(0, start_sec), min(duration, end_sec), text))
-        
+                subtitles.append((
+                    max(0, min(start_sec, duration - 0.05)),
+                    max(0.05, min(end_sec, duration - 0.05)),
+                    text
+                ))
+
         return subtitles
-    
+
     # 解析字幕
     subtitles = parse_srt(srt_path, start)
-    
+
     if not subtitles:
         logger.warning("未找到有效字幕，跳过烧录")
-        video.write_videofile(str(output_path), codec='libx264', audio_codec='aac', preset='medium')
+        video.write_videofile(
+            str(output_path),
+            codec='libx264', audio_codec='aac', preset='medium',
+            ffmpeg_params=['-movflags', '+faststart', '-g', '60', '-keyint_min', '60'],
+        )
         return
     
     # 创建字幕片段（带字体 fallback）
@@ -110,7 +120,14 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
     
     # 合成视频 + 字幕
     final = CompositeVideoClip([video] + subclips)
-    final.write_videofile(str(output_path), codec='libx264', audio_codec='aac', preset='medium')
+    # +faststart：把 moov atom 写到文件头，浏览器秒开（前 3 秒不卡顿）
+    # -g 30 -keyint_min 30：每 30 帧 1 个 I 帧（≈ 1 秒 1 个 30fps 视频），
+    #                     保证首帧后能快速 seek / 接续解码
+    final.write_videofile(
+        str(output_path),
+        codec='libx264', audio_codec='aac', preset='medium',
+        ffmpeg_params=['-movflags', '+faststart', '-g', '60', '-keyint_min', '60'],
+    )
     
     logger.info(f"字幕烧录完成：{output_path}")
 
@@ -171,8 +188,8 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
                     # 回退到 FFmpeg 硬件加速
                     cmd.extend([
                         "-c:v", "h264_videotoolbox",
-                        "-keyint_min", "30",
-                        "-g", "30",
+                        "-keyint_min", "60",
+                        "-g", "60",
                         "-profile:v", "high",
                         "-level", "4.0",
                         "-c:a", "aac",
@@ -186,8 +203,8 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
                 logger.info("无字幕，使用 h264_videotoolbox 硬件加速")
                 cmd.extend([
                     "-c:v", "h264_videotoolbox",
-                    "-keyint_min", "30",
-                    "-g", "30",
+                    "-keyint_min", "60",
+                    "-g", "60",
                     "-profile:v", "high",
                     "-level", "4.0",
                     "-c:a", "aac",
@@ -271,8 +288,8 @@ def merge_collections(collections: List[Dict], clips_dir: Path, output_dir: Path
                 "-safe", "0",
                 "-i", str(list_path),
                 "-c:v", "h264_videotoolbox",
-                "-keyint_min", "30",
-                "-g", "30",
+                "-keyint_min", "60",
+                "-g", "60",
                 "-profile:v", "high",
                 "-level", "4.0",
                 "-c:a", "aac",
