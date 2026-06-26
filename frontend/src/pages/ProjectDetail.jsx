@@ -330,8 +330,8 @@ function ProjectDetail() {
                     <video
                       controls
                       style={{
-                        width: '100%', borderRadius: 'var(--radius-sm)',
-                        background: '#000', aspectRatio: '16/9', objectFit: 'cover'
+                        width: '100%', maxHeight: 480, borderRadius: 'var(--radius-sm)',
+                        background: '#000', objectFit: 'contain', display: 'block'
                       }}
                       src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
                     >
@@ -431,8 +431,8 @@ function ProjectDetail() {
                       <video
                         controls
                         style={{
-                          width: '100%', borderRadius: 'var(--radius-sm)',
-                          background: '#000', aspectRatio: '16/9', objectFit: 'cover'
+                          width: '100%', maxHeight: 480, borderRadius: 'var(--radius-sm)',
+                          background: '#000', objectFit: 'contain', display: 'block'
                         }}
                         src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(coll.video_path)}`}
                       />
