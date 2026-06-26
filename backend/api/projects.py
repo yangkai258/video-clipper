@@ -215,12 +215,12 @@ def _sync_subtitle_style_to_preferences(subtitle_style: dict):
         requests.put(
             "http://localhost:8000/api/v1/preferences/subtitle-style",
             json={
-                "font_size": subtitle_style.get("font_size", 22),
+                "font_size": subtitle_style.get("font_size", 28),
                 "txt_color": subtitle_style.get("txt_color", "white"),
-                "stroke_color": subtitle_style.get("stroke_color", "white"),
-                "stroke_width": subtitle_style.get("stroke_width", 1),
-                "font": subtitle_style.get("font", "Arial"),
-                "position": subtitle_style.get("position", 0.33),
+                "stroke_color": subtitle_style.get("stroke_color", "black"),
+                "stroke_width": subtitle_style.get("stroke_width", 2),
+                "font": subtitle_style.get("font", "/System/Library/Fonts/STHeiti Medium.ttc"),
+                "position": subtitle_style.get("position", 0.78),
             },
             timeout=5
         )

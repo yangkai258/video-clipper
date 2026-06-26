@@ -24,12 +24,12 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
     
     # 默认字幕配置
     default_config = {
-        "font_size": 22,
+        "font_size": 28,
         "txt_color": "white",
-        "stroke_color": "white",
-        "stroke_width": 1,
+        "stroke_color": "black",
+        "stroke_width": 2,
         "font": "/System/Library/Fonts/STHeiti Medium.ttc",
-        "position": 0.33  # 视频高度的 1/3 处
+        "position": 0.78  # 视频高度的 78% 处（避开人脸）
     }
     config = {**default_config, **(subtitle_config or {})}
     
@@ -71,7 +71,26 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
         video.write_videofile(str(output_path), codec='libx264', audio_codec='aac', preset='medium')
         return
     
-    # 创建字幕片段
+    # 创建字幕片段（带字体 fallback）
+    import os
+    _MAC_FALLBACK_FONTS = [
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/Library/Fonts/Songti.ttc",
+    ]
+
+    def _resolve_font(requested):
+        """如果请求字体不存在，自动 fallback 到 macOS 中文字体"""
+        if requested and os.path.exists(requested):
+            return requested
+        for fp in _MAC_FALLBACK_FONTS:
+            if os.path.exists(fp):
+                logger.warning(f"字体 {requested} 不可用，fallback 到 {fp}")
+                return fp
+        return requested  # 让 MoviePy 自己处理
+
     def make_textclip(text):
         return TextClip(
             text=text,
@@ -79,7 +98,7 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
             color=config["txt_color"],
             stroke_color=config["stroke_color"],
             stroke_width=config["stroke_width"],
-            font=config["font"]
+            font=_resolve_font(config["font"])
         )
     
     subclips = []

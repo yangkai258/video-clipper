@@ -16,12 +16,12 @@ const defaultStyle = {
   remove_rules: '',
   style_positioning: '',
   subtitle_config: {
-    font_size: 22,
+    font_size: 28,
     txt_color: 'white',
-    stroke_color: 'white',
-    stroke_width: 1,
-    font: 'Arial',
-    position: 0.33
+    stroke_color: 'black',
+    stroke_width: 2,
+    font: '/System/Library/Fonts/STHeiti Medium.ttc',
+    position: 0.78
   }
 }
 
@@ -312,11 +312,11 @@ function StyleManager() {
                   <div className="form-row">
                     <div>
                       <label>字体大小（像素）</label>
-                      <input className="mono" type="number" value={form.subtitle_config?.font_size || 22} onChange={e => updateSub('font_size', parseInt(e.target.value) || 22)} />
+                      <input className="mono" type="number" value={form.subtitle_config?.font_size || 28} onChange={e => updateSub('font_size', parseInt(e.target.value) || 28)} />
                     </div>
                     <div>
                       <label>垂直位置（视频高度 %）</label>
-                      <input className="mono" type="number" min="0" max="100" value={Math.round((form.subtitle_config?.position || 0.33) * 100)} onChange={e => updateSub('position', (parseInt(e.target.value) || 33) / 100)} />
+                      <input className="mono" type="number" min="0" max="100" value={Math.round((form.subtitle_config?.position || 0.78) * 100)} onChange={e => updateSub('position', (parseInt(e.target.value) || 78) / 100)} />
                     </div>
                     <div>
                       <label>文字颜色</label>
@@ -328,30 +328,34 @@ function StyleManager() {
                     <div>
                       <label>描边颜色</label>
                       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                        <input type="color" value={form.subtitle_config?.stroke_color || '#ffffff'} onChange={e => updateSub('stroke_color', e.target.value)} />
-                        <input type="text" value={form.subtitle_config?.stroke_color || '#ffffff'} onChange={e => updateSub('stroke_color', e.target.value)} />
+                        <input type="color" value={form.subtitle_config?.stroke_color || '#000000'} onChange={e => updateSub('stroke_color', e.target.value)} />
+                        <input type="text" value={form.subtitle_config?.stroke_color || '#000000'} onChange={e => updateSub('stroke_color', e.target.value)} />
                       </div>
                     </div>
                     <div>
                       <label>描边宽度</label>
-                      <input className="mono" type="number" step="0.5" min="0" max="5" value={form.subtitle_config?.stroke_width || 1} onChange={e => updateSub('stroke_width', parseFloat(e.target.value) || 1)} />
+                      <input className="mono" type="number" step="0.5" min="0" max="5" value={form.subtitle_config?.stroke_width || 2} onChange={e => updateSub('stroke_width', parseFloat(e.target.value) || 2)} />
                     </div>
                     <div>
                       <label>字体</label>
-                      <select value={form.subtitle_config?.font || 'Arial'} onChange={e => updateSub('font', e.target.value)}>
-                        <option value="Arial">Arial</option>
-                        <option value="PingFang SC">苹方（PingFang SC）</option>
+                      <select value={form.subtitle_config?.font || '/System/Library/Fonts/STHeiti Medium.ttc'} onChange={e => updateSub('font', e.target.value)}>
+                        <option value="/System/Library/Fonts/STHeiti Medium.ttc">华文黑体（STHeiti，macOS 默认）</option>
+                        <option value="/System/Library/Fonts/PingFang.ttc">苹方（PingFang）</option>
+                        <option value="/System/Library/Fonts/Hiragino Sans GB.ttc">冬青黑体（Hiragino）</option>
+                        <option value="/Library/Fonts/Songti.ttc">宋体（Songti）</option>
+                        <option value="Arial">Arial（缺中文字符）</option>
+                        <option value="PingFang SC">苹方 SC（系统名）</option>
                         <option value="Noto Sans SC">思源黑体（Noto Sans SC）</option>
-                        <option value="Microsoft YaHei">微软雅黑</option>
+                        <option value="Microsoft YaHei">微软雅黑（Windows）</option>
                         <option value="SimHei">黑体（SimHei）</option>
                       </select>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
                     {[
-                      { label: '默认', config: { font_size: 22, txt_color: 'white', stroke_color: 'white', stroke_width: 1, font: 'Arial', position: 0.33 } },
-                      { label: '综艺风', config: { font_size: 24, txt_color: 'yellow', stroke_color: 'black', stroke_width: 2, font: 'Arial', position: 0.35 } },
-                      { label: '纪录片', config: { font_size: 20, txt_color: 'white', stroke_color: 'black', stroke_width: 1.5, font: 'PingFang SC', position: 0.30 } },
+                      { label: '默认', config: { font_size: 28, txt_color: 'white', stroke_color: 'black', stroke_width: 2, font: '/System/Library/Fonts/STHeiti Medium.ttc', position: 0.78 } },
+                      { label: '综艺风', config: { font_size: 32, txt_color: 'yellow', stroke_color: 'black', stroke_width: 2.5, font: '/System/Library/Fonts/STHeiti Medium.ttc', position: 0.78 } },
+                      { label: '纪录片', config: { font_size: 24, txt_color: 'white', stroke_color: 'black', stroke_width: 2, font: '/System/Library/Fonts/PingFang.ttc', position: 0.82 } },
                     ].map(p => (
                       <button key={p.label} className="btn btn-sm" onClick={() => setForm(prev => ({ ...prev, subtitle_config: p.config }))}>
                         {p.label}
