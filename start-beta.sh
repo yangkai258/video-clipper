@@ -91,7 +91,7 @@ fi
 echo "✅ Worker Redis db 校验通过：${WORKER_DB}"
 
 echo "🚀 预加载 faster-whisper 模型..."
-/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python scripts/preload_whisper_model.py tiny > /dev/null 2>&1 &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python scripts/preload_whisper_model.py base > /dev/null 2>&1 &
 
 echo "🚀 启动测试版前端 (3030)..."
 cd frontend && npm run dev -- --config vite.config.beta.js --port 3030 > ../logs/frontend_beta.log 2>&1 &

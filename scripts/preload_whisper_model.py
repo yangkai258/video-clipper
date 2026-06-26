@@ -24,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def preload_model(model_name: str = "tiny"):
+def preload_model(model_name: str = "base"):
     """预加载 faster-whisper 模型"""
     logger.info(f"开始预加载 faster-whisper 模型：{model_name}")
     
@@ -47,6 +47,6 @@ def preload_model(model_name: str = "tiny"):
 
 
 if __name__ == "__main__":
-    model = sys.argv[1] if len(sys.argv) > 1 else "tiny"
+    model = sys.argv[1] if len(sys.argv) > 1 else "base"
     success = preload_model(model)
     sys.exit(0 if success else 1)

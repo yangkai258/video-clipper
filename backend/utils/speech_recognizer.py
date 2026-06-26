@@ -56,7 +56,7 @@ class SpeechRecognizer:
         video_path: Path,
         output_path: Path,
         method: SpeechRecognitionMethod = SpeechRecognitionMethod.FASTER_WHISPER,
-        model: str = "tiny",
+        model: str = "base",
         language: str = "zh"
     ) -> Path:
         """生成字幕"""
@@ -95,7 +95,7 @@ class SpeechRecognizer:
         self,
         video_path: Path,
         output_path: Path,
-        model: str = "tiny",
+        model: str = "base",
         language: str = "zh"
     ) -> Path:
         """使用 mlx-whisper 生成字幕（Apple Silicon 优化，3-5 倍加速）"""
@@ -152,7 +152,7 @@ class SpeechRecognizer:
         self,
         video_path: Path,
         output_path: Path,
-        model: str = "tiny",
+        model: str = "base",
         language: str = "zh"
     ) -> Path:
         """使用 faster-whisper 生成字幕"""

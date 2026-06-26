@@ -13,7 +13,7 @@ def generate_subtitle(video_path: Path, output_path: Path = None, in_memory: boo
 
     引擎选择策略：
     - Apple Silicon (macOS arm64) + mlx-whisper 可用 → 优先 mlx-whisper（3-5x 加速）
-    - 否则 → faster-whisper tiny（CPU int8）
+    - 否则 → faster-whisper base（CPU int8）— 比 tiny 准确率高 2-3 倍，速度慢 3-5x
     - 任何主引擎失败 → 回退 faster-whisper
 
     Args:
@@ -60,7 +60,7 @@ def generate_subtitle(video_path: Path, output_path: Path = None, in_memory: boo
                     video_path,
                     actual_output,
                     method=SpeechRecognitionMethod.MLX_WHISPER,
-                    model="tiny",
+                    model="base",
                 )
             except Exception as e:
                 logger.warning(f"mlx-whisper 失败：{e}，回退到 faster-whisper")
@@ -68,7 +68,7 @@ def generate_subtitle(video_path: Path, output_path: Path = None, in_memory: boo
                     video_path,
                     actual_output,
                     method=SpeechRecognitionMethod.FASTER_WHISPER,
-                    model="tiny",
+                    model="base",
                 )
         else:
             logger.info("使用 faster-whisper 生成字幕")
@@ -76,7 +76,7 @@ def generate_subtitle(video_path: Path, output_path: Path = None, in_memory: boo
                 video_path,
                 actual_output,
                 method=SpeechRecognitionMethod.FASTER_WHISPER,
-                model="tiny",
+                model="base",
             )
     except Exception as e:
         if temp_to_cleanup and temp_to_cleanup.exists():
