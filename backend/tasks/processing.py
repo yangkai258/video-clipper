@@ -98,7 +98,7 @@ def process_video_pipeline(
         
         # Step 2: 大纲提取（可选，失败时使用本地备用方案）
         logger.info("Step 2: 提取大纲")
-        outlines = extract_outline(srt_path, metadata_dir)
+        outlines = extract_outline(srt_path, metadata_dir, strategy_config)
         
         if not outlines:
             logger.warning("AI 大纲提取失败，使用本地备用方案（基于字幕段落自动切片）")
