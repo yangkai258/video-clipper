@@ -32,10 +32,14 @@ def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_co
     # 合并短段落（<3 秒）
     merged = merge_short_segments(segments, min_duration=3.0)
     logger.info(f"合并后 {len(merged)} 个段落")
-    
-    # 生成切片（根据策略的目标时长）
+
+    # 短视频场景不再走"按时间等分"——尊重语义边界：
+    # - 单段超长 → 硬切
+    # - 段间静默 > target/2 → 强制切
+    # - 累积接近 target → 切
+    # 短段（< target）也保持原长，不补齐
     clips = generate_clips(merged, target_duration=target_duration)
-    logger.info(f"生成 {len(clips)} 个切片")
+    logger.info(f"生成 {len(clips)} 个切片（按语义边界）")
     
     # 根据策略限制最大切片数
     if len(clips) > max_clips:
@@ -148,56 +152,120 @@ def merge_short_segments(segments: List[Dict], min_duration: float = 3.0) -> Lis
 
 
 def generate_clips(segments: List[Dict], target_duration: float = 45.0) -> List[Dict]:
-    """生成切片（按目标时长分组）"""
+    """按语义边界分组生成切片（不再按时间等分）
+
+    规则（按优先级）：
+    1. 单段超长（> target）→ 硬切
+    2. 段间静默（gap）> target / 2 → 强制切（语义断点，尊重原始结构）
+    3. 累积接近 target → 切
+    4. 否则累积
+
+    短视频也会尊重原始 SRT 段落结构（不补齐、不等分），所以
+    9.9s 的段就是 9.9s，6.4s 的段就是 6.4s。
+    """
     if not segments:
         return []
-    
+
+    silence_gap_threshold = target_duration / 2.0
+
+    # 单段就超长 → 直接硬切（不进循环）
+    if len(segments) == 1 and (segments[0]["end"] - segments[0]["start"]) > target_duration:
+        return [
+            {
+                "start": p["start"],
+                "end": p["end"],
+                "duration": p["end"] - p["start"],
+                "index": i + 1,
+                "segments": [p],
+            }
+            for i, p in enumerate(_split_long_segment(segments[0], target_duration))
+        ]
+
     clips = []
-    current_clip = {
+    current = {
         "start": segments[0]["start"],
         "end": segments[0]["end"],
         "segments": [segments[0]],
     }
-    
+
     for seg in segments[1:]:
-        clip_duration = current_clip["end"] - current_clip["start"]
-        
-        if clip_duration < target_duration:
-            # 继续添加
-            current_clip["end"] = seg["end"]
-            current_clip["segments"].append(seg)
-        else:
-            # 保存当前，开始新的
-            clips.append(current_clip)
-            current_clip = {
-                "start": seg["start"],
-                "end": seg["end"],
-                "segments": [seg],
-            }
-    
-    # 最后一个
-    if current_clip["segments"]:
-        clips.append(current_clip)
-    
-    # 添加索引和时长
-    for i, clip in enumerate(clips):
-        clip["index"] = i + 1
-        clip["duration"] = clip["end"] - clip["start"]
-    
+        seg_dur = seg["end"] - seg["start"]
+        cur_dur = current["end"] - current["start"]
+        gap = seg["start"] - current["end"]
+        combined_dur = seg["end"] - current["start"]
+
+        # 1. 单段超长 → 硬切
+        if seg_dur > target_duration:
+            if current["segments"]:
+                clips.append(current)
+            for part in _split_long_segment(seg, target_duration):
+                clips.append({
+                    "start": part["start"],
+                    "end": part["end"],
+                    "segments": [part],
+                })
+            current = {"start": seg["start"], "end": seg["end"], "segments": []}
+            continue
+
+        # 2. 段间静默太大 → 强制切（语义断点）
+        if gap > silence_gap_threshold and current["segments"]:
+            clips.append(current)
+            current = {"start": seg["start"], "end": seg["end"], "segments": [seg]}
+            continue
+
+        # 3. 累积超 target → 切
+        if combined_dur > target_duration and current["segments"]:
+            clips.append(current)
+            current = {"start": seg["start"], "end": seg["end"], "segments": [seg]}
+            continue
+
+        # 4. 累积
+        current["end"] = seg["end"]
+        current["segments"].append(seg)
+
+    if current["segments"]:
+        clips.append(current)
+
+    for i, c in enumerate(clips):
+        c["index"] = i + 1
+        c["duration"] = c["end"] - c["start"]
+
     return clips
+
+
+def _split_long_segment(seg: Dict, target_duration: float) -> List[Dict]:
+    """把一个超长字幕段硬切成多个 ≤ target_duration 的段（保留 text）"""
+    duration = seg["end"] - seg["start"]
+    if duration <= target_duration:
+        return [seg]
+    n = max(2, int(round(duration / target_duration)))
+    piece = duration / n
+    parts = []
+    for i in range(n):
+        parts.append({
+            "start": seg["start"] + i * piece,
+            "end": seg["start"] + (i + 1) * piece if i < n - 1 else seg["end"],
+            "text": seg.get("text", ""),
+        })
+    return parts
 
 
 def generate_simple_titles(clips: List[Dict]) -> List[Dict]:
     """生成简单标题（从内容提取关键词）"""
     titled = []
-    
+
     for clip in clips:
-        # 提取第一段的前 20 个字作为标题
-        text = clip["segments"][0]["text"] if clip["segments"] else ""
+        # 优先用 _title_text（短片兜底走的时间等分）；否则从 segments 取
+        if clip.get("_title_text"):
+            text = clip["_title_text"]
+        elif clip.get("segments"):
+            text = clip["segments"][0].get("text", "")
+        else:
+            text = ""
         # 清理标点
         text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', text)
         title = text[:30] + "..." if len(text) > 30 else text
-        
+
         titled.append({
             "index": clip["index"],
             "start": clip["start"],
@@ -206,7 +274,7 @@ def generate_simple_titles(clips: List[Dict]) -> List[Dict]:
             "title": f"片段 {clip['index']}: {title}" if title else f"片段 {clip['index']}",
             "score": 50,  # 默认分数
         })
-    
+
     return titled
 
 
