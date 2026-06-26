@@ -34,13 +34,13 @@ PRESET_STRATEGIES = [
         "id": "preset_complete_segments",
         "name": "📖 完整片段",
         "description": "保持内容完整性，每个切片讲述一个完整观点，适合中长视频",
-        "target_duration": 120,
+        "target_duration": 600,
         "max_clips": 15,
         "content_types": ["完整观点", "案例分析", "讲解"],
         "rules": {
             "min_score": 0.6,
             "prefer_continuity": True,
-            "min_segment_duration": 60
+            "min_segment_duration": 300
         }
     },
     {
@@ -228,6 +228,10 @@ async def create_style(style: StyleCreate):
         ))
         db.commit()
         
+        # 同步字幕配置到用户偏好
+        if style.subtitle_config:
+            _sync_subtitle_style_to_preferences(style.subtitle_config)
+        
         return {
             "id": style_id,
             "name": style.name,
@@ -304,6 +308,10 @@ async def update_style(style_id: str, style: StyleUpdate):
             
             cursor.execute(f"UPDATE styles SET {', '.join(updates)} WHERE id = ?", values)
             db.commit()
+            
+            # 同步字幕配置到用户偏好（自动复用功能）
+            if style.subtitle_config is not None:
+                _sync_subtitle_style_to_preferences(style.subtitle_config)
         
         cursor.execute("SELECT * FROM styles WHERE id = ?", (style_id,))
         row = cursor.fetchone()
@@ -326,6 +334,28 @@ async def update_style(style_id: str, style: StyleUpdate):
         }
     finally:
         db.close()
+
+
+def _sync_subtitle_style_to_preferences(subtitle_config: dict):
+    """将字幕配置同步到用户偏好设置"""
+    try:
+        import requests
+        # 调用本地 preferences API
+        requests.put(
+            "http://localhost:8000/api/v1/preferences/subtitle-style",
+            json={
+                "font_size": subtitle_config.get("font_size", 22),
+                "txt_color": subtitle_config.get("txt_color", "white"),
+                "stroke_color": subtitle_config.get("stroke_color", "white"),
+                "stroke_width": subtitle_config.get("stroke_width", 1),
+                "font": subtitle_config.get("font", "Arial"),
+                "position": subtitle_config.get("position", 0.33),
+            },
+            timeout=5
+        )
+    except Exception:
+        # 偏好同步失败不影响主流程，静默忽略
+        pass
 
 
 @router.delete("/styles/{style_id}")

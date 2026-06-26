@@ -6,6 +6,21 @@ set -e
 
 cd "$(dirname "$0")"
 
+# === Git 分支切换 ===
+TARGET_BRANCH="main"
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+if [ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]; then
+    echo "🔀 当前在 $CURRENT_BRANCH 分支，切到 $TARGET_BRANCH..."
+    if ! git diff-index --quiet HEAD --; then
+        echo "❌ 错误：工作区有未提交的改动，无法切分支"
+        echo "   解决：先 git add + git commit，或者 git stash"
+        echo "   查看：git status"
+        exit 1
+    fi
+    git checkout "$TARGET_BRANCH"
+    echo "✅ 已切到 $TARGET_BRANCH 分支"
+fi
+
 # ⚠️ 先清掉可能干扰的 .env 配置（避免默认值覆盖脚本里的 export）
 unset DATABASE_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND CELERY_QUEUE_NAME VITE_PORT VITE_API_PORT
 

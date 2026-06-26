@@ -19,6 +19,28 @@ from sqlalchemy.orm import selectinload
 router = APIRouter()
 
 
+def _get_last_subtitle_style() -> Optional[dict]:
+    """读取用户最后使用的字幕样式偏好"""
+    try:
+        import sqlite3
+        import os
+        import json
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        db_path = os.path.join(base_dir, "data", "video_clipper.db")
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT last_used_subtitle_style FROM user_preferences WHERE user_id = 'default'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row and row[0]:
+            return json.loads(row[0])
+    except Exception:
+        pass
+    return None
+
+
 def calculate_progress(project: Project) -> dict:
     """计算项目处理进度"""
     if project.status == "completed":
@@ -173,6 +195,10 @@ async def update_project_config(
     }
     project.updated_at = datetime.utcnow()
     
+    # 如果传入了字幕配置，同步到用户偏好（自动复用）
+    if config.get("subtitle_style"):
+        _sync_subtitle_style_to_preferences(config["subtitle_style"])
+    
     await db.commit()
     await db.refresh(project)
     
@@ -180,6 +206,26 @@ async def update_project_config(
         "message": "配置已更新",
         "processing_config": project.processing_config
     }
+
+
+def _sync_subtitle_style_to_preferences(subtitle_style: dict):
+    """将字幕配置同步到用户偏好设置"""
+    try:
+        import requests
+        requests.put(
+            "http://localhost:8000/api/v1/preferences/subtitle-style",
+            json={
+                "font_size": subtitle_style.get("font_size", 22),
+                "txt_color": subtitle_style.get("txt_color", "white"),
+                "stroke_color": subtitle_style.get("stroke_color", "white"),
+                "stroke_width": subtitle_style.get("stroke_width", 1),
+                "font": subtitle_style.get("font", "Arial"),
+                "position": subtitle_style.get("position", 0.33),
+            },
+            timeout=5
+        )
+    except Exception:
+        pass
 
 
 @router.post("/")
@@ -213,6 +259,9 @@ async def create_project(
             f.write(chunk)
             video_size += len(chunk)
     
+    # 读取用户字幕偏好，自动注入到项目配置
+    subtitle_style = _get_last_subtitle_style()
+    
     # 创建项目记录
     project = Project(
         id=project_id,
@@ -221,7 +270,7 @@ async def create_project(
         status="pending",
         video_path=str(video_path.relative_to(settings.PROJECTS_DIR)),
         video_size=video_size,
-        processing_config={},
+        processing_config={"subtitle_style": subtitle_style} if subtitle_style else {},
     )
     
     db.add(project)
