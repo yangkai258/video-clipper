@@ -2,40 +2,80 @@
 # 正式版启动脚本 (v1.0)
 # 使用正式数据库和 Redis DB 0
 
+set -e
+
 cd "$(dirname "$0")"
 
+# ⚠️ 先清掉可能干扰的 .env 配置（避免默认值覆盖脚本里的 export）
+unset DATABASE_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND CELERY_QUEUE_NAME VITE_PORT VITE_API_PORT
+
+# 正式版配置
 export DATABASE_URL="sqlite+aiosqlite:///./data/video_clipper.db"
 export CELERY_BROKER_URL="redis://localhost:6379/0"
 export CELERY_RESULT_BACKEND="redis://localhost:6379/0"
 export CELERY_QUEUE_NAME="processing"
-
-# 前端配置
 export VITE_PORT="3000"
 export VITE_API_PORT="8000"
 
+# === Sanity check ===
+echo "============================================"
+echo "  🎬 启动正式版 (Release)"
+echo "============================================"
+echo "📦 数据库:    $DATABASE_URL"
+echo "📡 Redis:     $CELERY_BROKER_URL"
+echo "🛰️  队列:     $CELERY_QUEUE_NAME"
+echo "🌐 前端端口:  $VITE_PORT"
+echo "🔌 后端端口:  $VITE_API_PORT"
+echo "============================================"
+
+# 检查端口占用
+if lsof -ti:8000 > /dev/null 2>&1; then
+    echo "❌ 错误：8000 端口已被占用（可能已经有服务在跑）"
+    echo "   解决：bash stop-release.sh 或者 pkill -9 -f 'uvicorn.*8000'"
+    exit 1
+fi
+if lsof -ti:3000 > /dev/null 2>&1; then
+    echo "⚠️  警告：3000 端口已被占用（前端可能冲突）"
+fi
+
+# 检查数据库文件是否存在
+DB_FILE=$(echo "$DATABASE_URL" | sed 's|.*///||')
+if [ ! -f "$DB_FILE" ]; then
+    echo "❌ 错误：数据库文件不存在：$DB_FILE"
+    exit 1
+fi
+echo "✅ 数据库文件存在：$DB_FILE"
+
+echo ""
 echo "🚀 启动正式版后端 (8000)..."
-/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 > logs/backend_release.log 2>&1 &
 BACKEND_PID=$!
 
 echo "🚀 启动正式版 Worker..."
-/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing > logs/celery_worker.log 2>&1 &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成
 sleep 3
 
 echo "🚀 预加载 faster-whisper 模型..."
-/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python scripts/preload_whisper_model.py tiny &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python scripts/preload_whisper_model.py tiny > /dev/null 2>&1 &
 
 echo "🚀 启动正式版前端 (3000)..."
-cd frontend && rm -rf node_modules/.vite && npm run dev -- --port 3000 &
+cd frontend && rm -rf node_modules/.vite && npm run dev -- --port 3000 > ../logs/frontend_release.log 2>&1 &
 FRONTEND_PID=$!
+cd ..
 
-echo "✅ 正式版服务已启动"
-echo "   后端 PID: $BACKEND_PID"
+echo ""
+echo "============================================"
+echo "  ✅ 正式版服务已启动"
+echo "============================================"
+echo "   后端 PID: $BACKEND_PID (http://localhost:8000)"
 echo "   Worker PID: $WORKER_PID"
-echo "   前端 PID: $FRONTEND_PID"
-echo "   前端：http://localhost:3000"
-echo "   后端：http://localhost:8000"
+echo "   前端 PID: $FRONTEND_PID (http://localhost:3000)"
+echo ""
+echo "📋 验证：在浏览器打开 http://localhost:3000"
+echo "🛑 停止：pkill -9 -f 'uvicorn.*8000' ; pkill -9 -f 'celery.*processing' ; pkill -9 -f 'vite.*3000'"
+echo "============================================"
 
 wait
