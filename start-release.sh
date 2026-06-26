@@ -73,6 +73,20 @@ WORKER_PID=$!
 # 等待 Worker 启动完成
 sleep 3
 
+# === Sanity check: 验证 Worker 真的连上了对的 Redis db ===
+WORKER_DB=$(grep -oE 'redis://[^/]+/[0-9]+' logs/celery_worker.log | head -1 | grep -oE '/[0-9]+$')
+EXPECTED_DB=$(echo "$CELERY_BROKER_URL" | grep -oE '/[0-9]+$')
+if [ -n "$WORKER_DB" ] && [ -n "$EXPECTED_DB" ] && [ "$WORKER_DB" != "$EXPECTED_DB" ]; then
+    echo ""
+    echo "❌❌❌ 严重：Worker 连的 Redis db (${WORKER_DB}) 跟 uvicorn (${EXPECTED_DB}) 不一致！"
+    echo "   原因：Worker 启动时 CELERY_BROKER_URL 没传进去（env 缺失）"
+    echo "   修复：请用 bash start-release.sh 启动（不要 nohup 手启）"
+    echo ""
+    pkill -9 -f 'celery.*processing ' 2>/dev/null
+    exit 1
+fi
+echo "✅ Worker Redis db 校验通过：${WORKER_DB}"
+
 echo "🚀 预加载 faster-whisper 模型..."
 /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python scripts/preload_whisper_model.py tiny > /dev/null 2>&1 &
 
