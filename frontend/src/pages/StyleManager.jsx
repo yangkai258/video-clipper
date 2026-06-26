@@ -83,16 +83,16 @@ function StyleManager() {
       setShowModal(false)
       loadStyles()
     } catch (e) {
-      alert(`Save failed: ${e.response?.data?.detail || e.message}`)
+      alert(`保存失败：${e.response?.data?.detail || e.message}`)
     }
   }
 
   const remove = async (id, name) => {
-    if (!confirm(`Delete "${name}"?`)) return
+    if (!confirm(`确定删除「${name}」？`)) return
     try {
       await axios.delete(`${API_BASE}/styles/${id}`)
       loadStyles()
-    } catch (e) { alert(`Delete failed: ${e.message}`) }
+    } catch (e) { alert(`删除失败：${e.message}`) }
   }
 
   const applyPreset = (preset) => {
@@ -117,25 +117,25 @@ function StyleManager() {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="sidebar-brand-mark">VC</div>
-          <div className="sidebar-brand-name">Video Clipper</div>
+          <div className="sidebar-brand-name">视频切片工具</div>
         </div>
-        <div className="sidebar-section-label">Workspace</div>
+        <div className="sidebar-section-label">工作区</div>
         <button className={`nav-item ${location.pathname === '/' ? 'active' : ''}`} onClick={() => navigate('/')}>
           <span className="nav-item-icon">▶</span>
-          Reels
+          切片项目
           <span className="nav-item-count">—</span>
         </button>
         <button className={`nav-item ${location.pathname === '/styles' ? 'active' : ''}`} onClick={() => navigate('/styles')}>
           <span className="nav-item-icon">✎</span>
-          Styles
+          风格管理
           <span className="nav-item-count">{styles.length}</span>
         </button>
         <div className="sidebar-bottom">
           <div className="user-chip">
             <div className="user-avatar">U</div>
             <div>
-              <div className="user-name">Studio</div>
-              <div className="user-status">● Online</div>
+              <div className="user-name">工作台</div>
+              <div className="user-status">● 在线</div>
             </div>
           </div>
         </div>
@@ -145,28 +145,28 @@ function StyleManager() {
         <div className="topbar">
           <div className="topbar-left">
             <span className="breadcrumb">
-              <span>Studio</span>
+              <span>工作台</span>
               <span className="breadcrumb-sep">/</span>
-              <span className="page-title">Styles</span>
+              <span className="page-title">风格管理</span>
             </span>
           </div>
           <div className="topbar-right">
-            <button className="btn btn-primary" onClick={openCreate}>+ New Style</button>
+            <button className="btn btn-primary" onClick={openCreate}>+ 新建风格</button>
           </div>
         </div>
 
         <div className="content fade-in">
           <div className="content-header">
             <div>
-              <div className="content-title">Custom Styles</div>
-              <div className="content-subtitle">{styles.length} configured · editorial voices for AI slicing</div>
+              <div className="content-title">自定义风格</div>
+              <div className="content-subtitle">{styles.length} 个 · AI 切片的编辑风格</div>
             </div>
           </div>
 
           {presets.length > 0 && (
             <>
               <div style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim)', fontFamily: 'var(--text-mono)', marginBottom: 'var(--space-3)' }}>
-                Quick start from preset
+                从预设快速开始
               </div>
               <div className="style-list" style={{ marginBottom: 'var(--space-6)' }}>
                 {presets.map(p => (
@@ -177,11 +177,11 @@ function StyleManager() {
                       <div className="style-item-desc">{p.description}</div>
                     </div>
                     <div className="style-item-meta">
-                      <span>DUR <b style={{ color: 'var(--text-default)' }}>{p.target_duration}s</b></span>
-                      <span>MAX <b style={{ color: 'var(--text-default)' }}>{p.max_clips}</b></span>
+                      <span>时长 <b style={{ color: 'var(--text-default)' }}>{p.target_duration}s</b></span>
+                      <span>最多 <b style={{ color: 'var(--text-default)' }}>{p.max_clips}</b></span>
                     </div>
                     <div className="style-item-actions">
-                      <button className="btn btn-ghost btn-sm" onClick={() => { applyPreset(p); openCreate(); }}>Use</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => { applyPreset(p); openCreate(); }}>使用</button>
                     </div>
                   </div>
                 ))}
@@ -190,7 +190,7 @@ function StyleManager() {
           )}
 
           <div style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim)', fontFamily: 'var(--text-mono)', marginBottom: 'var(--space-3)' }}>
-            Your styles / {styles.length}
+            我的风格 / {styles.length}
           </div>
 
           {styles.length > 0 ? (
@@ -208,11 +208,11 @@ function StyleManager() {
                     )}
                   </div>
                   <div className="style-item-meta">
-                    <span>DUR <b style={{ color: 'var(--text-default)' }}>{s.target_duration}s</b></span>
-                    <span>MAX <b style={{ color: 'var(--text-default)' }}>{s.max_clips}</b></span>
+                    <span>时长 <b style={{ color: 'var(--text-default)' }}>{s.target_duration}s</b></span>
+                    <span>最多 <b style={{ color: 'var(--text-default)' }}>{s.max_clips}</b></span>
                   </div>
                   <div className="style-item-actions">
-                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(s)}>编辑</button>
                     <button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(s.id, s.name)}>✕</button>
                   </div>
                 </div>
@@ -221,8 +221,8 @@ function StyleManager() {
           ) : (
             <div className="empty">
               <div className="empty-icon">∅</div>
-              <div className="empty-title">No custom styles</div>
-              <div className="empty-hint">Create one or use a preset above</div>
+              <div className="empty-title">还没有自定义风格</div>
+              <div className="empty-hint">创建一个，或从上方选个预设</div>
             </div>
           )}
         </div>
@@ -234,13 +234,13 @@ function StyleManager() {
             <div className="modal-header">
               <div className="modal-title">
                 <div className="modal-title-icon" />
-                {editing ? `Edit · ${editing.name}` : 'New style'}
+                {editing ? `编辑 · ${editing.name}` : '新建风格'}
               </div>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}>✕</button>
             </div>
 
             <div className="tabs" style={{ paddingLeft: 'var(--space-6)' }}>
-              {[['basic', 'Basic'], ['voice', 'Voice'], ['position', 'Positioning'], ['subtitle', 'Subtitle']].map(([k, label]) => (
+              {[['basic', '基础设置'], ['voice', '识别规则'], ['position', '风格定位'], ['subtitle', '字幕配置']].map(([k, label]) => (
                 <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{label}</button>
               ))}
             </div>
@@ -249,20 +249,20 @@ function StyleManager() {
               {tab === 'basic' && (
                 <>
                   <div className="form-group">
-                    <label>Name *</label>
-                    <input type="text" value={form.name} onChange={e => update('name', e.target.value)} placeholder="e.g. ZOU_LIVESTREAM" />
+                    <label>风格名称 *</label>
+                    <input type="text" value={form.name} onChange={e => update('name', e.target.value)} placeholder="如：邹总直播切片" />
                   </div>
                   <div className="form-group">
-                    <label>Description</label>
-                    <textarea value={form.description} onChange={e => update('description', e.target.value)} rows={2} placeholder="What this style does..." />
+                    <label>描述</label>
+                    <textarea value={form.description} onChange={e => update('description', e.target.value)} rows={2} placeholder="这个风格做什么..." />
                   </div>
                   <div className="form-row">
                     <div>
-                      <label>Target duration (s)</label>
+                      <label>目标时长（秒/切片）</label>
                       <input className="mono" type="number" value={form.target_duration} onChange={e => update('target_duration', parseInt(e.target.value) || 60)} />
                     </div>
                     <div>
-                      <label>Max clips</label>
+                      <label>最大切片数</label>
                       <input className="mono" type="number" value={form.max_clips} onChange={e => update('max_clips', parseInt(e.target.value) || 20)} />
                     </div>
                   </div>
@@ -272,17 +272,17 @@ function StyleManager() {
               {tab === 'voice' && (
                 <>
                   <div className="form-group">
-                    <label>Content guidelines</label>
-                    <textarea value={form.content_guidelines} onChange={e => update('content_guidelines', e.target.value)} rows={3} placeholder="What content types to look for..." />
+                    <label>内容识别规则</label>
+                    <textarea value={form.content_guidelines} onChange={e => update('content_guidelines', e.target.value)} rows={3} placeholder="要识别哪些内容类型，如经济时事/创业故事..." />
                   </div>
                   <div className="form-row">
                     <div>
-                      <label>Keep (positive signals)</label>
-                      <textarea value={form.keep_rules} onChange={e => update('keep_rules', e.target.value)} rows={5} placeholder="Patterns to retain..." />
+                      <label>保留规则（正面信号）</label>
+                      <textarea value={form.keep_rules} onChange={e => update('keep_rules', e.target.value)} rows={5} placeholder="要保留的模式..." />
                     </div>
                     <div>
-                      <label>Remove (negative signals)</label>
-                      <textarea value={form.remove_rules} onChange={e => update('remove_rules', e.target.value)} rows={5} placeholder="Patterns to discard..." />
+                      <label>删除规则（负面信号）</label>
+                      <textarea value={form.remove_rules} onChange={e => update('remove_rules', e.target.value)} rows={5} placeholder="要丢弃的模式..." />
                     </div>
                   </div>
                 </>
@@ -291,17 +291,17 @@ function StyleManager() {
               {tab === 'position' && (
                 <>
                   <div className="form-group">
-                    <label>Editorial positioning</label>
-                    <textarea value={form.style_positioning} onChange={e => update('style_positioning', e.target.value)} rows={3} placeholder="Steady, pragmatic, sharp-tongued entrepreneur..." />
+                    <label>风格定位</label>
+                    <textarea value={form.style_positioning} onChange={e => update('style_positioning', e.target.value)} rows={3} placeholder="沉稳、务实、有阅历、敢说真话的企业家..." />
                   </div>
                   <div className="form-row">
                     <div>
-                      <label>Min score (0-1)</label>
+                      <label>最低评分（0-1）</label>
                       <input className="mono" type="number" step="0.05" min="0" max="1" value={form.rules.min_score} onChange={e => updateRule('min_score', parseFloat(e.target.value) || 0.7)} />
                     </div>
                     <div>
-                      <label>Priority keywords</label>
-                      <input className="mono" type="text" value={form.rules.priority_keywords?.join(', ') || ''} onChange={e => updateRule('priority_keywords', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="I think, the key point" />
+                      <label>优先关键词（逗号分隔）</label>
+                      <input className="mono" type="text" value={form.rules.priority_keywords?.join(', ') || ''} onChange={e => updateRule('priority_keywords', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="我觉得, 关键是, 最重要" />
                     </div>
                   </div>
                 </>
@@ -311,47 +311,47 @@ function StyleManager() {
                 <>
                   <div className="form-row">
                     <div>
-                      <label>Font size (px)</label>
+                      <label>字体大小（像素）</label>
                       <input className="mono" type="number" value={form.subtitle_config?.font_size || 22} onChange={e => updateSub('font_size', parseInt(e.target.value) || 22)} />
                     </div>
                     <div>
-                      <label>Vertical position (%)</label>
+                      <label>垂直位置（视频高度 %）</label>
                       <input className="mono" type="number" min="0" max="100" value={Math.round((form.subtitle_config?.position || 0.33) * 100)} onChange={e => updateSub('position', (parseInt(e.target.value) || 33) / 100)} />
                     </div>
                     <div>
-                      <label>Text color</label>
+                      <label>文字颜色</label>
                       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                         <input type="color" value={form.subtitle_config?.txt_color || '#ffffff'} onChange={e => updateSub('txt_color', e.target.value)} />
                         <input type="text" value={form.subtitle_config?.txt_color || '#ffffff'} onChange={e => updateSub('txt_color', e.target.value)} />
                       </div>
                     </div>
                     <div>
-                      <label>Stroke color</label>
+                      <label>描边颜色</label>
                       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                         <input type="color" value={form.subtitle_config?.stroke_color || '#ffffff'} onChange={e => updateSub('stroke_color', e.target.value)} />
                         <input type="text" value={form.subtitle_config?.stroke_color || '#ffffff'} onChange={e => updateSub('stroke_color', e.target.value)} />
                       </div>
                     </div>
                     <div>
-                      <label>Stroke width</label>
+                      <label>描边宽度</label>
                       <input className="mono" type="number" step="0.5" min="0" max="5" value={form.subtitle_config?.stroke_width || 1} onChange={e => updateSub('stroke_width', parseFloat(e.target.value) || 1)} />
                     </div>
                     <div>
-                      <label>Font</label>
+                      <label>字体</label>
                       <select value={form.subtitle_config?.font || 'Arial'} onChange={e => updateSub('font', e.target.value)}>
                         <option value="Arial">Arial</option>
-                        <option value="PingFang SC">PingFang SC</option>
-                        <option value="Noto Sans SC">Noto Sans SC</option>
-                        <option value="Microsoft YaHei">Microsoft YaHei</option>
-                        <option value="SimHei">SimHei</option>
+                        <option value="PingFang SC">苹方（PingFang SC）</option>
+                        <option value="Noto Sans SC">思源黑体（Noto Sans SC）</option>
+                        <option value="Microsoft YaHei">微软雅黑</option>
+                        <option value="SimHei">黑体（SimHei）</option>
                       </select>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
                     {[
-                      { label: 'Default', config: { font_size: 22, txt_color: 'white', stroke_color: 'white', stroke_width: 1, font: 'Arial', position: 0.33 } },
-                      { label: 'Variety', config: { font_size: 24, txt_color: 'yellow', stroke_color: 'black', stroke_width: 2, font: 'Arial', position: 0.35 } },
-                      { label: 'Documentary', config: { font_size: 20, txt_color: 'white', stroke_color: 'black', stroke_width: 1.5, font: 'PingFang SC', position: 0.30 } },
+                      { label: '默认', config: { font_size: 22, txt_color: 'white', stroke_color: 'white', stroke_width: 1, font: 'Arial', position: 0.33 } },
+                      { label: '综艺风', config: { font_size: 24, txt_color: 'yellow', stroke_color: 'black', stroke_width: 2, font: 'Arial', position: 0.35 } },
+                      { label: '纪录片', config: { font_size: 20, txt_color: 'white', stroke_color: 'black', stroke_width: 1.5, font: 'PingFang SC', position: 0.30 } },
                     ].map(p => (
                       <button key={p.label} className="btn btn-sm" onClick={() => setForm(prev => ({ ...prev, subtitle_config: p.config }))}>
                         {p.label}
@@ -363,9 +363,9 @@ function StyleManager() {
             </div>
 
             <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => setShowModal(false)}>取消</button>
               <button className="btn btn-primary" onClick={save} disabled={!form.name}>
-                {editing ? 'Save changes' : 'Create style'}
+                {editing ? '保存修改' : '创建风格'}
               </button>
             </div>
           </div>

@@ -24,7 +24,7 @@ function App() {
       const res = await axios.get(`${API_BASE}/projects/`)
       setProjects(res.data.projects)
     } catch (e) {
-      console.error('Load failed:', e)
+      console.error('加载项目失败:', e)
     }
   }
 
@@ -49,7 +49,7 @@ function App() {
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
-    const name = prompt('Reel name:', file.name.replace(/\.[^/.]+$/, ''))
+    const name = prompt('项目名称：', file.name.replace(/\.[^/.]+$/, ''))
     if (!name) return
     setUploading(true)
     setUploadProgress(0)
@@ -66,7 +66,7 @@ function App() {
       setUploading(false)
       loadProjects()
     } catch (e) {
-      alert(`Upload failed: ${e.response?.data?.detail || e.message}`)
+      alert(`上传失败：${e.response?.data?.detail || e.message}`)
       setUploading(false)
     }
   }
@@ -92,13 +92,13 @@ function App() {
           subtitle_style: strategy.subtitle_config || null,
         })
       })
-    } catch (e) { console.error('Config failed:', e) }
+    } catch (e) { console.error('配置失败：', e) }
 
     try {
       await axios.post(`${API_BASE}/projects/${pendingProject.id}/process`)
       loadProjects()
     } catch (e) {
-      alert(`Process failed: ${e.response?.data?.detail || e.message}`)
+      alert(`处理失败：${e.response?.data?.detail || e.message}`)
     }
     setPendingProject(null)
   }
@@ -108,16 +108,16 @@ function App() {
       await axios.post(`${API_BASE}/projects/${id}/process`)
       loadProjects()
     } catch (e) {
-      alert(`Failed: ${e.response?.data?.detail || e.message}`)
+      alert(`启动失败：${e.response?.data?.detail || e.message}`)
     }
   }
 
   const deleteProject = async (id, name) => {
-    if (!confirm(`Delete "${name}"?`)) return
+    if (!confirm(`确定删除「${name}」？此操作不可恢复。`)) return
     try {
       await axios.delete(`${API_BASE}/projects/${id}`)
       loadProjects()
-    } catch (e) { alert(`Delete failed: ${e.message}`) }
+    } catch (e) { alert(`删除失败：${e.message}`) }
   }
 
   const formatTC = (s) => {
@@ -132,6 +132,13 @@ function App() {
     return new Date(iso + 'Z').toLocaleString('zh-CN', {
       timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
     })
+  }
+
+  const statusLabel = {
+    pending: '待处理',
+    processing: '处理中',
+    completed: '已完成',
+    failed: '失败'
   }
 
   const filteredProjects = projects.filter(p => {
@@ -153,20 +160,19 @@ function App() {
 
   return (
     <div className="app-shell">
-      {/* === Sidebar === */}
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="sidebar-brand-mark">VC</div>
-          <div className="sidebar-brand-name">Video Clipper</div>
+          <div className="sidebar-brand-name">视频切片工具</div>
         </div>
 
-        <div className="sidebar-section-label">Workspace</div>
+        <div className="sidebar-section-label">工作区</div>
         <button
           className={`nav-item ${location.pathname === '/' ? 'active' : ''}`}
           onClick={() => navigate('/')}
         >
           <span className="nav-item-icon">▶</span>
-          Reels
+          切片项目
           <span className="nav-item-count">{projects.length}</span>
         </button>
         <button
@@ -174,7 +180,7 @@ function App() {
           onClick={() => navigate('/styles')}
         >
           <span className="nav-item-icon">✎</span>
-          Styles
+          风格管理
           <span className="nav-item-count">{customStyles.length}</span>
         </button>
 
@@ -182,35 +188,33 @@ function App() {
           <div className="user-chip">
             <div className="user-avatar">U</div>
             <div>
-              <div className="user-name">Studio</div>
-              <div className="user-status">● Online</div>
+              <div className="user-name">工作台</div>
+              <div className="user-status">● 在线</div>
             </div>
           </div>
         </div>
       </aside>
 
-      {/* === Main === */}
       <main className="main">
-        {/* Topbar */}
         <div className="topbar">
           <div className="topbar-left">
             <span className="breadcrumb">
-              <span>Studio</span>
+              <span>工作台</span>
               <span className="breadcrumb-sep">/</span>
-              <span className="page-title">Reels</span>
+              <span className="page-title">切片项目</span>
             </span>
           </div>
           <div className="topbar-right">
             <input
               className="search-input"
               type="text"
-              placeholder="Search reels…"
+              placeholder="搜索项目..."
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
             <label className="btn btn-primary upload-compact">
               <span>⏵</span>
-              <span>New Reel</span>
+              <span>新建切片</span>
               <input type="file" accept="video/*" onChange={handleUpload} disabled={uploading} />
             </label>
           </div>
@@ -219,19 +223,20 @@ function App() {
         <div className="content fade-in">
           <div className="content-header">
             <div>
-              <div className="content-title">All Reels</div>
-              <div className="content-subtitle">{projects.length} total · {uploading ? `uploading ${uploadProgress}%` : 'idle'}</div>
+              <div className="content-title">所有切片</div>
+              <div className="content-subtitle">
+                {projects.length} 个项目 · {uploading ? `上传中 ${uploadProgress}%` : '空闲'}
+              </div>
             </div>
           </div>
 
-          {/* Tabs */}
           <div className="tabs">
             {[
-              ['all', 'All'],
-              ['processing', 'Processing'],
-              ['completed', 'Completed'],
-              ['pending', 'Pending'],
-              ['failed', 'Failed'],
+              ['all', '全部'],
+              ['processing', '处理中'],
+              ['completed', '已完成'],
+              ['pending', '待处理'],
+              ['failed', '失败'],
             ].map(([k, label]) => (
               <button
                 key={k}
@@ -244,7 +249,6 @@ function App() {
             ))}
           </div>
 
-          {/* Reel list */}
           {filteredProjects.length > 0 ? (
             <div className="reel-list">
               {filteredProjects.map(p => (
@@ -256,15 +260,15 @@ function App() {
                 >
                   <div className="reel-status-dot" />
                   <div className="reel-name">{p.name}</div>
-                  <span className={`status-pill`} data-status={p.status}>{p.status}</span>
+                  <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
                   <div className="reel-cell">{formatTC(p.video_duration)}</div>
-                  <div className="reel-cell">{p.clip_count || 0} clips</div>
+                  <div className="reel-cell">{p.clip_count || 0} 个切片</div>
                   <div className="reel-cell">{formatDate(p.created_at)}</div>
                   <div className="reel-actions" onClick={e => e.stopPropagation()}>
                     {p.status === 'pending' && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => startProcessing(p.id)}>▶</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => startProcessing(p.id)}>▶ 处理</button>
                     )}
-                    <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>Open</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
                     <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)}>✕</button>
                   </div>
                   {p.status === 'processing' && (
@@ -278,21 +282,22 @@ function App() {
           ) : (
             <div className="empty">
               <div className="empty-icon">∅</div>
-              <div className="empty-title">No reels yet</div>
-              <div className="empty-hint">Click <b style={{ color: 'var(--accent)' }}>⏵ New Reel</b> in the top right to upload your first video</div>
+              <div className="empty-title">还没有切片项目</div>
+              <div className="empty-hint">
+                点击右上角 <b style={{ color: 'var(--accent)' }}>⏵ 新建切片</b> 上传第一个视频
+              </div>
             </div>
           )}
         </div>
       </main>
 
-      {/* === Strategy modal === */}
       {showStrategyModal && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <div className="modal-title">
                 <div className="modal-title-icon" />
-                Choose render strategy
+                选择处理策略
               </div>
               <button className="btn btn-ghost btn-sm" onClick={() => { setShowStrategyModal(false); setPendingProject(null) }}>✕</button>
             </div>
@@ -300,8 +305,8 @@ function App() {
             <div className="modal-body">
               <div className="toggle-row">
                 <div>
-                  <div className="toggle-info-label">Burn subtitles into video</div>
-                  <div className="toggle-info-hint">Off = pure cut, faster · On = subtitled, slower</div>
+                  <div className="toggle-info-label">烧录字幕到视频</div>
+                  <div className="toggle-info-hint">关 = 纯剪（更快）· 开 = 带字幕（更慢）</div>
                 </div>
                 <div
                   className={`toggle-switch ${withSubtitle ? 'on' : ''}`}
@@ -310,7 +315,7 @@ function App() {
               </div>
 
               <div style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim)', fontFamily: 'var(--text-mono)', marginBottom: 'var(--space-3)' }}>
-                Presets
+                预设策略
               </div>
               <div className="strategy-grid">
                 {presets.map((p, i) => (
@@ -320,8 +325,8 @@ function App() {
                       <div className="strategy-name">{p.name.split(' ').slice(1).join(' ') || p.name}</div>
                       <div className="strategy-desc">{p.description}</div>
                       <div className="strategy-meta">
-                        <span>DUR <b>{p.target_duration}s</b></span>
-                        <span>MAX <b>{p.max_clips}</b></span>
+                        <span>时长 <b>{p.target_duration}s</b></span>
+                        <span>最多 <b>{p.max_clips}</b></span>
                       </div>
                     </div>
                   </button>
@@ -331,7 +336,7 @@ function App() {
               {customStyles.length > 0 && (
                 <>
                   <div style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim)', fontFamily: 'var(--text-mono)', margin: 'var(--space-5) 0 var(--space-3)' }}>
-                    Custom styles
+                    自定义风格
                   </div>
                   <div className="strategy-grid">
                     {customStyles.map(s => (
@@ -341,8 +346,8 @@ function App() {
                           <div className="strategy-name">{s.name}</div>
                           {s.description && <div className="strategy-desc">{s.description}</div>}
                           <div className="strategy-meta">
-                            <span>DUR <b>{s.target_duration}s</b></span>
-                            <span>MAX <b>{s.max_clips}</b></span>
+                            <span>时长 <b>{s.target_duration}s</b></span>
+                            <span>最多 <b>{s.max_clips}</b></span>
                           </div>
                         </div>
                       </button>
@@ -353,7 +358,7 @@ function App() {
             </div>
 
             <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => { setShowStrategyModal(false); setPendingProject(null) }}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => { setShowStrategyModal(false); setPendingProject(null) }}>取消</button>
             </div>
           </div>
         </div>
