@@ -315,10 +315,6 @@ function StyleManager() {
                       <input className="mono" type="number" value={form.subtitle_config?.font_size || 28} onChange={e => updateSub('font_size', parseInt(e.target.value) || 28)} />
                     </div>
                     <div>
-                      <label>垂直位置（视频高度 %）</label>
-                      <input className="mono" type="number" min="0" max="100" value={Math.round((form.subtitle_config?.position || 0.78) * 100)} onChange={e => updateSub('position', (parseInt(e.target.value) || 78) / 100)} />
-                    </div>
-                    <div>
                       <label>文字颜色</label>
                       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                         <input type="color" value={form.subtitle_config?.txt_color || '#ffffff'} onChange={e => updateSub('txt_color', e.target.value)} />
@@ -349,6 +345,105 @@ function StyleManager() {
                         <option value="Microsoft YaHei">微软雅黑（Windows）</option>
                         <option value="SimHei">黑体（SimHei）</option>
                       </select>
+                    </div>
+                  </div>
+
+                  {/* === 字幕位置：滑块 + 快捷 + 9:16 预览 === */}
+                  <div style={{ marginTop: 'var(--space-4)' }}>
+                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+                      <span>字幕位置（视频高度）</span>
+                      <span className="mono" style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                        {Math.round((form.subtitle_config?.position || 0.78) * 100)}%
+                      </span>
+                    </label>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 'var(--space-5)', alignItems: 'stretch' }}>
+                      {/* 左侧：滑块 + 快捷按钮 */}
+                      <div>
+                        <input
+                          type="range"
+                          min="5" max="95" step="1"
+                          value={Math.round((form.subtitle_config?.position || 0.78) * 100)}
+                          onChange={e => updateSub('position', parseInt(e.target.value) / 100)}
+                          style={{
+                            width: '100%', accentColor: 'var(--accent)',
+                            background: 'var(--bg-base)', height: '4px', borderRadius: '2px',
+                            cursor: 'pointer'
+                          }}
+                        />
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between',
+                          fontFamily: 'var(--text-mono)', fontSize: 10,
+                          color: 'var(--text-dim)', marginTop: 'var(--space-1)'
+                        }}>
+                          <span>0% 顶部</span>
+                          <span>50% 居中</span>
+                          <span>100% 底部</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                          {[
+                            { label: '顶部', pos: 0.10, hint: '封面感，适合标题' },
+                            { label: '居中', pos: 0.50, hint: '对白场景' },
+                            { label: '底部', pos: 0.85, hint: '口播字幕位' },
+                          ].map(p => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              className={`btn btn-sm ${Math.abs((form.subtitle_config?.position || 0.78) - p.pos) < 0.03 ? 'btn-primary' : 'btn-ghost'}`}
+                              onClick={() => updateSub('position', p.pos)}
+                              title={p.hint}
+                              style={{ flex: 1 }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 右侧：9:16 预览框 */}
+                      <div style={{
+                        position: 'relative',
+                        width: '90px', height: '160px',
+                        background: 'var(--bg-base)',
+                        border: '1px solid var(--border-default)',
+                        borderRadius: 'var(--radius-md)',
+                        overflow: 'hidden',
+                        flexShrink: 0
+                      }}>
+                        {/* 9:16 grid 标线 */}
+                        <div style={{
+                          position: 'absolute', left: 0, right: 0,
+                          top: '33%', height: '1px', background: 'var(--border-subtle)'
+                        }} />
+                        <div style={{
+                          position: 'absolute', left: 0, right: 0,
+                          top: '66%', height: '1px', background: 'var(--border-subtle)'
+                        }} />
+                        {/* 字幕占位 */}
+                        <div style={{
+                          position: 'absolute', left: 0, right: 0,
+                          top: `${(form.subtitle_config?.position || 0.78) * 100}%`,
+                          transform: 'translateY(-50%)',
+                          textAlign: 'center', padding: '0 4px',
+                          color: form.subtitle_config?.txt_color || '#fff',
+                          textShadow: `0 0 ${form.subtitle_config?.stroke_width || 2}px ${form.subtitle_config?.stroke_color || '#000'}`,
+                          fontSize: 8,
+                          fontFamily: 'var(--text-sans)',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          pointerEvents: 'none'
+                        }}>
+                          示例字幕
+                        </div>
+                        <div style={{
+                          position: 'absolute', bottom: 2, left: 0, right: 0,
+                          textAlign: 'center',
+                          fontFamily: 'var(--text-mono)', fontSize: 8,
+                          color: 'var(--text-dim)'
+                        }}>
+                          9:16
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
