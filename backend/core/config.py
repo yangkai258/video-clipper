@@ -28,9 +28,14 @@ class Settings(BaseSettings):
     # Celery Worker 队列配置
     CELERY_QUEUE_NAME: str = os.getenv("CELERY_QUEUE_NAME", "processing")
     
-    # AI 配置
+    # AI 配置 - MiniMax（主）
+    MINIMAX_API_KEY: str = os.getenv("MINIMAX_API_KEY", "")
+    MINIMAX_BASE_URL: str = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
+    MINIMAX_MODEL: str = os.getenv("MINIMAX_MODEL", "MiniMax-Text-01")
+
+    # AI 配置 - DashScope（保留兼容，备用）
     DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
-    MODEL_NAME: str = "qwen3.5-plus"
+    MODEL_NAME: str = os.getenv("LEGACY_MODEL_NAME", "qwen3.5-plus")  # 旧字段，保留兼容
     
     # 语音识别配置
     SPEECH_RECOGNITION_METHOD: str = "auto"

@@ -58,23 +58,52 @@ def process_video_pipeline(
         clips_dir.mkdir(parents=True, exist_ok=True)
         collections_dir.mkdir(parents=True, exist_ok=True)
         
-        # Step 1: 字幕生成
+        # Step 1: 字幕生成（按 with_subtitle 决定是否落盘到项目目录）
         logger.info("Step 1: 生成字幕")
-        srt_path = metadata_dir / "input.srt"
-        
-        if input_srt_path and Path(input_srt_path).exists():
-            logger.info(f"使用现有字幕文件：{input_srt_path}")
-            import shutil
-            # 检查是否是同一个文件
-            if Path(input_srt_path).resolve() != srt_path.resolve():
-                shutil.copy(input_srt_path, srt_path)
+        # 从 strategy_config 提取 with_subtitle 标志（默认 True 保持向后兼容）
+        with_subtitle = strategy_config.get("with_subtitle", True) if strategy_config else True
+        logger.info(f"字幕模式：{'落盘到项目目录' if with_subtitle else 'in_memory 模式（不写项目目录，用完即删）'}")
+
+        if with_subtitle:
+            # 旧行为：写盘到 metadata/input.srt
+            srt_path = metadata_dir / "input.srt"
+            if input_srt_path and Path(input_srt_path).exists():
+                logger.info(f"使用现有字幕文件：{input_srt_path}")
+                import shutil
+                if Path(input_srt_path).resolve() != srt_path.resolve():
+                    shutil.copy(input_srt_path, srt_path)
+                else:
+                    logger.info("字幕文件已在正确位置，跳过复制")
             else:
-                logger.info("字幕文件已在正确位置，跳过复制")
+                logger.info("自动生成字幕（落盘模式）")
+                srt_path = generate_subtitle(input_video_path, srt_path)
         else:
-            logger.info("自动生成字幕")
-            srt_path = generate_subtitle(input_video_path, srt_path)
-        
-        if not srt_path or not srt_path.exists():
+            # Y 方案：写到 /tmp 临时文件，不污染项目目录
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=".srt",
+                prefix=f"video_clipper_{project_id}_",
+                delete=False,
+                mode="w",
+                encoding="utf-8",
+                dir="/tmp",
+            )
+            tmp.close()
+            srt_path = Path(tmp.name)
+            logger.info(f"自动生成字幕（临时文件模式）：{srt_path}")
+            if input_srt_path and Path(input_srt_path).exists():
+                # 用户传入了字幕，直接复制到临时文件
+                import shutil
+                shutil.copy(input_srt_path, srt_path)
+                logger.info(f"使用现有字幕文件（复制到临时）：{input_srt_path}")
+            else:
+                # generate_subtitle 写入临时文件（落盘但项目目录干净）
+                result = generate_subtitle(input_video_path, srt_path)
+                # 确保 srt_path 指向生成的文件
+                if result != srt_path and Path(result).exists():
+                    srt_path = Path(result)
+
+        if not srt_path or not Path(srt_path).exists():
             raise Exception("字幕生成失败")
         
         # 清理内存
@@ -176,7 +205,15 @@ def process_video_pipeline(
             raise Exception(f"文件生成失败，缺失：{missing_files[:3]}")
         
         logger.info(f"文件完整性验证通过：{len(titled_clips)} clips + {len(collections) - len(missing_collections)} collections")
-        
+
+        # 清理临时 SRT 文件（Y 方案：with_subtitle=false 时使用 /tmp 临时文件）
+        if not with_subtitle and srt_path and Path(srt_path).exists():
+            try:
+                Path(srt_path).unlink()
+                logger.info(f"已清理临时 SRT 文件：{srt_path}")
+            except Exception as e:
+                logger.warning(f"清理临时 SRT 失败：{e}")
+
         # Step 10: 写入数据库
         logger.info("Step 10: 写入数据库")
         db = None

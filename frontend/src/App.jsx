@@ -11,7 +11,7 @@ function App() {
   const [pendingProject, setPendingProject] = useState(null)
   const [presets, setPresets] = useState([])
   const [customStyles, setCustomStyles] = useState([])
-  const [withSubtitle, setWithSubtitle] = useState(true)  // 默认勾选（向后兼容）
+  const [withSubtitle, setWithSubtitle] = useState(false)  // 默认不勾（Y 方案：不勾 = 不生成字幕文件 + 视频不烧字幕）
   const navigate = useNavigate()
 
   const API_BASE = '/api/v1'

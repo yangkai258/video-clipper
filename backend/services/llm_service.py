@@ -3,30 +3,78 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def extract_outline(srt_path: Path, metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:
+def _call_llm(prompt: str, model: Optional[str] = None) -> Optional[str]:
+    """调用 MiniMax LLM（OpenAI 兼容接口），返回生成的文本内容
+
+    Args:
+        prompt: 完整 prompt
+        model: 模型名（默认用 settings.MINIMAX_MODEL）
+
+    Returns:
+        LLM 返回的文本内容；失败返回 None
+    """
+    from ..core.config import settings
+    import httpx
+
+    api_key = settings.MINIMAX_API_KEY
+    if not api_key:
+        logger.error("MINIMAX_API_KEY 未配置")
+        return None
+
+    base_url = settings.MINIMAX_BASE_URL.rstrip("/")
+    model = model or settings.MINIMAX_MODEL
+
+    url = f"{base_url}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+    }
+
+    try:
+        with httpx.Client(timeout=120.0) as client:
+            resp = client.post(url, json=payload, headers=headers)
+            if resp.status_code != 200:
+                logger.error(f"MiniMax API 调用失败：{resp.status_code} {resp.text[:200]}")
+                return None
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.error(f"MiniMax API 调用异常：{e}")
+        return None
+
+
+def extract_outline(srt_path: Path, metadata_dir: Path, strategy_config: dict = None, srt_text: str = None) -> List[Dict]:
     """从字幕提取大纲
 
     Args:
-        srt_path: 字幕文件路径
+        srt_path: 字幕文件路径（与 srt_text 二选一）
         metadata_dir: 元数据目录
         strategy_config: 策略配置（可选），包含 style_positioning / keep_rules / remove_rules / content_guidelines
+        srt_text: SRT 文本字符串（可选，用于 in-memory 模式，不落盘）
     """
-    from ..core.config import settings
-    import dashscope
-
-    dashscope.api_key = settings.DASHSCOPE_API_KEY
-
     strategy_config = strategy_config or {}
 
-    # 读取字幕
-    logger.info("读取字幕文件...")
-    with open(srt_path, "r", encoding="utf-8") as f:
-        srt_content = f.read()
+    # 读取字幕（优先用 srt_text，否则从 srt_path 读）
+    if srt_text is None:
+        if srt_path is None or not Path(srt_path).exists():
+            logger.error("extract_outline 需要 srt_path 或 srt_text")
+            return []
+        logger.info("读取字幕文件...")
+        with open(srt_path, "r", encoding="utf-8") as f:
+            srt_content = f.read()
+    else:
+        srt_content = srt_text
+        logger.info("使用内存中的字幕文本（不落盘模式）")
 
     # 提取纯文本
     text = _extract_text_from_srt(srt_content)
@@ -67,18 +115,13 @@ def extract_outline(srt_path: Path, metadata_dir: Path, strategy_config: dict = 
 """
 
         try:
-            response = dashscope.Generation.call(
-                model=settings.MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            if response.status_code == 200:
-                content = response.output.text
+            content = _call_llm(prompt)
+            if content:
                 outlines = _parse_outline_response(content)
                 all_outlines.extend(outlines)
                 logger.info(f"第 {i+1} 块提取到 {len(outlines)} 个话题")
             else:
-                logger.warning(f"LLM 调用失败：{response.code}")
+                logger.warning(f"第 {i+1} 块 LLM 调用失败")
 
         except Exception as e:
             logger.error(f"处理第 {i+1} 块失败：{e}")
@@ -254,15 +297,6 @@ def create_timeline(outlines: List[Dict], srt_path: Path, metadata_dir: Path, st
 
 def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_config: dict) -> List[Dict]:
     """用 LLM 把话题映射到字幕中的具体时间戳"""
-    from ..core.config import settings
-    import dashscope
-
-    dashscope.api_key = settings.DASHSCOPE_API_KEY
-
-    # 读取 SRT（带时间戳的完整内容）
-    with open(srt_path, "r", encoding="utf-8") as f:
-        srt_content = f.read()
-
     # 解析 SRT → 时间戳列表（减少传给 LLM 的 token）
     parsed_segments = parse_srt_for_timeline(srt_path)
     if not parsed_segments:
@@ -317,16 +351,10 @@ def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_con
 ]
 """
 
-    response = dashscope.Generation.call(
-        model=settings.MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    if response.status_code != 200:
-        logger.warning(f"LLM 调用失败：{response.code}")
+    content = _call_llm(prompt)
+    if content is None:
         return []
 
-    content = response.output.text
     timeline = _parse_timeline_response(content)
 
     # 验证：每个 item 必须有 title + start_time + end_time
@@ -474,11 +502,6 @@ def generate_titles(scored_clips: List[Dict], metadata_dir: Path, srt_path: Path
 
 def _generate_titles_with_llm(scored_clips: List[Dict], srt_path: Path, strategy_config: dict) -> List[Dict]:
     """用 LLM 为每个切片生成吸引人的标题"""
-    from ..core.config import settings
-    import dashscope
-
-    dashscope.api_key = settings.DASHSCOPE_API_KEY
-
     # 解析 SRT
     segments = parse_srt_for_timeline(srt_path)
     if not segments:
@@ -526,16 +549,11 @@ def _generate_titles_with_llm(scored_clips: List[Dict], srt_path: Path, strategy
 ]
 """
 
-    response = dashscope.Generation.call(
-        model=settings.MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    if response.status_code != 200:
-        logger.warning(f"LLM 调用失败：{response.code}")
+    content = _call_llm(prompt)
+    if content is None:
         return []
 
-    titles_map = _parse_titles_response(response.output.text)
+    titles_map = _parse_titles_response(content)
     if not titles_map:
         return []
 
