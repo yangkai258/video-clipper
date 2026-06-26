@@ -274,53 +274,22 @@ function App() {
 
       {/* 策略选择弹窗 */}
       {showStrategyModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          overflow: 'auto'
-        }}>
-          <div className="card" style={{
-            maxWidth: '1000px',
-            width: '90%',
-            maxHeight: '90vh',
-            overflow: 'auto',
-            margin: '20px'
-          }}>
+        <div className="modal-overlay">
+          <div className="modal-content">
             <h2 style={{ marginBottom: '8px' }}>📦 选择切片策略</h2>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
               选择一个适合你内容的切片方式，处理开始后将根据此策略自动生成切片
             </p>
 
             {/* 字幕开关 */}
-            <div style={{
-              marginBottom: '24px',
-              padding: '12px 16px',
-              backgroundColor: 'rgba(59, 130, 246, 0.08)',
-              borderRadius: '8px',
-              border: '1px solid rgba(59, 130, 246, 0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px'
-            }}>
+            <div className="subtitle-toggle">
               <input
                 type="checkbox"
                 id="with-subtitle-checkbox"
                 checked={withSubtitle}
                 onChange={(e) => setWithSubtitle(e.target.checked)}
-                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
               />
-              <label
-                htmlFor="with-subtitle-checkbox"
-                style={{ cursor: 'pointer', userSelect: 'none', flex: 1 }}
-              >
+              <label htmlFor="with-subtitle-checkbox">
                 <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>🎬 视频烧录字幕</div>
                 <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
                   勾选：AI 分析后把字幕烧到视频里 · 不勾：纯剪片子（字幕仍会生成，仅供 AI 分析用）
@@ -329,36 +298,18 @@ function App() {
             </div>
 
             {/* 预设策略 */}
-            <h3 style={{ marginBottom: '16px' }}>🎯 预设策略</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+            <h3 style={{ marginBottom: 'var(--space-3)' }}>🎯 预设策略</h3>
+            <div className="strategy-grid">
               {presets.map(preset => (
                 <button
                   key={preset.id}
+                  className="strategy-card"
                   onClick={() => selectStrategy(preset)}
-                  style={{
-                    textAlign: 'left',
-                    padding: '16px',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--bg-primary)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.borderColor = 'var(--color-primary)'
-                    e.target.style.transform = 'translateY(-2px)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.borderColor = 'var(--border-color)'
-                    e.target.style.transform = 'translateY(0)'
-                  }}
                 >
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>{preset.name.split(' ')[0]}</div>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{preset.name.split(' ').slice(1).join(' ')}</div>
-                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                    {preset.description}
-                  </div>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+                  <div className="strategy-emoji">{preset.name.split(' ')[0]}</div>
+                  <div className="strategy-title">{preset.name.split(' ').slice(1).join(' ')}</div>
+                  <div className="strategy-desc">{preset.description}</div>
+                  <div className="strategy-meta">
                     ⏱️ {preset.target_duration}秒/切片 · 📹 最多{preset.max_clips}个
                   </div>
                 </button>
@@ -368,51 +319,26 @@ function App() {
             {/* 自定义风格 */}
             {customStyles.length > 0 && (
               <>
-                <h3 style={{ marginBottom: '16px' }}>📋 我的风格 ({customStyles.length})</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                <h3 style={{ marginTop: 'var(--space-5)', marginBottom: 'var(--space-3)' }}>📋 我的风格 ({customStyles.length})</h3>
+                <div className="strategy-grid">
                   {customStyles.map(style => (
                     <button
                       key={style.id}
+                      className="strategy-card"
                       onClick={() => selectStrategy(style)}
-                      style={{
-                        textAlign: 'left',
-                        padding: '16px',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        backgroundColor: 'var(--bg-primary)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.target.style.borderColor = 'var(--color-primary)'
-                        e.target.style.transform = 'translateY(-2px)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.borderColor = 'var(--border-color)'
-                        e.target.style.transform = 'translateY(0)'
-                      }}
                     >
-                      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: 'var(--text-lg)' }}>
+                      <div className="strategy-title" style={{ fontSize: 'var(--text-lg)', marginBottom: 'var(--space-2)' }}>
                         {style.name}
                       </div>
                       {style.description && (
-                        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                          {style.description}
-                        </div>
+                        <div className="strategy-desc">{style.description}</div>
                       )}
-                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
+                      <div className="strategy-meta">
                         ⏱️ {style.target_duration}秒/切片 · 📹 最多{style.max_clips}个
                       </div>
                       {style.content_guidelines && (
-                        <div style={{ 
-                          fontSize: 'var(--text-xs)', 
-                          color: 'var(--text-secondary)', 
-                          padding: '6px', 
-                          backgroundColor: 'rgba(59, 130, 246, 0.05)', 
-                          borderRadius: '4px',
-                          marginTop: '8px'
-                        }}>
-                          📌 {style.content_guidelines.substring(0, 50)}{style.content_guidelines.length > 50 ? '...' : ''}
+                        <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                          📌 {style.content_guidelines.substring(0, 60)}{style.content_guidelines.length > 60 ? '...' : ''}
                         </div>
                       )}
                     </button>
@@ -422,8 +348,8 @@ function App() {
             )}
 
             {/* 取消按钮 */}
-            <div style={{ marginTop: '24px', textAlign: 'center' }}>
-              <button 
+            <div style={{ marginTop: 'var(--space-5)', textAlign: 'center' }}>
+              <button
                 className="btn btn-secondary"
                 onClick={() => {
                   setShowStrategyModal(false)

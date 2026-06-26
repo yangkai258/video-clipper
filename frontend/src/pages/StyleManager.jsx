@@ -189,43 +189,43 @@ function StyleManager() {
 
               {/* 内容识别规则 */}
               {style.content_guidelines && (
-                <div style={{ marginTop: '12px', padding: '8px', backgroundColor: 'rgba(59, 130, 246, 0.05)', borderRadius: '4px' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>📌 内容识别</div>
-                  <div style={{ fontSize: 'var(--text-sm)' }}>{style.content_guidelines}</div>
+                <div className="field-block">
+                  <div className="field-block-label">📌 内容识别</div>
+                  <div className="field-block-content">{style.content_guidelines}</div>
                 </div>
               )}
 
               {/* 保留/删除规则 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
                 {style.keep_rules && (
-                  <div style={{ padding: '8px', backgroundColor: 'rgba(34, 197, 94, 0.05)', borderRadius: '4px' }}>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>✅ 保留</div>
-                    <div style={{ fontSize: 'var(--text-sm)' }}>{style.keep_rules}</div>
+                  <div className="field-block">
+                    <div className="field-block-label">✅ 保留</div>
+                    <div className="field-block-content">{style.keep_rules}</div>
                   </div>
                 )}
                 {style.remove_rules && (
-                  <div style={{ padding: '8px', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderRadius: '4px' }}>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>❌ 删除</div>
-                    <div style={{ fontSize: 'var(--text-sm)' }}>{style.remove_rules}</div>
+                  <div className="field-block">
+                    <div className="field-block-label">❌ 删除</div>
+                    <div className="field-block-content">{style.remove_rules}</div>
                   </div>
                 )}
               </div>
 
               {/* 风格定位 */}
               {style.style_positioning && (
-                <div style={{ marginTop: '12px', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  🎯 {style.style_positioning}
+                <div style={{ marginTop: 'var(--space-3)' }}>
+                  <span className="rule-tag positioning">🎯 {style.style_positioning}</span>
                 </div>
               )}
 
               {/* 字幕配置 */}
               {style.subtitle_config && (
-                <div style={{ marginTop: '12px', padding: '8px', backgroundColor: 'rgba(168, 85, 247, 0.05)', borderRadius: '4px' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>🎬 字幕配置</div>
-                  <div style={{ fontSize: 'var(--text-sm)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                    <span>📏 {style.subtitle_config.font_size}px</span>
-                    <span>🎨 {style.subtitle_config.txt_color}/{style.subtitle_config.stroke_color}</span>
-                    <span>📍 {Math.round(style.subtitle_config.position * 100)}% 高度</span>
+                <div className="field-block">
+                  <div className="field-block-label">🎬 字幕配置</div>
+                  <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginTop: 'var(--space-1)' }}>
+                    <span className="rule-tag content">📏 {style.subtitle_config.font_size}px</span>
+                    <span className="rule-tag content">🎨 {style.subtitle_config.txt_color}/{style.subtitle_config.stroke_color}</span>
+                    <span className="rule-tag content">📍 {Math.round(style.subtitle_config.position * 100)}% 高度</span>
                   </div>
                 </div>
               )}
@@ -252,26 +252,8 @@ function StyleManager() {
 
       {/* 创建/编辑弹窗 */}
       {showCreateModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          overflow: 'auto'
-        }}>
-          <div className="card" style={{
-            maxWidth: '900px',
-            width: '90%',
-            maxHeight: '90vh',
-            overflow: 'auto',
-            margin: '20px'
-          }}>
+        <div className="modal-overlay">
+          <div className="modal-content">
             <h2 style={{ marginBottom: '24px' }}>
               {editingStyle ? '✏️ 编辑风格' : '➕ 创建新风格'}
             </h2>
@@ -279,48 +261,40 @@ function StyleManager() {
             {/* 基础设置 */}
             <div style={{ marginBottom: '24px' }}>
               <h3>基础设置</h3>
-              <div style={{ display: 'grid', gap: '12px', marginTop: '12px' }}>
+              <div style={{ display: 'grid', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>风格名称 *</label>
+                  <label>风格名称 *</label>
                   <input
                     type="text"
-                    className="form-control"
                     value={formData.name}
                     onChange={(e) => updateField('name', e.target.value)}
                     placeholder="如：邹总直播切片"
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>描述</label>
+                  <label>描述</label>
                   <textarea
-                    className="form-control"
                     value={formData.description}
                     onChange={(e) => updateField('description', e.target.value)}
                     placeholder="风格描述..."
                     rows={2}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                   />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                   <div>
-                    <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>目标时长（秒/切片）</label>
+                    <label>目标时长（秒/切片）</label>
                     <input
                       type="number"
-                      className="form-control"
                       value={formData.target_duration}
                       onChange={(e) => updateField('target_duration', parseInt(e.target.value) || 60)}
-                      style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>最大切片数</label>
+                    <label>最大切片数</label>
                     <input
                       type="number"
-                      className="form-control"
                       value={formData.max_clips}
                       onChange={(e) => updateField('max_clips', parseInt(e.target.value) || 20)}
-                      style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                     />
                   </div>
                 </div>
@@ -334,29 +308,27 @@ function StyleManager() {
                 描述需要识别的内容类型，如"经济时事/创业故事/连麦互动"
               </p>
               <textarea
-                className="form-control"
                 value={formData.content_guidelines}
                 onChange={(e) => updateField('content_guidelines', e.target.value)}
                 placeholder="1. 经济实事/宏观解读&#10;2. 邹总亲身经历/创业故事&#10;3. 连麦互动 + 行业分析"
                 rows={4}
-                style={{ width: '100%', marginTop: '12px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+                style={{ marginTop: 'var(--space-3)' }}
               />
             </div>
 
             {/* 保留/删除规则 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: '24px' }}>
               <div>
                 <h3>✅ 保留规则</h3>
                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
                   需要保留的内容类型
                 </p>
                 <textarea
-                  className="form-control"
                   value={formData.keep_rules}
                   onChange={(e) => updateField('keep_rules', e.target.value)}
                   placeholder="1. 保留完整逻辑&#10;2. 保留金句、总结&#10;3. 保留核心回答"
                   rows={6}
-                  style={{ width: '100%', marginTop: '12px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+                  style={{ marginTop: 'var(--space-3)' }}
                 />
               </div>
               <div>
@@ -365,12 +337,11 @@ function StyleManager() {
                   需要删除的内容类型
                 </p>
                 <textarea
-                  className="form-control"
                   value={formData.remove_rules}
                   onChange={(e) => updateField('remove_rules', e.target.value)}
                   placeholder="1. 删除长时间沉默&#10;2. 删除重复啰嗦&#10;3. 删除无关闲聊"
                   rows={6}
-                  style={{ width: '100%', marginTop: '12px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+                  style={{ marginTop: 'var(--space-3)' }}
                 />
               </div>
             </div>
@@ -382,12 +353,11 @@ function StyleManager() {
                 描述人设和风格，如"沉稳、务实、有阅历的企业家"
               </p>
               <textarea
-                className="form-control"
                 value={formData.style_positioning}
                 onChange={(e) => updateField('style_positioning', e.target.value)}
                 placeholder="沉稳、务实、有阅历、懂商业、敢说真话的企业家"
                 rows={2}
-                style={{ width: '100%', marginTop: '12px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+                style={{ marginTop: 'var(--space-3)' }}
               />
             </div>
 
@@ -397,98 +367,84 @@ function StyleManager() {
               <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
                 配置字幕样式，适用于该风格的所有视频
               </p>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '12px' }}>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginTop: 'var(--space-3)' }}>
                 {/* 字体大小 */}
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>字体大小 (px)</label>
+                  <label>字体大小 (px)</label>
                   <input
                     type="number"
-                    className="form-control"
                     value={formData.subtitle_config?.font_size || 22}
                     onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, font_size: parseInt(e.target.value) || 22 })}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                   />
                 </div>
 
                 {/* 垂直位置 */}
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>垂直位置 (视频高度的 %)</label>
+                  <label>垂直位置 (视频高度的 %)</label>
                   <input
                     type="number"
                     step="1"
                     min="0"
                     max="100"
-                    className="form-control"
                     value={Math.round((formData.subtitle_config?.position || 0.33) * 100)}
                     onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, position: (parseInt(e.target.value) || 33) / 100 })}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                   />
                 </div>
 
                 {/* 文字颜色 */}
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>文字颜色</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                  <label>文字颜色</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                     <input
                       type="color"
                       value={formData.subtitle_config?.txt_color || '#ffffff'}
                       onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, txt_color: e.target.value })}
-                      style={{ width: '40px', height: '36px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                     />
                     <input
                       type="text"
-                      className="form-control"
                       value={formData.subtitle_config?.txt_color || '#ffffff'}
                       onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, txt_color: e.target.value })}
-                      style={{ flex: 1, padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                     />
                   </div>
                 </div>
 
                 {/* 描边颜色 */}
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>描边颜色</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                  <label>描边颜色</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                     <input
                       type="color"
                       value={formData.subtitle_config?.stroke_color || '#ffffff'}
                       onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, stroke_color: e.target.value })}
-                      style={{ width: '40px', height: '36px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                     />
                     <input
                       type="text"
-                      className="form-control"
                       value={formData.subtitle_config?.stroke_color || '#ffffff'}
                       onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, stroke_color: e.target.value })}
-                      style={{ flex: 1, padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                     />
                   </div>
                 </div>
 
                 {/* 描边宽度 */}
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>描边宽度</label>
+                  <label>描边宽度</label>
                   <input
                     type="number"
                     step="0.5"
                     min="0"
                     max="5"
-                    className="form-control"
                     value={formData.subtitle_config?.stroke_width || 1}
                     onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, stroke_width: parseFloat(e.target.value) || 1 })}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                   />
                 </div>
 
                 {/* 字体选择 */}
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>字体</label>
+                  <label>字体</label>
                   <select
-                    className="form-control"
                     value={formData.subtitle_config?.font || 'Arial'}
                     onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, font: e.target.value })}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                   >
                     <option value="Arial">Arial (默认)</option>
                     <option value="PingFang SC">PingFang SC (苹果方)</option>
@@ -500,7 +456,7 @@ function StyleManager() {
               </div>
 
               {/* 预设快捷按钮 */}
-              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={() => updateField('subtitle_config', {
@@ -511,7 +467,6 @@ function StyleManager() {
                     font: 'Arial',
                     position: 0.33
                   })}
-                  style={{ fontSize: 'var(--text-xs)', padding: '4px 8px' }}
                 >
                   📋 默认（白字白边 33%）
                 </button>
@@ -525,7 +480,6 @@ function StyleManager() {
                     font: 'Arial',
                     position: 0.35
                   })}
-                  style={{ fontSize: 'var(--text-xs)', padding: '4px 8px' }}
                 >
                   🎬 综艺风（黄字黑边）
                 </button>
@@ -539,7 +493,6 @@ function StyleManager() {
                     font: 'PingFang SC',
                     position: 0.30
                   })}
-                  style={{ fontSize: 'var(--text-xs)', padding: '4px 8px' }}
                 >
                   📺 纪录片风（白字黑边）
                 </button>
@@ -549,36 +502,32 @@ function StyleManager() {
             {/* 高级规则 */}
             <div style={{ marginBottom: '24px' }}>
               <h3>⚙️ 高级规则</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>最低评分阈值 (0-1)</label>
+                  <label>最低评分阈值 (0-1)</label>
                   <input
                     type="number"
                     step="0.05"
                     min="0"
                     max="1"
-                    className="form-control"
                     value={formData.rules.min_score}
                     onChange={(e) => updateRule('min_score', parseFloat(e.target.value) || 0.7)}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>优先关键词（逗号分隔）</label>
+                  <label>优先关键词（逗号分隔）</label>
                   <input
                     type="text"
-                    className="form-control"
                     value={formData.rules.priority_keywords?.join(', ') || ''}
                     onChange={(e) => updateRule('priority_keywords', e.target.value.split(',').map(k => k.trim()).filter(k => k))}
                     placeholder="我觉得，我认为，关键是"
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
                   />
                 </div>
               </div>
             </div>
 
             {/* 操作按钮 */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
               <button
                 className="btn btn-secondary"
                 onClick={() => setShowCreateModal(false)}
