@@ -29,6 +29,8 @@ export DATABASE_URL="sqlite+aiosqlite:///./data/video_clipper.db"
 export CELERY_BROKER_URL="redis://localhost:6379/0"
 export CELERY_RESULT_BACKEND="redis://localhost:6379/0"
 export CELERY_QUEUE_NAME="processing"
+export HF_ENDPOINT="https://hf-mirror.com"
+export HF_HUB_DOWNLOAD_TIMEOUT=60
 export VITE_PORT="3000"
 export VITE_API_PORT="8000"
 
