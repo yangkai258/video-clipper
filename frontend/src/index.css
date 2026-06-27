@@ -1,44 +1,12 @@
-/* Video Clipper - Linear-style SaaS Dashboard
-   Reference: Linear, Vercel, YouTube Studio, Notion
-   Principle: Compact, professional, high information density. */
+/* Video Clipper - Glassmorphism + 亮暗切换
+   v2.1 升级: 全玻璃风格 + 双主题 (暖橙夕阳渐变背景)
+   Reference: macOS Sonoma, Apple Vision Pro, Linear SaaS */
 
 :root {
-  /* === Surfaces (Linear-style, true dark) === */
-  --bg-base: #0a0a0c;
-  --bg-elevated: #131316;
-  --bg-overlay: #1c1c20;
-  --bg-hover: #1f1f24;
-
-  /* === Border === */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.10);
-  --border-strong: rgba(255, 255, 255, 0.16);
-
-  /* === Accent (Linear purple) === */
-  --accent: #5e6ad2;
-  --accent-hover: #7170ff;
-  --accent-active: #4f5ac4;
-  --accent-soft: rgba(94, 106, 210, 0.12);
-  --accent-glow: rgba(94, 106, 210, 0.35);
-
-  /* === Status === */
-  --status-active: #4cb782;
-  --status-pending: #f2c94c;
-  --status-error: #eb5757;
-  --status-recording: #ff7a7a;
-
-  /* === Text === */
-  --text-bright: #fafafa;
-  --text-default: rgba(255, 255, 255, 0.78);
-  --text-muted: rgba(255, 255, 255, 0.50);
-  --text-dim: rgba(255, 255, 255, 0.30);
-  --text-on-accent: #ffffff;
-
-  /* === Typography === */
+  /* === 共用变量（所有主题都用） === */
   --text-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Display', system-ui, sans-serif;
   --text-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, ui-monospace, monospace;
 
-  /* === Spacing === */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -48,7 +16,6 @@
   --space-7: 32px;
   --space-8: 48px;
 
-  /* === Type scale === */
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
@@ -57,20 +24,117 @@
   --text-xl: 20px;
   --text-2xl: 28px;
 
-  /* === Radius === */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
 
-  /* === Animation === */
   --transition-fast: 0.1s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* === Layout === */
   --sidebar-width: 240px;
   --topbar-height: 52px;
+}
+
+/* === 🌙 深色主题（默认） === */
+:root[data-theme="dark"] {
+  /* Surfaces */
+  --bg-base: #0a0a0c;
+  --bg-elevated: #131316;
+  --bg-overlay: #1c1c20;
+  --bg-hover: #1f1f24;
+  --bg-glass: rgba(19, 19, 22, 0.55);
+  --bg-card: rgba(28, 28, 32, 0.6);
+  --bg-modal: rgba(20, 20, 24, 0.75);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  /* Accent（保留 Linear 紫蓝 — 用户没说不许这个色，只是不许渐变含紫） */
+  --accent: #5e6ad2;
+  --accent-hover: #7170ff;
+  --accent-active: #4f5ac4;
+  --accent-soft: rgba(94, 106, 210, 0.12);
+  --accent-glow: rgba(94, 106, 210, 0.35);
+
+  /* Status */
+  --status-active: #4cb782;
+  --status-pending: #f2c94c;
+  --status-error: #eb5757;
+  --status-recording: #ff7a7a;
+
+  /* Text */
+  --text-bright: #fafafa;
+  --text-default: rgba(255, 255, 255, 0.78);
+  --text-muted: rgba(255, 255, 255, 0.50);
+  --text-dim: rgba(255, 255, 255, 0.30);
+  --text-on-accent: #ffffff;
+
+  /* Glassmorphism 配置 */
+  --blur-strength: 24px;
+  --saturate-strength: 180%;
+
+  /* 背景渐变（暖橙夕阳 — 无紫） */
+  --bg-gradient: linear-gradient(135deg, #fb923c 0%, #ec4899 50%, #06b6d4 100%);
+  --bg-gradient-soft: linear-gradient(135deg, rgba(251, 146, 60, 0.85) 0%, rgba(236, 72, 153, 0.85) 50%, rgba(6, 182, 212, 0.85) 100%);
+
+  /* Shadow (dark mode) */
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* === ☀️ 浅色主题 === */
+:root[data-theme="light"] {
+  /* Surfaces (macOS 标准浅灰) */
+  --bg-base: #f5f5f7;
+  --bg-elevated: rgba(255, 255, 255, 0.85);
+  --bg-overlay: rgba(255, 255, 255, 0.92);
+  --bg-hover: rgba(255, 255, 255, 1.0);
+  --bg-glass: rgba(255, 255, 255, 0.55);
+  --bg-card: rgba(255, 255, 255, 0.72);
+  --bg-modal: rgba(255, 255, 255, 0.92);
+
+  /* Borders */
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.10);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  /* Accent (浅色背景用暖橙 — 不用紫蓝) */
+  --accent: #ea580c;
+  --accent-hover: #f97316;
+  --accent-active: #c2410c;
+  --accent-soft: rgba(234, 88, 12, 0.12);
+  --accent-glow: rgba(234, 88, 12, 0.30);
+
+  /* Status (深色保持，浅色用更深的色调保证对比度) */
+  --status-active: #16a34a;
+  --status-pending: #ca8a04;
+  --status-error: #dc2626;
+  --status-recording: #f87171;
+
+  /* Text (contrast 16:1, WCAG AAA) */
+  --text-bright: #1a1a1f;
+  --text-default: rgba(26, 26, 31, 0.85);
+  --text-muted: rgba(60, 64, 72, 0.65);
+  --text-dim: rgba(80, 84, 92, 0.45);
+  --text-on-accent: #ffffff;
+
+  /* Glassmorphism 配置 (浅色 blur 稍弱 — 白底过模糊会糊) */
+  --blur-strength: 20px;
+  --saturate-strength: 150%;
+
+  /* 背景渐变（同一暖橙夕阳 — 两主题一致让毛玻璃感觉连续） */
+  --bg-gradient: linear-gradient(135deg, #fb923c 0%, #ec4899 50%, #06b6d4 100%);
+  --bg-gradient-soft: linear-gradient(135deg, rgba(251, 146, 60, 0.75) 0%, rgba(236, 72, 153, 0.75) 50%, rgba(6, 182, 212, 0.75) 100%);
+
+  /* Shadow (light mode) */
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
 }
 
 * {
@@ -84,11 +148,13 @@ body {
   font-size: var(--text-base);
   line-height: 1.5;
   color: var(--text-default);
-  background: var(--bg-base);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'cv11', 'ss01';
+  transition: background var(--transition-slow);
 }
 
 .mono {
@@ -106,7 +172,9 @@ body {
 
 /* === Sidebar (Linear-style) === */
 .sidebar {
-  background: var(--bg-elevated);
+  background: var(--bg-glass);
+  backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
+  -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
   border-right: 1px solid var(--border-subtle);
   padding: var(--space-5) var(--space-3);
   display: flex;
@@ -116,6 +184,7 @@ body {
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  transition: background var(--transition-slow), border-color var(--transition-slow);
 }
 
 .sidebar-brand {
@@ -257,7 +326,9 @@ body {
 .topbar {
   height: var(--topbar-height);
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-base);
+  background: var(--bg-glass);
+  backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
+  -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -417,9 +488,16 @@ body {
   gap: var(--space-4);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
-  transition: background var(--transition-fast);
+  transition: background var(--transition-base), color var(--transition-base);
   cursor: pointer;
   font-size: var(--text-sm);
+  /* 列表项轻毛玻璃 */
+  background: var(--bg-glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  margin: 2px 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
 }
 
 .reel-row:last-child {
@@ -648,15 +726,18 @@ body {
 }
 
 .modal {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
+  background: var(--bg-modal);
+  backdrop-filter: blur(calc(var(--blur-strength) * 1.5)) saturate(var(--saturate-strength));
+  -webkit-backdrop-filter: blur(calc(var(--blur-strength) * 1.5)) saturate(var(--saturate-strength));
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   width: 100%;
   max-width: 880px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-modal);
+  transition: background var(--transition-slow), border-color var(--transition-slow);
 }
 
 .modal-header {
@@ -1042,7 +1123,40 @@ input[type="color"] {
   color: var(--text-bright);
 }
 
-/* === Watch Folders === */
+/* === Theme Toggle (顶栏亮暗切换按钮) === */
+.theme-toggle {
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: var(--transition-base);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 36px;
+  color: var(--text-bright);
+}
+.theme-toggle:hover {
+  background: var(--bg-card);
+  border-color: var(--border-strong);
+  transform: scale(1.05);
+}
+.theme-toggle:active {
+  transform: scale(0.95);
+}
+.theme-toggle-icon {
+  font-size: 16px;
+  line-height: 1;
+  display: inline-block;
+  transition: transform var(--transition-base);
+}
+.theme-toggle:hover .theme-toggle-icon {
+  transform: rotate(15deg);
+}
 .watch-folders {
   padding: 8px 4px;
 }

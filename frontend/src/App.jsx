@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import { ChunkedUploader, formatBytes, formatSpeed, formatTime } from './ChunkedUploader'
 import WatchFolders from './pages/WatchFolders'
+import ThemeToggle from './ThemeToggle'
 import './index.css'
 
 function App() {
@@ -316,6 +317,7 @@ function App() {
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+            <ThemeToggle />
             <label className="btn btn-primary upload-compact">
               <span>⏵</span>
               <span>新建切片</span>
