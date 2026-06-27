@@ -69,7 +69,7 @@ echo "🚀 启动测试版后端 (8030)..."
 BACKEND_PID=$!
 
 echo "🚀 启动测试版 Worker..."
-/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=5 -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成

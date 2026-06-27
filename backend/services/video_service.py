@@ -165,8 +165,8 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
         logger.warning("未找到有效字幕，跳过烧录")
         video.write_videofile(
             str(output_path),
-            codec='libx264', audio_codec='aac', preset='medium',
-            ffmpeg_params=['-movflags', '+faststart', '-g', '60', '-keyint_min', '60'],
+            codec='h264_videotoolbox', audio_codec='aac',
+            ffmpeg_params=['-movflags', '+faststart', '-g', '60', '-keyint_min', '60', '-b:v', '8M'],
         )
         return
     
@@ -214,8 +214,8 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
     #                     保证首帧后能快速 seek / 接续解码
     final.write_videofile(
         str(output_path),
-        codec='libx264', audio_codec='aac', preset='medium',
-        ffmpeg_params=['-movflags', '+faststart', '-g', '60', '-keyint_min', '60'],
+        codec='h264_videotoolbox', audio_codec='aac',
+        ffmpeg_params=['-movflags', '+faststart', '-g', '60', '-keyint_min', '60', '-b:v', '8M'],
     )
     
     logger.info(f"字幕烧录完成：{output_path}")

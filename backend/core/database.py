@@ -1,5 +1,5 @@
 """数据库初始化"""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -7,19 +7,25 @@ from .config import settings
 from ..models.database import Base
 
 
-# 创建数据库引擎
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    future=True
-)
-
 # 同步引擎（用于 Celery 等同步场景）
+# 多 worker 并发时必须用 WAL 模式 + busy_timeout 避免 "database is locked"
 sync_engine = create_engine(
     settings.DATABASE_URL.replace("sqlite+aiosqlite", "sqlite"),
     echo=settings.DEBUG,
-    future=True
+    future=True,
+    connect_args={"check_same_thread": False, "timeout": 30},
 )
+
+
+@event.listens_for(sync_engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    """每个新连接启用 WAL 模式 + busy_timeout（解决多 worker 写锁）"""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.execute("PRAGMA cache_size=-20000")  # 20MB cache
+    cursor.close()
 
 # 创建会话工厂
 AsyncSessionLocal = sessionmaker(
