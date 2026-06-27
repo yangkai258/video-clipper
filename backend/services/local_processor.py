@@ -40,6 +40,10 @@ def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_co
     # 短段（< target）也保持原长，不补齐
     clips = generate_clips(merged, target_duration=target_duration)
     logger.info(f"生成 {len(clips)} 个切片（按语义边界）")
+
+    # 前置 1s + 退出 1s 缓冲（避免相邻重叠）
+    video_end = segments[-1]["end"] if segments else None
+    clips = _apply_buffers(clips, pre_roll=1.0, post_roll=1.0, video_end=video_end)
     
     # 根据策略限制最大切片数
     if len(clips) > max_clips:
@@ -248,6 +252,35 @@ def _split_long_segment(seg: Dict, target_duration: float) -> List[Dict]:
             "text": seg.get("text", ""),
         })
     return parts
+
+
+def _apply_buffers(clips: List[Dict], pre_roll: float = 1.0, post_roll: float = 1.0, video_end: float = None) -> List[Dict]:
+    """给每个 clip 加前置 1s + 退出 1s 缓冲
+
+    避免与上一个 clip 重叠（clip[i].start = max(clip[i].start - pre, clip[i-1].end)）
+    视频边界保护：start >= 0，end <= video_end
+    """
+    if not clips:
+        return clips
+
+    for i, c in enumerate(clips):
+        new_start = c["start"] - pre_roll
+        new_end = c["end"] + post_roll
+
+        # 视频边界保护
+        new_start = max(0.0, new_start)
+        if video_end is not None:
+            new_end = min(new_end, video_end)
+
+        # 避免与上一个 clip 重叠
+        if i > 0:
+            new_start = max(new_start, clips[i - 1]["end"])
+
+        c["start"] = new_start
+        c["end"] = new_end
+        c["duration"] = new_end - new_start
+
+    return clips
 
 
 def generate_simple_titles(clips: List[Dict]) -> List[Dict]:
