@@ -7,6 +7,13 @@ from .config import settings
 from ..models.database import Base
 
 
+# 异步引擎（用于 FastAPI 等异步场景）
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=settings.DEBUG,
+    future=True,
+)
+
 # 同步引擎（用于 Celery 等同步场景）
 # 多 worker 并发时必须用 WAL 模式 + busy_timeout 避免 "database is locked"
 sync_engine = create_engine(

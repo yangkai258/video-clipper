@@ -129,14 +129,20 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
     """获取项目详情"""
     result = await db.execute(
         select(Project)
-        .options(selectinload(Project.clips), selectinload(Project.collections))
+        .options(selectinload(Project.clips), selectinload(Project.collections), selectinload(Project.tasks))
         .where(Project.id == project_id)
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
+    # 取最近一个 task（最相关）
+    latest_task = None
+    for t in sorted(project.tasks, key=lambda x: x.created_at, reverse=True):
+        latest_task = t
+        break
+
     return {
         "project": {
             "id": project.id,
@@ -150,6 +156,14 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
             "processing_config": project.processing_config,
             "created_at": project.created_at.isoformat(),
             "completed_at": project.completed_at.isoformat() if project.completed_at else None,
+            "task": {
+                "status": latest_task.status,
+                "progress": latest_task.progress,
+                "current_step": latest_task.current_step,
+                "error_message": latest_task.error_message,
+                "started_at": latest_task.started_at.isoformat() if latest_task.started_at else None,
+                "completed_at": latest_task.completed_at.isoformat() if latest_task.completed_at else None,
+            } if latest_task else None,
             "clips": [
                 {
                     "id": c.id,

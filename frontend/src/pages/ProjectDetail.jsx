@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
 
@@ -40,6 +40,61 @@ function formatDate(iso) {
   })
 }
 
+// ===== 错误信息友好化 =====
+function friendlyError(taskError, projectStatus) {
+  if (!taskError) return null
+  const err = String(taskError).toLowerCase()
+
+  // 常见错误模式匹配 + 给"怎么修"
+  if (err.includes('moov atom') || err.includes('invalid data') || err.includes('exit status 183')) {
+    return {
+      title: '视频文件无法读取',
+      hint: 'ffmpeg 找不到 moov atom——文件可能上传时被截断、或格式不被支持。建议：1) 重新上传 2) 用 ffmpeg 重新转一次 3) 检查文件大小是否正确',
+    }
+  }
+  if (err.includes('ffmpeg') && err.includes('exit status')) {
+    return {
+      title: 'ffmpeg 处理失败',
+      hint: 'ffmpeg 异常退出。可能是：1) 视频文件损坏 2) 磁盘空间满 3) 内存不足。建议：清理磁盘后重试',
+    }
+  }
+  if (err.includes('whisper') || err.includes('cuda') || err.includes('out of memory')) {
+    return {
+      title: 'Whisper 转录失败',
+      hint: '音频识别出错。可能是：1) 没有音频轨 2) 模型加载失败 3) 内存不足。建议：换个视频试试，或联系管理员',
+    }
+  }
+  if (err.includes('database is locked') || err.includes('sqlite')) {
+    return {
+      title: '数据库被锁',
+      hint: '多个 worker 同时写 SQLite 撞锁了。系统会自动重试，等 1-2 分钟刷新看',
+    }
+  }
+  if (err.includes('timeout') || err.includes('time out')) {
+    return {
+      title: '处理超时',
+      hint: '单步处理超时。可能是视频太大。建议：1) 切成小段再传 2) 调大 target_duration 让切片更少',
+    }
+  }
+  return {
+    title: '处理失败',
+    hint: taskError.slice(0, 300),
+  }
+}
+
+// ===== 桌面通知（封装：先请求权限） =====
+async function notify(title, body) {
+  if (!('Notification' in window)) return
+  if (Notification.permission === 'default') {
+    await Notification.requestPermission()
+  }
+  if (Notification.permission === 'granted') {
+    try {
+      new Notification(title, { body, icon: '/favicon.ico' })
+    } catch (e) { /* 静默 */ }
+  }
+}
+
 function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -50,11 +105,45 @@ function ProjectDetail() {
   const [customStylesCount, setCustomStylesCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 8
+  // 跟踪状态变化用于发通知
+  const lastStatusRef = useRef(null)
+  const notifiedRef = useRef(new Set())  // 已通知过的 project id
 
   useEffect(() => {
     loadProject()
     loadSidebarCounts()
   }, [id])
+
+  // 处理中：2 秒刷一次（看 task 进度）；其他状态 5 秒
+  useEffect(() => {
+    if (!project) return
+    const isProcessing = project.status === 'processing' || project.task?.status === 'running'
+    const interval = setInterval(loadProject, isProcessing ? 2000 : 5000)
+    return () => clearInterval(interval)
+  }, [project?.status, project?.task?.status])
+
+  // 状态变化时发桌面通知
+  useEffect(() => {
+    if (!project) return
+    const status = project.status
+    const prev = lastStatusRef.current
+    lastStatusRef.current = status
+
+    // 处理中 → 完成：通知
+    if (prev === 'processing' && status === 'completed' && !notifiedRef.current.has(project.id + ':done')) {
+      notifiedRef.current.add(project.id + ':done')
+      notify(
+        '✅ 切片完成',
+        `「${project.name}」处理完成，共 ${project.clips?.length || 0} 个片段`
+      )
+    }
+    // 处理中 → 失败：通知
+    if (prev === 'processing' && status === 'failed' && !notifiedRef.current.has(project.id + ':fail')) {
+      notifiedRef.current.add(project.id + ':fail')
+      const err = friendlyError(project.task?.error_message, status)
+      notify('❌ 切片失败', `「${project.name}」处理失败：${err?.title || '未知错误'}`)
+    }
+  }, [project?.status])
 
   const loadProject = async () => {
     try {
@@ -62,7 +151,6 @@ function ProjectDetail() {
       setProject(res.data.project)
     } catch (error) {
       console.error('加载项目失败:', error)
-      alert('加载项目失败：' + (error.response?.data?.detail || error.message))
     } finally {
       setLoading(false)
     }
@@ -210,6 +298,67 @@ function ProjectDetail() {
               <div className="content-subtitle">项目详情 · 共 {clips.length} 个切片 · {collections.length} 个合集</div>
             </div>
           </div>
+
+          {/* === 实时进度（处理中显示） === */}
+          {project.status === 'processing' && project.task && (
+            <div style={{
+              padding: 'var(--space-4)',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--accent)',
+              borderRadius: 'var(--radius-md)',
+              marginBottom: 'var(--space-4)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--accent)' }}>
+                  {project.task.current_step || '处理中...'}
+                </span>
+                <span style={{ fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                  {project.task.progress || 0}%
+                </span>
+              </div>
+              <div style={{
+                height: '8px', background: 'var(--bg-base)', borderRadius: '4px',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  width: `${project.task.progress || 0}%`, height: '100%',
+                  background: 'var(--accent)',
+                  transition: 'width 0.3s ease-out',
+                }} />
+              </div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-dim)', marginTop: 'var(--space-2)' }}>
+                每 2 秒自动刷新
+              </div>
+            </div>
+          )}
+
+          {/* === 错误卡片（友好提示） === */}
+          {project.status === 'failed' && project.task?.error_message && (() => {
+            const err = friendlyError(project.task.error_message, project.status)
+            return (
+              <div style={{
+                padding: 'var(--space-4)',
+                background: 'rgba(220, 38, 38, 0.05)',
+                border: '1px solid rgba(220, 38, 38, 0.3)',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: 'var(--space-4)',
+              }}>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                  <span style={{ fontSize: 'var(--text-base)' }}>❌</span>
+                  <div style={{ fontWeight: 600, color: 'var(--danger)' }}>{err?.title}</div>
+                </div>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                  {err?.hint}
+                </div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-dim)', marginTop: 'var(--space-3)', fontFamily: 'var(--text-mono)' }}>
+                  原始错误：{project.task.error_message.slice(0, 200)}
+                </div>
+                <button className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-3)' }} onClick={startProcessing}>
+                  🔄 重新处理
+                </button>
+              </div>
+            )
+          })()}
 
           {/* === Stat row (Linear-style meta) === */}
           <div style={{
