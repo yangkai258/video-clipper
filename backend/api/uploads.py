@@ -1,0 +1,307 @@
+"""分片上传 API（断点续传 + 进度显示）
+
+流程：
+1. POST /uploads/init        → 返回 upload_id（保留到本地 storage）
+2. PUT  /uploads/{uid}/chunk?offset=N&total=ALL → 上传 1 片
+3. GET  /uploads/{uid}/status → 查已传 offset（断点续传时调用）
+4. POST /uploads/{uid}/complete → 合并 + 创建 project
+"""
+import asyncio
+import json
+import logging
+import os
+import shutil
+import time
+import uuid
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Form
+from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from fastapi import Depends
+
+from ..core.config import settings
+from ..core.database import get_db
+from ..models.database import Project
+from .projects import _get_last_subtitle_style  # 复用：从用户偏好读字幕配置
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+# 临时上传根目录：data/.uploads/{upload_id}/
+UPLOADS_DIR = settings.PROJECTS_DIR.parent / ".uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+# 元数据文件
+META_SUFFIX = ".meta.json"
+# 分片文件命名：{offset:012d}.part
+PART_SUFFIX = ".part"
+# chunk 大小（前端默认 5MB）
+DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024
+
+
+def _upload_dir(upload_id: str) -> Path:
+    return UPLOADS_DIR / upload_id
+
+
+def _meta_path(upload_id: str) -> Path:
+    return _upload_dir(upload_id) / f"upload{META_SUFFIX}"
+
+
+def _part_path(upload_id: str, offset: int) -> Path:
+    return _upload_dir(upload_id) / f"{offset:012d}{PART_SUFFIX}"
+
+
+@router.post("/uploads/init")
+async def init_upload(
+    name: str = Form(...),
+    description: str = Form(default=""),
+    filename: str = Form(...),
+    total_size: int = Form(...),
+):
+    """初始化上传会话
+
+    Returns:
+        upload_id: 用于后续分片上传
+        chunk_size: 推荐分片大小（前端可自定义）
+        existing_offset: 已上传偏移（0 表示新会话）
+    """
+    # 验证文件类型
+    ext = filename.split(".")[-1].lower()
+    if ext not in settings.ALLOWED_VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的视频格式：{ext}。支持的格式：{settings.ALLOWED_VIDEO_EXTENSIONS}"
+        )
+
+    # 验证 total_size
+    if total_size <= 0 or total_size > 5 * 1024 * 1024 * 1024:  # 最大 5GB
+        raise HTTPException(status_code=400, detail=f"无效的文件大小：{total_size}")
+
+    upload_id = f"up_{uuid.uuid4().hex[:16]}"
+    udir = _upload_dir(upload_id)
+    udir.mkdir(parents=True, exist_ok=True)
+
+    # 写元数据
+    meta = {
+        "upload_id": upload_id,
+        "name": name,
+        "description": description,
+        "filename": filename,
+        "total_size": total_size,
+        "created_at": time.time(),
+        "completed": False,
+    }
+    _meta_path(upload_id).write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+    logger.info(f"init_upload: {upload_id} name={name} filename={filename} total={total_size}")
+    return {
+        "upload_id": upload_id,
+        "chunk_size": DEFAULT_CHUNK_SIZE,
+        "existing_offset": 0,
+    }
+
+
+@router.get("/uploads/{upload_id}/status")
+async def upload_status(upload_id: str):
+    """查询已上传偏移（断点续传用）"""
+    mpath = _meta_path(upload_id)
+    if not mpath.exists():
+        raise HTTPException(status_code=404, detail="上传会话不存在或已过期")
+
+    meta = json.loads(mpath.read_text(encoding="utf-8"))
+    # 计算实际已上传字节数（扫描所有 part 文件）
+    received = _count_received_bytes(upload_id)
+    return {
+        "upload_id": upload_id,
+        "total_size": meta["total_size"],
+        "received_bytes": received,
+        "completed": meta.get("completed", False),
+    }
+
+
+def _count_received_bytes(upload_id: str) -> int:
+    """扫描 part 文件，统计连续已上传字节数（断点处）"""
+    udir = _upload_dir(upload_id)
+    if not udir.exists():
+        return 0
+    # 按 offset 排序，找第一个 gap
+    parts = sorted(udir.glob(f"*{PART_SUFFIX}"))
+    expected_offset = 0
+    for p in parts:
+        try:
+            offset = int(p.name.split(".")[0])
+        except ValueError:
+            continue
+        if offset != expected_offset:
+            # gap：从 part 列表里这个 gap 之前是连续的
+            # 但更严格：前一片必须正好填满 expected_offset
+            break
+        # part 大小（最后一片可能 < DEFAULT_CHUNK_SIZE）
+        # 我们假设 part 文件是连续的
+        # 实际：offset = part 起点，part_size = 文件大小
+        # 但不知道 part_size 怎么算——简化：从文件名推（offset+1, offset+2, ...）
+        # 用前一片名 + DEFAULT 推
+        # 更简单：直接看文件大小
+        pass
+    # 简单实现：连续 part 总和
+    # 真正连续 = sum(parts[i].size for i in 0..k where parts[k+1].offset == parts[k].offset + parts[k].size)
+    # 复杂——简化版：所有 part 大小总和（接受重复/乱序）
+    # 更好：算到第一个 gap
+    if not parts:
+        return 0
+    parts = sorted(parts, key=lambda p: int(p.name.split(".")[0]))
+    # 第一片必须 offset=0
+    first_offset = int(parts[0].name.split(".")[0])
+    if first_offset != 0:
+        return 0
+    # 累加直到 gap
+    received = 0
+    expected_next = 0
+    for p in parts:
+        offset = int(p.name.split(".")[0])
+        if offset != expected_next:
+            break
+        received += p.stat().st_size
+        expected_next = offset + p.stat().st_size
+    return received
+
+
+@router.put("/uploads/{upload_id}/chunk")
+async def upload_chunk(
+    upload_id: str,
+    offset: int = Query(..., ge=0),
+    chunk: UploadFile = File(...),
+):
+    """接收 1 个分片
+
+    Args:
+        upload_id: 初始化时返回的 ID
+        offset: 本片在文件中的起始字节位置（0-based）
+        chunk: 分片内容（HTTP body）
+    """
+    mpath = _meta_path(upload_id)
+    if not mpath.exists():
+        raise HTTPException(status_code=404, detail="上传会话不存在或已过期")
+
+    meta = json.loads(mpath.read_text(encoding="utf-8"))
+    if meta.get("completed"):
+        raise HTTPException(status_code=400, detail="上传已完成，不能再传分片")
+
+    # offset 不能超过 total_size
+    if offset >= meta["total_size"]:
+        raise HTTPException(status_code=400, detail=f"offset 超出文件大小")
+
+    # 写 part 文件
+    part_file = _part_path(upload_id, offset)
+    bytes_written = 0
+    with open(part_file, "wb") as f:
+        while True:
+            data = await chunk.read(1024 * 1024)  # 1MB
+            if not data:
+                break
+            f.write(data)
+            bytes_written += len(data)
+    # 显式关闭 chunk
+    await chunk.close()
+
+    received = _count_received_bytes(upload_id)
+    logger.info(f"chunk {upload_id}: offset={offset} size={bytes_written} received={received}/{meta['total_size']}")
+    return {
+        "upload_id": upload_id,
+        "chunk_offset": offset,
+        "chunk_size": bytes_written,
+        "received_bytes": received,
+        "total_size": meta["total_size"],
+    }
+
+
+@router.post("/uploads/{upload_id}/complete")
+async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
+    """合并分片 + 创建项目"""
+    mpath = _meta_path(upload_id)
+    if not mpath.exists():
+        raise HTTPException(status_code=404, detail="上传会话不存在或已过期")
+
+    meta = json.loads(mpath.read_text(encoding="utf-8"))
+    if meta.get("completed"):
+        raise HTTPException(status_code=400, detail="上传已完成")
+
+    # 验证完整性
+    received = _count_received_bytes(upload_id)
+    if received != meta["total_size"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"分片不完整：已传 {received}/{meta['total_size']} 字节",
+        )
+
+    # 合并：按 offset 顺序拼接
+    project_id = str(uuid.uuid4())
+    project_dir = settings.PROJECTS_DIR / project_id
+    project_dir.mkdir(parents=True, exist_ok=True)
+    video_path = project_dir / "raw" / "input.mp4"
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+
+    udir = _upload_dir(upload_id)
+    parts = sorted(udir.glob(f"*{PART_SUFFIX}"), key=lambda p: int(p.name.split(".")[0]))
+    written = 0
+    with open(video_path, "wb") as out:
+        for p in parts:
+            with open(p, "rb") as inp:
+                shutil.copyfileobj(inp, out, length=1024 * 1024)
+            written += p.stat().st_size
+    if written != meta["total_size"]:
+        # 异常：清理
+        shutil.rmtree(project_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"合并后大小异常：{written}/{meta['total_size']}",
+        )
+
+    # 标记完成
+    meta["completed"] = True
+    meta["completed_at"] = time.time()
+    meta["project_id"] = project_id
+    _meta_path(upload_id).write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+
+    # 清理 part 文件（保留 meta 以备查询）
+    for p in parts:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+
+    # 创建项目记录
+    subtitle_style = _get_last_subtitle_style()
+    project = Project(
+        id=project_id,
+        name=meta["name"],
+        description=meta.get("description", ""),
+        status="pending",
+        video_path=str(video_path.relative_to(settings.PROJECTS_DIR)),
+        video_size=meta["total_size"],
+        processing_config={"subtitle_style": subtitle_style} if subtitle_style else {},
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+
+    logger.info(f"complete_upload: {upload_id} → project={project_id} size={meta['total_size']}")
+    return {
+        "message": "项目创建成功",
+        "project_id": project_id,
+        "name": project.name,
+        "video_size": meta["total_size"],
+    }
+
+
+@router.delete("/uploads/{upload_id}")
+async def cancel_upload(upload_id: str):
+    """取消上传 + 清理临时文件"""
+    udir = _upload_dir(upload_id)
+    if udir.exists():
+        shutil.rmtree(udir, ignore_errors=True)
+    return {"message": "已取消", "upload_id": upload_id}

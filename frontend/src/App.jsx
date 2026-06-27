@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
+import { ChunkedUploader, formatBytes, formatSpeed, formatTime } from './ChunkedUploader'
 import './index.css'
 
 function App() {
   const [projects, setProjects] = useState([])
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadProgress, setUploadProgress] = useState({ received: 0, total: 0, speed: 0 })
+  const [uploadState, setUploadState] = useState('idle')  // idle | uploading | pausing | paused | resuming | finalizing | done | error
+  const [uploadError, setUploadError] = useState('')
+  const uploaderRef = useRef(null)
   const [showStrategyModal, setShowStrategyModal] = useState(false)
   const [pendingProject, setPendingProject] = useState(null)
   const [presets, setPresets] = useState([])
@@ -49,26 +53,69 @@ function App() {
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
+    // 重置 input，下次选同一个文件能触发 change
+    e.target.value = ''
+
     const name = prompt('项目名称：', file.name.replace(/\.[^/.]+$/, ''))
     if (!name) return
     setUploading(true)
-    setUploadProgress(0)
-    const formData = new FormData()
-    formData.append('name', name)
-    formData.append('video', file)
-    try {
-      const res = await axios.post(`${API_BASE}/projects/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (e) => setUploadProgress(Math.round((e.loaded * 100) / e.total))
-      })
-      setPendingProject({ id: res.data.project_id, name })
-      setShowStrategyModal(true)
-      setUploading(false)
-      loadProjects()
-    } catch (e) {
-      alert(`上传失败：${e.response?.data?.detail || e.message}`)
-      setUploading(false)
+    setUploadError('')
+    setUploadProgress({ received: 0, total: file.size, speed: 0 })
+    setUploadState('uploading')
+
+    const uploader = new ChunkedUploader({
+      file: new File([file], filename_safe(name) + ext_of(file.name), { type: file.type }),
+      onProgress: (p) => setUploadProgress(p),
+      onState: (s, extra) => {
+        setUploadState(s)
+        if (s === 'error') setUploadError(extra?.error || '未知错误')
+      },
+      onDone: (data) => {
+        setUploading(false)
+        setUploadState('done')
+        setPendingProject({ id: data.project_id, name })
+        setShowStrategyModal(true)
+        loadProjects()
+      },
+      onError: (err) => {
+        setUploading(false)
+        setUploadState('error')
+        setUploadError(err.message)
+      },
+    })
+    uploaderRef.current = uploader
+    uploader.start()
+  }
+
+  const handlePause = () => {
+    if (uploaderRef.current && uploadState === 'uploading') {
+      uploaderRef.current.pause()
+      setUploadState('paused')
     }
+  }
+
+  const handleResume = () => {
+    if (uploaderRef.current && uploadState === 'paused') {
+      setUploadState('resuming')
+      uploaderRef.current.resume()
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!uploaderRef.current) return
+    if (!confirm('确定取消上传吗？已传的分片会丢失。')) return
+    await uploaderRef.current.cancel()
+    setUploading(false)
+    setUploadState('idle')
+    setUploadProgress({ received: 0, total: 0, speed: 0 })
+  }
+
+  function filename_safe(s) {
+    return s.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || 'untitled'
+  }
+  function ext_of(name) {
+    const i = name.lastIndexOf('.')
+    return i > 0 ? name.slice(i) : ''
   }
 
   const selectStrategy = async (strategy) => {
@@ -217,6 +264,16 @@ function App() {
               <span>新建切片</span>
               <input type="file" accept="video/*" onChange={handleUpload} disabled={uploading} />
             </label>
+            {uploading && (
+              <UploadProgressBar
+                state={uploadState}
+                progress={uploadProgress}
+                error={uploadError}
+                onPause={handlePause}
+                onResume={handleResume}
+                onCancel={handleCancel}
+              />
+            )}
           </div>
         </div>
 
@@ -373,6 +430,94 @@ function App() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel }) {
+  const { received, total, speed } = progress
+  const pct = total > 0 ? Math.min(100, (received / total) * 100) : 0
+  const remain = speed > 0 ? (total - received) / speed : null
+
+  const stateLabel = {
+    uploading: '上传中',
+    resuming: '恢复中',
+    pausing: '暂停中',
+    paused: '已暂停',
+    finalizing: '合并中',
+    done: '完成',
+    error: '出错',
+  }[state] || state
+
+  return (
+    <div className="upload-progress" style={{
+      position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+      width: '420px', background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+      padding: 'var(--space-4)', boxShadow: 'var(--shadow-md)',
+      zIndex: 100
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+        <span style={{
+          fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)',
+          color: state === 'error' ? 'var(--danger)' : 'var(--accent)',
+          fontWeight: 600
+        }}>{stateLabel}</span>
+        <span style={{ fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-dim)' }}>
+          {formatBytes(received)} / {formatBytes(total)}
+        </span>
+      </div>
+
+      {/* 进度条 */}
+      <div style={{
+        height: '8px', background: 'var(--bg-base)', borderRadius: '4px',
+        overflow: 'hidden', marginBottom: 'var(--space-2)'
+      }}>
+        <div style={{
+          width: `${pct}%`, height: '100%',
+          background: state === 'error' ? 'var(--danger)' : 'var(--accent)',
+          transition: 'width 0.2s ease-out'
+        }} />
+      </div>
+
+      {/* 数字行 */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)',
+        color: 'var(--text-muted)', marginBottom: 'var(--space-3)'
+      }}>
+        <span>{pct.toFixed(1)}%</span>
+        <span>{formatSpeed(speed)}</span>
+        <span>剩余 {formatTime(remain)}</span>
+      </div>
+
+      {error && (
+        <div style={{
+          padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)',
+          background: 'var(--danger-soft)', color: 'var(--danger)',
+          borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)'
+        }}>
+          {error}
+        </div>
+      )}
+
+      {/* 控制按钮 */}
+      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        {state === 'uploading' && (
+          <button className="btn btn-ghost btn-sm" onClick={onPause} style={{ flex: 1 }}>暂停</button>
+        )}
+        {state === 'paused' && (
+          <button className="btn btn-primary btn-sm" onClick={onResume} style={{ flex: 1 }}>继续</button>
+        )}
+        {(state === 'uploading' || state === 'paused' || state === 'error') && (
+          <button className="btn btn-ghost btn-sm btn-danger" onClick={onCancel} style={{ flex: 1 }}>取消</button>
+        )}
+        {state === 'finalizing' && (
+          <span style={{ flex: 1, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+            正在合并分片并创建项目…
+          </span>
+        )}
+      </div>
     </div>
   )
 }

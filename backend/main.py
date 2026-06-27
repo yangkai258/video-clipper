@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from .core.config import settings
 from .core.database import init_db
-from .api import projects, clips, collections, styles, admin, user_preferences
+from .api import projects, clips, collections, styles, admin, user_preferences, uploads
 
 
 @asynccontextmanager
@@ -39,6 +39,7 @@ app.include_router(collections.router, prefix="/api/v1/collections", tags=["coll
 app.include_router(styles.router, prefix="/api/v1", tags=["styles"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(user_preferences.router, prefix="/api/v1", tags=["preferences"])
+app.include_router(uploads.router, prefix="/api/v1", tags=["uploads"])
 
 
 @app.get("/")
