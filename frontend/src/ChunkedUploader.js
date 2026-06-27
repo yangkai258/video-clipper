@@ -167,26 +167,72 @@ export class ChunkedUploader {
     }
   }
 
-  async _uploadOne({ offset, chunk }) {
-    const form = new FormData()
-    form.append('chunk', chunk, 'chunk')
-    const url = `${API_BASE}/uploads/${this.uploadId}/chunk?offset=${offset}`
-    const res = await fetch(url, {
-      method: 'PUT',
-      body: form,
-      headers: this._authHeaders()
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail || `HTTP ${res.status}`)
-    }
-    const data = await res.json()
-    this.receivedBytes = data.received_bytes
-    this._saveProgress()
-    this.onProgress({
-      received: this.receivedBytes,
-      total: this.totalSize,
-      speed: this.speedBps,
+  _uploadOne({ offset, chunk }) {
+    // 用 XHR 而非 fetch：fetch 不暴露上传进度，XHR 有 xhr.upload.onprogress
+    return new Promise((resolve, reject) => {
+      const form = new FormData()
+      form.append('chunk', chunk, 'chunk')
+      const url = `${API_BASE}/uploads/${this.uploadId}/chunk?offset=${offset}`
+
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', url, true)
+
+      // headers（不带 Content-Type，让浏览器自动加 multipart 边界）
+      const headers = this._authHeaders()
+      for (const [k, v] of Object.entries(headers)) {
+        xhr.setRequestHeader(k, v)
+      }
+
+      // 进度回调：每收到一点数据就更新 UI
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          // 本片已上传 + 之前所有完整片的累计
+          const chunkLoaded = e.loaded
+          this.receivedBytes = offset + chunkLoaded
+          this.onProgress({
+            received: this.receivedBytes,
+            total: this.totalSize,
+            speed: this.speedBps,
+          })
+        }
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText)
+            this.receivedBytes = data.received_bytes
+            this._saveProgress()
+            this.onProgress({
+              received: this.receivedBytes,
+              total: this.totalSize,
+              speed: this.speedBps,
+            })
+            resolve(data)
+          } catch (e) {
+            reject(new Error('解析响应失败'))
+          }
+        } else {
+          let msg = `HTTP ${xhr.status}`
+          try {
+            const err = JSON.parse(xhr.responseText)
+            msg = err.detail || msg
+          } catch (e) { /* 忽略 */ }
+          reject(new Error(msg))
+        }
+      }
+
+      xhr.onerror = () => reject(new Error('网络错误'))
+      xhr.onabort = () => reject(new Error('已取消'))
+
+      // 暴露 xhr 给 pause / cancel
+      this._currentXHRs = this._currentXHRs || new Set()
+      this._currentXHRs.add(xhr)
+      xhr.onloadend = () => {
+        this._currentXHRs?.delete(xhr)
+      }
+
+      xhr.send(form)
     })
   }
 
@@ -219,6 +265,12 @@ export class ChunkedUploader {
   async cancel() {
     this.cancelled = true
     this.running = false
+    // 中断所有进行中的 XHR
+    if (this._currentXHRs) {
+      for (const xhr of this._currentXHRs) {
+        try { xhr.abort() } catch (e) { /* 忽略 */ }
+      }
+    }
     if (this.uploadId) {
       try {
         await fetch(`${API_BASE}/uploads/${this.uploadId}`, {
