@@ -1,34 +1,39 @@
-# 外网部署说明
+# 部署说明（局域网模式）
 
 ## 当前状态（2026-06-27）
 
+外网服务（cloudflared + nginx）已关闭。**只支持本机 + 局域网访问**。
+
 ```
-🌐 URL:     https://smile-between-cambridge-kits.trycloudflare.com
-👤 账号:    team
-🔑 密码:    qXKj12J6tY7PmaSy
+🌐 局域网 URL:    http://172.16.120.82:3030/
+🖥️  本机 URL:     http://localhost:3030/
 ```
 
-⚠️ cloudflared 临时 URL，**每次重启会变**。如果想固定 URL，需要绑定自己的域名。
+⚠️ **IP 是临时的**——Mac 切换 WiFi 会变。运行 `ifconfig en0` 看当前 IP。
 
 ## 架构
 
 ```
-[运营同事浏览器]
-       ↓ HTTPS
-[cloudflared tunnel]   (pid 72018, /tmp/cloudflared)
+[运营同事浏览器（局域网）]
+       ↓ HTTP
+[vite dev :3030]   (host=0.0.0.0，前端 + /api proxy)
        ↓
-[nginx :8080]          (basic auth + 5GB 上传限制)
+[uvicorn :8030]    (host=0.0.0.0，backend)
        ↓
-[vite dev :3030]       (frontend + /api proxy)
-       ↓
-[uvicorn :8030]        (backend)
-       ↓
-[celery worker]        (Whisper 转录 + 视频处理)
+[celery worker]    (Whisper 转录 + 视频处理)
 ```
 
-## 重启后恢复
+**没 basic auth**——局域网内信任，团队共用 1 个用户。
 
-如果 Mac 重启或服务挂了，按顺序启动：
+## 当前服务
+
+| 进程 | 端口 | 进程 ID |
+|---|---|---|
+| vite | 3030 | (动态) |
+| backend (uvicorn) | 8030 | (动态) |
+| celery worker | - | (动态) |
+
+## 重启后恢复
 
 ```bash
 # 1. Redis
@@ -58,44 +63,22 @@ nohup env DATABASE_URL='sqlite+aiosqlite:///data/video_clipper_beta.db' \
   HF_ENDPOINT='https://hf-mirror.com' \
   HF_HUB_DOWNLOAD_TIMEOUT=60 \
   /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python \
-  -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing_beta \
+  -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=5 -Q processing_beta \
   > /tmp/worker_beta.log 2>&1 &
-
-# 5. Nginx (8080)
-nginx -c /Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/nginx-external.conf
-
-# 6. Cloudflared（新 URL 会变）
-nohup /tmp/cloudflared tunnel --no-autoupdate --url http://localhost:8080 > /tmp/cf.log 2>&1 &
-# 等 5 秒看 URL
-sleep 5 && grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" /tmp/cf.log | head -1
 ```
 
-## 修改密码
+## 限制
 
-```bash
-# 改 team 的密码
-htpasswd -b /Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.htpasswd team 新密码
+| 问题 | 说明 |
+|---|---|
+| 只局域网能用 | 同事得在同一个 WiFi 下 |
+| IP 会变 | 切 WiFi 后运营需要新地址 |
+| 单机处理 | 多人同时传排队 |
+| 上传大文件慢 | 走家里上行，受限于带宽 |
 
-# 加新用户
-htpasswd -b /Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.htpasswd 新用户名 新密码
+## 升级路径（如以后要外网）
 
-# 重启 nginx 让密码生效
-nginx -s reload -c /Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/nginx-external.conf
-```
+1. **重开 cloudflared**：下回外网时再 `nohup /tmp/cloudflared tunnel --url http://localhost:3030`
+2. **重开 nginx basic auth**：保护局域网外暴露时的访问
+3. **VPS 部署**：彻底解决单机瓶颈（几十块/月）
 
-## 当前限制（生产前必须解决）
-
-| 问题 | 影响 | 临时方案 |
-|---|---|---|
-| 所有人共享一个账号 | 看得到全部项目，能删 | 团队 3-10 人用 + 沟通 + 信任 |
-| 上传走家里上行 | 1GB 视频 5-30 分钟 | 让同事传小一点的视频 |
-| cloudflared 临时 URL | 重启就变 | 把新 URL 同步给团队 |
-| 单机烧录 | 1-2 个并发 | 多人排队，别同一时间传 |
-
-## 升级路径（按成本排序）
-
-1. **绑固定域名**（免费 + 简单）：cloudflared 建 named tunnel，URL 固定
-2. **加 nginx 限流**（5 分钟）：防止一个人把带宽跑满
-3. **加登录系统**（几小时）：JWT + 多账号 + 权限
-4. **VPS 部署**（几十块/月）：彻底解决单机瓶颈
-5. **容器化**（专业级）：Docker + k8s
