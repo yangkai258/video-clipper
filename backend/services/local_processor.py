@@ -68,8 +68,8 @@ def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_co
         logger.info(f"根据策略限制切片数：{len(clips)} → {max_clips}")
         clips = clips[:max_clips]
 
-    # 生成简单标题
-    titled_clips = generate_simple_titles(clips)
+    # 生成简单标题（传 all_segments 让标题取自覆盖该 clip 最长的段，更准）
+    titled_clips = generate_simple_titles(clips, all_segments=segments)
     
     # 按时间分组为合集（根据策略的目标时长计算每组大小）
     # 假设每个切片约 15 秒，目标时长 60 秒 → 每组 4 个切片
@@ -355,18 +355,46 @@ def filter_silent_clips(clips: List[Dict], segments: List[Dict], silence_thresho
     return out
 
 
-def generate_simple_titles(clips: List[Dict]) -> List[Dict]:
-    """生成简单标题（从内容提取关键词）"""
+def _pick_representative_text(clip: Dict, all_segments: List[Dict]) -> str:
+    """挑一个能代表该 clip 内容的字幕段（覆盖时长最长的段）
+
+    之前用 segments[0]：可能首段很短或不典型 → 标题错
+    现在从全量 SRT 里挑覆盖 [start, end] 时间最长的段 → 标题来自该 clip 中心
+    """
+    if not all_segments:
+        return ""
+    best_text = ""
+    best_overlap = 0.0
+    for seg in all_segments:
+        overlap = max(0.0, min(clip["end"], seg["end"]) - max(clip["start"], seg["start"]))
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_text = seg.get("text", "")
+    return best_text
+
+
+def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None) -> List[Dict]:
+    """生成简单标题（从该 clip 时间范围覆盖最长的字幕段提取）
+
+    Args:
+        clips: 切片列表
+        all_segments: 全量 SRT 段落（可选；如果不传，回退到 clip.segments[0]）
+    """
     titled = []
 
     for clip in clips:
-        # 优先用 _title_text（短片兜底走的时间等分）；否则从 segments 取
+        # 1. 短片兜底走的时间等分（已经设了 _title_text）
         if clip.get("_title_text"):
             text = clip["_title_text"]
+        # 2. 优先用全量 SRT 挑代表段（更准：覆盖最长的段 = 中心内容）
+        elif all_segments:
+            text = _pick_representative_text(clip, all_segments)
+        # 3. 兜底：用 clip 自带 segments[0]
         elif clip.get("segments"):
             text = clip["segments"][0].get("text", "")
         else:
             text = ""
+
         # 清理标点
         text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', text)
         title = text[:30] + "..." if len(text) > 30 else text
