@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.database import get_db, AsyncSessionLocal
+from ..core.database import get_db, AsyncSessionLocal, to_iso_utc
 from ..core.config import settings
 from ..models.database import Project, Task, Clip, Collection
 
@@ -35,7 +35,7 @@ async def get_system_info():
         "uptime": uptime_str,
         "python_version": platform.python_version(),
         "platform": platform.platform(),
-        "start_time": START_TIME.isoformat()
+        "start_time": to_iso_utc(START_TIME)
     }
 
 

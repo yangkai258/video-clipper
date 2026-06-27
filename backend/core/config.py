@@ -54,9 +54,14 @@ class Settings(BaseSettings):
     MAX_CLIP_DURATION: int = 600
     MIN_SCORE_THRESHOLD: float = 0.7
     
-    # 上传配置
-    MAX_UPLOAD_SIZE: int = 2 * 1024 * 1024 * 1024
-    ALLOWED_VIDEO_EXTENSIONS: list = ["mp4", "mov", "avi", "mkv", "flv", "webm"]
+    # 上传配置（extensions 标准化为小写不带点）
+    MAX_UPLOAD_SIZE: int = 5 * 1024 * 1024 * 1024  # 5GB
+    ALLOWED_VIDEO_EXTENSIONS: tuple = (".mp4", ".mov", ".avi", ".mkv", ".flv", ".webm", ".m4v")
+
+    def is_allowed_video_ext(self, ext: str) -> bool:
+        """判断扩展名是否允许（大小写不敏感，自动补点）"""
+        ext = ext.lower().lstrip(".")
+        return f".{ext}" in self.ALLOWED_VIDEO_EXTENSIONS
     
     class Config:
         extra = "ignore"

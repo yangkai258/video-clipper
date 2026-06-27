@@ -6,10 +6,8 @@
 3. GET  /uploads/{uid}/status → 查已传 offset（断点续传时调用）
 4. POST /uploads/{uid}/complete → 合并 + 创建 project
 """
-import asyncio
 import json
 import logging
-import os
 import shutil
 import subprocess
 import time
@@ -40,8 +38,10 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 META_SUFFIX = ".meta.json"
 # 分片文件命名：{offset:012d}.part
 PART_SUFFIX = ".part"
-# chunk 大小（前端默认 5MB）
+# chunk 大小（前端默认 5MB；cloudflared 30s timeout 下建议 1MB）
 DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024
+# 上传大小上限：fallback 默认 5GB（如果 settings.MAX_UPLOAD_SIZE 未配）
+DEFAULT_MAX_UPLOAD_SIZE = 5 * 1024 * 1024 * 1024
 
 
 def _upload_dir(upload_id: str) -> Path:
@@ -72,15 +72,16 @@ async def init_upload(
     """
     # 验证文件类型
     ext = filename.split(".")[-1].lower()
-    if ext not in settings.ALLOWED_VIDEO_EXTENSIONS:
+    if not settings.is_allowed_video_ext(ext):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的视频格式：{ext}。支持的格式：{settings.ALLOWED_VIDEO_EXTENSIONS}"
+            detail=f"不支持的视频格式：{ext}。支持的格式：{[e.lstrip('.') for e in settings.ALLOWED_VIDEO_EXTENSIONS]}"
         )
 
-    # 验证 total_size
-    if total_size <= 0 or total_size > 5 * 1024 * 1024 * 1024:  # 最大 5GB
-        raise HTTPException(status_code=400, detail=f"无效的文件大小：{total_size}")
+    # 验证 total_size（用 settings.MAX_UPLOAD_SIZE，未配则 fallback 到 5GB）
+    max_size = getattr(settings, "MAX_UPLOAD_SIZE", DEFAULT_MAX_UPLOAD_SIZE) or DEFAULT_MAX_UPLOAD_SIZE
+    if total_size <= 0 or total_size > max_size:
+        raise HTTPException(status_code=400, detail=f"无效的文件大小：{total_size}（上限 {max_size // 1024 // 1024} MB）")
 
     upload_id = f"up_{uuid.uuid4().hex[:16]}"
     udir = _upload_dir(upload_id)
@@ -125,47 +126,28 @@ async def upload_status(upload_id: str):
 
 
 def _count_received_bytes(upload_id: str) -> int:
-    """扫描 part 文件，统计连续已上传字节数（断点处）"""
+    """扫描 part 文件，累加到第一个 gap 处（断点续传用）
+
+    算法：
+    - 所有 part 文件按 offset 排序
+    - 第一片必须 offset=0，否则视为 0
+    - 从 offset=0 开始累加，遇到 offset 不连续的 part 停止
+    """
     udir = _upload_dir(upload_id)
     if not udir.exists():
         return 0
-    # 按 offset 排序，找第一个 gap
-    parts = sorted(udir.glob(f"*{PART_SUFFIX}"))
-    expected_offset = 0
-    for p in parts:
-        try:
-            offset = int(p.name.split(".")[0])
-        except ValueError:
-            continue
-        if offset != expected_offset:
-            # gap：从 part 列表里这个 gap 之前是连续的
-            # 但更严格：前一片必须正好填满 expected_offset
-            break
-        # part 大小（最后一片可能 < DEFAULT_CHUNK_SIZE）
-        # 我们假设 part 文件是连续的
-        # 实际：offset = part 起点，part_size = 文件大小
-        # 但不知道 part_size 怎么算——简化：从文件名推（offset+1, offset+2, ...）
-        # 用前一片名 + DEFAULT 推
-        # 更简单：直接看文件大小
-        pass
-    # 简单实现：连续 part 总和
-    # 真正连续 = sum(parts[i].size for i in 0..k where parts[k+1].offset == parts[k].offset + parts[k].size)
-    # 复杂——简化版：所有 part 大小总和（接受重复/乱序）
-    # 更好：算到第一个 gap
+
+    # 文件名格式：{offset:012d}.part → split(".")[0] 拿 offset
+    parts = sorted(udir.glob(f"*{PART_SUFFIX}"), key=lambda p: int(p.name.split(".")[0]))
     if not parts:
         return 0
-    parts = sorted(parts, key=lambda p: int(p.name.split(".")[0]))
-    # 第一片必须 offset=0
-    first_offset = int(parts[0].name.split(".")[0])
-    if first_offset != 0:
-        return 0
-    # 累加直到 gap
+
     received = 0
     expected_next = 0
     for p in parts:
         offset = int(p.name.split(".")[0])
         if offset != expected_next:
-            break
+            break  # gap：连续中断
         received += p.stat().st_size
         expected_next = offset + p.stat().st_size
     return received
@@ -192,22 +174,22 @@ async def upload_chunk(
     if meta.get("completed"):
         raise HTTPException(status_code=400, detail="上传已完成，不能再传分片")
 
-    # offset 不能超过 total_size
-    if offset >= meta["total_size"]:
-        raise HTTPException(status_code=400, detail=f"offset 超出文件大小")
+    # offset 校验：offset 必须在 [0, total_size) 范围内
+    # 防止恶意客户端声明 offset=total_size 然后写 0 字节造成混乱
+    if offset < 0 or offset >= meta["total_size"]:
+        raise HTTPException(status_code=400, detail=f"offset 超出文件大小：{offset} >= {meta['total_size']}")
 
-    # 写 part 文件
+    # 写 part 文件（直接读完，避免 while 循环的隐藏 bug）
     part_file = _part_path(upload_id, offset)
-    bytes_written = 0
-    with open(part_file, "wb") as f:
-        while True:
-            data = await chunk.read(1024 * 1024)  # 1MB
-            if not data:
-                break
+    try:
+        data = await chunk.read()  # 一次读完整个 body
+        if not data:
+            raise HTTPException(status_code=400, detail="空的分片")
+        with open(part_file, "wb") as f:
             f.write(data)
-            bytes_written += len(data)
-    # 显式关闭 chunk
-    await chunk.close()
+        bytes_written = len(data)
+    finally:
+        await chunk.close()
 
     received = _count_received_bytes(upload_id)
     logger.info(f"chunk {upload_id}: offset={offset} size={bytes_written} received={received}/{meta['total_size']}")

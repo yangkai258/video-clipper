@@ -1,30 +1,53 @@
+# Env
+.env
+.htpasswd
+
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-ENV/
-.venv
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
 
-# Node
-node_modules/
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+data/projects/
+data/.uploads/
+data/cache/
+backend/db.sqlite3
+projects.db
+video_clipper.db
 
 # Logs
-logs/*.log
+*.log
+logs/
+backend/logs/
+backend/*.log
 
-# Data
-data/*.db
-data/projects/
-data/cache/
+# Build
+node_modules/
+dist/
+build/
+.next/
+
+# Frontend alt builds
+frontend-beta/
+frontend-release/
+
+# Temp output
+*TEMP_MPY*
+*_temp*
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
 .idea/
-
-# OS
-.DS_Store
-
-# Env
-.env
+*.swp

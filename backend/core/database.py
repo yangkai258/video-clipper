@@ -1,4 +1,7 @@
-"""数据库初始化"""
+"""数据库初始化 + 通用 helper"""
+from contextlib import contextmanager
+from datetime import datetime
+from typing import Optional
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, Session
@@ -79,8 +82,12 @@ async def get_db():
             await session.close()
 
 
+@contextmanager
 def sync_get_db():
-    """获取数据库会话（同步，用于 Celery）"""
+    """获取数据库会话（同步，用于 Celery）
+
+    用法：`with sync_get_db() as db:`
+    """
     session = SyncSessionLocal()
     try:
         yield session
@@ -90,3 +97,21 @@ def sync_get_db():
         raise
     finally:
         session.close()
+
+
+def to_iso_utc(dt: Optional[datetime]) -> Optional[str]:
+    """datetime → ISO 字符串（UTC，带 Z 后缀），供前端正确显示本地时间
+
+    例：datetime(2026,6,27,14,0) → "2026-06-27T14:00:00Z"
+
+    用法：
+        return {"created_at": to_iso_utc(project.created_at)}
+    """
+    if dt is None:
+        return None
+    return dt.isoformat() + 'Z'
+
+
+def get_project_data_dir() -> str:
+    """项目数据目录（绝对路径）—— 跨进程一致"""
+    return str(settings.PROJECTS_DIR)

@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
-from ..core.database import get_db
+from ..core.database import get_db, to_iso_utc
 from ..core.config import settings
 from ..models.database import Collection, Clip
 
@@ -75,7 +75,7 @@ def _serialize_collection(collection: Collection, clips_map: dict = None) -> dic
         "clip_count": len(clip_ids),
         "clips": clips_detail,
         "video_path": collection.video_path,
-        "created_at": collection.created_at.isoformat() if collection.created_at else None,
+        "created_at": to_iso_utc(collection.created_at),
     }
 
 

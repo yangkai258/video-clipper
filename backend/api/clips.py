@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from ..core.database import get_db
+from ..core.database import get_db, to_iso_utc
 from ..core.config import settings
 from ..models.database import Clip
 
@@ -40,7 +40,7 @@ def _serialize_clip(clip: Clip) -> dict:
         "video_path": clip.video_path,
         "thumbnail_path": clip.thumbnail_path,
         "metadata": clip.clip_metadata or {},
-        "created_at": clip.created_at.isoformat() if clip.created_at else None,
+        "created_at": to_iso_utc(clip.created_at),
     }
 
 

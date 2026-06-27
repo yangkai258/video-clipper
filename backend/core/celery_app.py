@@ -30,4 +30,11 @@ celery_app.conf.update(
     task_routes={
         "backend.tasks.processing.*": {"queue": CELERY_QUEUE_NAME},
     },
+    # Beat 调度：每 30s 扫一次 watch folder
+    beat_schedule={
+        "scan-watch-folders": {
+            "task": "backend.tasks.processing.scan_watch_folders",
+            "schedule": 30.0,
+        },
+    },
 )

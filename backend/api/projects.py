@@ -10,34 +10,33 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from ..core.database import get_db
+from ..core.database import get_db, to_iso_utc
 from ..core.config import settings
-from ..models.database import Project, Task, Clip, Collection
+from ..models.database import Project, Task, Clip, Collection, UserPreference
 from sqlalchemy.orm import selectinload
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-def _get_last_subtitle_style() -> Optional[dict]:
-    """读取用户最后使用的字幕样式偏好"""
-    try:
-        import sqlite3
-        import os
-        import json
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        db_path = os.path.join(base_dir, "data", "video_clipper.db")
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT last_used_subtitle_style FROM user_preferences WHERE user_id = 'default'"
-        )
-        row = cursor.fetchone()
-        conn.close()
-        if row and row[0]:
-            return json.loads(row[0])
-    except Exception:
-        pass
+# 进度估算的典型切片数（用于"切割中"进度的近似计算）
+TYPICAL_CLIP_COUNT = 162
+TYPICAL_COLLECTION_COUNT = 21
+
+
+async def _get_last_subtitle_style(db: AsyncSession) -> Optional[dict]:
+    """读取用户最后使用的字幕样式偏好（异步，ORM）
+
+    修复：原来 hardcoded `data/video_clipper.db` (release)，beta 部署时会读错库。
+    现在走 ORM + 当前 db session，跨进程一致。
+    """
+    result = await db.execute(
+        select(UserPreference).where(UserPreference.user_id == "default")
+    )
+    pref = result.scalar_one_or_none()
+    if pref and pref.last_used_subtitle_style:
+        return pref.last_used_subtitle_style
     return None
 
 
@@ -45,42 +44,45 @@ def calculate_progress(project: Project) -> dict:
     """计算项目处理进度"""
     if project.status == "completed":
         return {"progress": 100, "current_step": "已完成", "estimated_remaining": "0 分钟"}
-    
+
     if project.status == "pending":
         return {"progress": 0, "current_step": "等待开始", "estimated_remaining": "未知"}
-    
+
     if project.status == "failed":
         return {"progress": 0, "current_step": "处理失败", "estimated_remaining": "-"}
-    
+
     # processing 状态：根据已有数据估算进度
     clip_count = len(project.clips)
     collection_count = len(project.collections)
-    
+
     # 完整流程：字幕生成 (20%) → 大纲/时间线 (20%) → 评分 (10%) → 切割 (30%) → 合集 (15%) → 写入数据库 (5%)
     if clip_count == 0 and collection_count == 0:
         return {"progress": 15, "current_step": "生成字幕中...", "estimated_remaining": "约 8-12 分钟"}
-    
+
     if clip_count > 0 and collection_count == 0:
         # 已有切片记录，正在切割或刚完成切割
-        progress = 50 + min(clip_count / 162 * 30, 30)  # 假设 162 是典型切片数
+        progress = 50 + min(clip_count / TYPICAL_CLIP_COUNT * 30, 30)
         return {"progress": int(progress), "current_step": f"切割视频中... ({clip_count} 切片)", "estimated_remaining": "约 1-3 分钟"}
-    
+
     if collection_count > 0:
-        progress = 80 + min(collection_count / 21 * 15, 15)
+        progress = 80 + min(collection_count / TYPICAL_COLLECTION_COUNT * 15, 15)
         return {"progress": int(progress), "current_step": f"合并合集中... ({collection_count} 合集)", "estimated_remaining": "约 30 秒"}
-    
+
     return {"progress": 50, "current_step": "处理中...", "estimated_remaining": "未知"}
 
 
 @router.get("/")
 async def list_projects(
     include_deleted: bool = Query(default=False, description="是否包含已软删除的（回收站）"),
+    search: Optional[str] = Query(default=None, description="按名称模糊搜索"),
     db: AsyncSession = Depends(get_db)
 ):
     """获取项目列表（默认不显示已删除）"""
     query = select(Project).options(selectinload(Project.clips), selectinload(Project.collections))
     if not include_deleted:
         query = query.where(Project.deleted_at.is_(None))
+    if search:
+        query = query.where(Project.name.ilike(f"%{search}%"))
     query = query.order_by(Project.created_at.desc())
     result = await db.execute(query)
     projects = result.scalars().all()
@@ -95,9 +97,9 @@ async def list_projects(
                 "video_duration": p.video_duration,
                 "clip_count": len(p.clips),
                 "collection_count": len(p.collections),
-                "created_at": p.created_at.isoformat(),
-                "completed_at": p.completed_at.isoformat() if p.completed_at else None,
-                "deleted_at": p.deleted_at.isoformat() if p.deleted_at else None,
+                "created_at": to_iso_utc(p.created_at),
+                "completed_at": to_iso_utc(p.completed_at),
+                "deleted_at": to_iso_utc(p.deleted_at),
                 **calculate_progress(p)
             }
             for p in projects
@@ -106,25 +108,39 @@ async def list_projects(
 
 
 @router.get("/{project_id}/files/{file_path:path}")
-async def get_project_file(project_id: str, file_path: str):
-    """获取项目文件（视频流）"""
-    from fastapi.responses import FileResponse
+async def get_project_file(project_id: str, file_path: str, db: AsyncSession = Depends(get_db)):
+    """获取项目文件（视频流）
+
+    安全修复：
+    - 校验 project 存在 + 未软删（404 而不是 200）
+    - 防止 path traversal（file_path 必须在 project_dir 内）
+    """
     from urllib.parse import quote
-    
-    full_path = settings.PROJECTS_DIR / project_id / file_path
-    
-    if not full_path.exists():
+
+    # 1) project 必须存在且未被软删
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project or project.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # 2) 解析路径 + 防止 path traversal
+    project_dir = (settings.PROJECTS_DIR / project_id).resolve()
+    full_path = (project_dir / file_path).resolve()
+
+    # 确保解析后的路径仍在 project_dir 下（防 ../ 逃逸）
+    try:
+        full_path.relative_to(project_dir)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Forbidden: path outside project directory")
+
+    if not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    
-    # URL 编码文件名以支持中文
+
     encoded_filename = quote(full_path.name)
-    
     return FileResponse(
         str(full_path),
         media_type="video/mp4",
-        headers={
-            "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"
-        }
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"}
     )
 
 
@@ -141,11 +157,8 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # 取最近一个 task（最相关）
-    latest_task = None
-    for t in sorted(project.tasks, key=lambda x: x.created_at, reverse=True):
-        latest_task = t
-        break
+    # 取最近一个 task（最相关）—— tasks 已通过 selectinload eager load
+    latest_task = max(project.tasks, key=lambda t: t.created_at, default=None)
 
     return {
         "project": {
@@ -158,16 +171,16 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
             "video_size": project.video_size,
             "subtitle_path": project.subtitle_path,
             "processing_config": project.processing_config,
-            "created_at": project.created_at.isoformat(),
-            "completed_at": project.completed_at.isoformat() if project.completed_at else None,
-            "deleted_at": project.deleted_at.isoformat() if project.deleted_at else None,
+            "created_at": to_iso_utc(project.created_at),
+            "completed_at": to_iso_utc(project.completed_at),
+            "deleted_at": to_iso_utc(project.deleted_at),
             "task": {
                 "status": latest_task.status,
                 "progress": latest_task.progress,
                 "current_step": latest_task.current_step,
                 "error_message": latest_task.error_message,
-                "started_at": latest_task.started_at.isoformat() if latest_task.started_at else None,
-                "completed_at": latest_task.completed_at.isoformat() if latest_task.completed_at else None,
+                "started_at": to_iso_utc(latest_task.started_at),
+                "completed_at": to_iso_utc(latest_task.completed_at),
             } if latest_task else None,
             "clips": [
                 {
@@ -216,7 +229,7 @@ async def update_project_config(
     
     # 如果传入了字幕配置，同步到用户偏好（自动复用）
     if config.get("subtitle_style"):
-        _sync_subtitle_style_to_preferences(config["subtitle_style"])
+        await _sync_subtitle_style_to_preferences(db, config["subtitle_style"])
     
     await db.commit()
     await db.refresh(project)
@@ -227,24 +240,45 @@ async def update_project_config(
     }
 
 
-def _sync_subtitle_style_to_preferences(subtitle_style: dict):
-    """将字幕配置同步到用户偏好设置"""
+async def _sync_subtitle_style_to_preferences(db: AsyncSession, subtitle_style: dict):
+    """将字幕配置同步到用户偏好（直接 ORM 写，不再跨进程 HTTP）
+
+    修复：原来通过 HTTP 调用 release backend（localhost:8000），beta 部署时串库。
+    现在走 ORM，同一 db session / 同一 DB 文件，跨进程一致。
+    """
     try:
-        import requests
-        requests.put(
-            "http://localhost:8000/api/v1/preferences/subtitle-style",
-            json={
+        # upsert
+        result = await db.execute(
+            select(UserPreference).where(UserPreference.user_id == "default")
+        )
+        pref = result.scalar_one_or_none()
+        if pref:
+            pref.last_used_subtitle_style = {
                 "font_size": subtitle_style.get("font_size", 28),
                 "txt_color": subtitle_style.get("txt_color", "white"),
                 "stroke_color": subtitle_style.get("stroke_color", "black"),
                 "stroke_width": subtitle_style.get("stroke_width", 2),
                 "font": subtitle_style.get("font", "/System/Library/Fonts/STHeiti Medium.ttc"),
                 "position": subtitle_style.get("position", 0.78),
-            },
-            timeout=5
-        )
-    except Exception:
-        pass
+            }
+            pref.updated_at = datetime.utcnow()
+        else:
+            pref = UserPreference(
+                user_id="default",
+                last_used_subtitle_style={
+                    "font_size": subtitle_style.get("font_size", 28),
+                    "txt_color": subtitle_style.get("txt_color", "white"),
+                    "stroke_color": subtitle_style.get("stroke_color", "black"),
+                    "stroke_width": subtitle_style.get("stroke_width", 2),
+                    "font": subtitle_style.get("font", "/System/Library/Fonts/STHeiti Medium.ttc"),
+                    "position": subtitle_style.get("position", 0.78),
+                },
+                updated_at=datetime.utcnow(),
+            )
+            db.add(pref)
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"同步字幕样式到 preferences 失败：{e}")
 
 
 @router.post("/")
@@ -257,10 +291,10 @@ async def create_project(
     """创建新项目并上传视频"""
     # 验证文件类型
     ext = video.filename.split(".")[-1].lower()
-    if ext not in settings.ALLOWED_VIDEO_EXTENSIONS:
+    if not settings.is_allowed_video_ext(ext):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的视频格式：{ext}。支持的格式：{settings.ALLOWED_VIDEO_EXTENSIONS}"
+            detail=f"不支持的视频格式：{ext}。支持的格式：{[e.lstrip('.') for e in settings.ALLOWED_VIDEO_EXTENSIONS]}"
         )
     
     # 创建项目 ID 和目录
@@ -278,8 +312,8 @@ async def create_project(
             f.write(chunk)
             video_size += len(chunk)
     
-    # 读取用户字幕偏好，自动注入到项目配置
-    subtitle_style = _get_last_subtitle_style()
+    # 读取用户字幕偏好，自动注入到项目配置（ORM 走当前 db session）
+    subtitle_style = await _get_last_subtitle_style(db)
     
     # 创建项目记录
     project = Project(
@@ -351,33 +385,20 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     srt_path = None
     if project.subtitle_path:
         srt_path = str(settings.PROJECTS_DIR / project.subtitle_path)
-    
-    # 直接配置 Celery broker（从环境变量读取，支持版本隔离）
-    import os
-    from celery import Celery
-    broker_url = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
-    result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0")
-    queue_name = os.getenv("CELERY_QUEUE_NAME", "processing")
-    
-    temp_app = Celery("temp", broker=broker_url, backend=result_backend)
-    temp_app.config_from_object({
-        "task_serializer": "json",
-        "result_serializer": "json",
-        "accept_content": ["json"],
-        "timezone": "Asia/Shanghai",
-    })
-    
-    celery_task = temp_app.send_task(
+
+    # 使用全局 celery_app（配置已就绪，含 task_routes 和 beat_schedule）
+    # 修复：原来临时创建 Celery 实例 → 配置不一致 + 路由错乱
+    from ..core.celery_app import celery_app
+    celery_task = celery_app.send_task(
         "backend.tasks.processing.process_video_pipeline",
         args=[project_id, str(video_path), srt_path, task.id],
-        queue=queue_name,
     )
-    
+
     # 更新任务
     task.celery_task_id = celery_task.id
     task.status = "running"
     await db.commit()
-    
+
     return {
         "message": "处理已开始",
         "project_id": project_id,
@@ -437,7 +458,7 @@ async def delete_project(
         return {
             "message": "项目已移到回收站，30 天内可恢复",
             "permanent": False,
-            "deleted_at": project.deleted_at.isoformat(),
+            "deleted_at": to_iso_utc(project.deleted_at),
             "restore_within_days": 30,
             "revoke": revoke_msg,
         }

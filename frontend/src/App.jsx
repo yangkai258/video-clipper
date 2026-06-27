@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import { ChunkedUploader, formatBytes, formatSpeed, formatTime } from './ChunkedUploader'
+import WatchFolders from './pages/WatchFolders'
 import './index.css'
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
   const [search, setSearch] = useState('')
   const [showTrash, setShowTrash] = useState(false)  // 回收站模式
   const [trashProjects, setTrashProjects] = useState([])
+  const [showWatchFolders, setShowWatchFolders] = useState(false)  // watch folder 视图
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -255,8 +257,8 @@ function App() {
 
         <div className="sidebar-section-label">工作区</div>
         <button
-          className={`nav-item ${location.pathname === '/' && !showTrash ? 'active' : ''}`}
-          onClick={() => { setShowTrash(false); navigate('/') }}
+          className={`nav-item ${location.pathname === '/' && !showTrash && !showWatchFolders ? 'active' : ''}`}
+          onClick={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/') }}
         >
           <span className="nav-item-icon">▶</span>
           切片项目
@@ -264,7 +266,7 @@ function App() {
         </button>
         <button
           className={`nav-item ${showTrash ? 'active' : ''}`}
-          onClick={() => { setShowTrash(true); loadTrash() }}
+          onClick={() => { setShowTrash(true); setShowWatchFolders(false); loadTrash() }}
         >
           <span className="nav-item-icon">🗑</span>
           回收站
@@ -277,6 +279,13 @@ function App() {
           <span className="nav-item-icon">✎</span>
           风格管理
           <span className="nav-item-count">{customStyles.length}</span>
+        </button>
+        <button
+          className={`nav-item ${showWatchFolders ? 'active' : ''}`}
+          onClick={() => { setShowWatchFolders(true); setShowTrash(false) }}
+        >
+          <span className="nav-item-icon">📁</span>
+          监控文件夹
         </button>
 
         <div className="sidebar-bottom">
@@ -296,7 +305,7 @@ function App() {
             <span className="breadcrumb">
               <span>工作台</span>
               <span className="breadcrumb-sep">/</span>
-              <span className="page-title">切片项目</span>
+              <span className="page-title">{showWatchFolders ? '监控文件夹' : showTrash ? '回收站' : '切片项目'}</span>
             </span>
           </div>
           <div className="topbar-right">
@@ -326,7 +335,9 @@ function App() {
         </div>
 
         <div className="content fade-in">
-          {showTrash ? (
+          {showWatchFolders ? (
+            <WatchFolders />
+          ) : showTrash ? (
             // === 回收站视图 ===
             <>
               <div className="content-header">

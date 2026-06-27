@@ -30,9 +30,7 @@ def process_video_pipeline(
     logger.info(f"开始处理项目：{project_id}")
     
     # 读取项目配置（包含切片策略 + 字幕配置）
-    db_gen = sync_get_db()
-    db = next(db_gen)
-    try:
+    with sync_get_db() as db:
         project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
         if project:
             strategy_config = project.processing_config or {}
@@ -45,8 +43,6 @@ def process_video_pipeline(
             strategy_config = {}
             subtitle_config = {}
             logger.warning("项目配置不存在，使用默认策略")
-    finally:
-        db.close()
     
     try:
         project_dir = Path(input_video_path).parent.parent
@@ -106,25 +102,21 @@ def process_video_pipeline(
 
         if not srt_path or not Path(srt_path).exists():
             raise Exception("字幕生成失败")
-        
+
         # 清理内存
         gc.collect()
-        
+
         # 更新进度到 50%
         from ..core.database import sync_get_db
-        
-        db_gen = sync_get_db()
-        db = next(db_gen)  # 获取 session
-        try:
-            from ..models.database import Task
-            from sqlalchemy import select
+        from ..models.database import Task
+        from sqlalchemy import select
+
+        with sync_get_db() as db:
             task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
             if task:
                 task.progress = 50
                 task.current_step = "分析内容结构"
                 db.commit()
-        finally:
-            db.close()  # ✅ 修复：确保连接释放
         
         # Step 2: 大纲提取（可选，失败时使用本地备用方案）
         logger.info("Step 2: 提取大纲")
@@ -215,91 +207,100 @@ def process_video_pipeline(
             except Exception as e:
                 logger.warning(f"清理临时 SRT 失败：{e}")
 
-        # Step 10: 写入数据库
+        # Step 10: 写入数据库 + 清理 raw 视频
         logger.info("Step 10: 写入数据库")
-        db = None
-        try:
-            db = next(sync_get_db())
-            # 清除旧记录
-            db.query(Clip).filter(Clip.project_id == project_id).delete()
-            db.query(Collection).filter(Collection.project_id == project_id).delete()
-            
-            # 插入 clips
-            for clip_data in titled_clips:
-                clip = Clip(
-                    id=str(uuid.uuid4()),
-                    project_id=project_id,
-                    title=clip_data.get("title", f"片段 {clip_data.get('index', 1)}"),
-                    start_time=clip_data.get("start", 0),
-                    end_time=clip_data.get("end", 0),
-                    duration=clip_data.get("duration", 0),
-                    score=clip_data.get("score", 50),
-                    video_path=clip_data.get("video_path", f"output/clips/{clip_data.get('index', 1)}_片段.mp4"),
-                )
-                db.add(clip)
+        from ..core.database import sync_get_db
+        from ..models.database import Project
+
+        cleanup_errors = []
+        with sync_get_db() as db:
+            try:
+                # 清除旧记录
+                db.query(Clip).filter(Clip.project_id == project_id).delete()
+                db.query(Collection).filter(Collection.project_id == project_id).delete()
+
+                # 插入 clips
+                for clip_data in titled_clips:
+                    clip = Clip(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        title=clip_data.get("title", f"片段 {clip_data.get('index', 1)}"),
+                        start_time=clip_data.get("start", 0),
+                        end_time=clip_data.get("end", 0),
+                        duration=clip_data.get("duration", 0),
+                        score=clip_data.get("score", 50),
+                        video_path=clip_data.get("video_path", f"output/clips/{clip_data.get('index', 1)}_片段.mp4"),
+                    )
+                    db.add(clip)
             
             # 插入 collections
-            for coll_data in collections:
-                # 获取该合集的 clip IDs
-                clip_ids = [c["index"] for c in coll_data.get("clips", [])]
-                coll = Collection(
-                    id=str(uuid.uuid4()),
-                    project_id=project_id,
-                    title=coll_data.get("title", f"合集 {coll_data.get('index', 1)}"),
-                    clip_ids=clip_ids,
-                    video_path=f"output/collections/{coll_data.get('title', '合集')}.mp4",
-                )
-                db.add(coll)
-            
-            # 更新项目状态为 completed
-            from ..models.database import Project
-            project = db.query(Project).filter(Project.id == project_id).first()
-            if project:
-                project.status = "completed"
-                project.completed_at = datetime.utcnow()
+                for coll_data in collections:
+                    # 获取该合集的 clip IDs
+                    clip_ids = [c["index"] for c in coll_data.get("clips", [])]
+                    # title 兜底（cluster_collections 不写 index，用 len(collections)+1）
+                    coll_title = coll_data.get("title") or f"合集 {len(collections)}"
+                    # 移除 title 中可能的非法路径字符
+                    safe_title = "".join(c for c in coll_title if c not in '<>:"/\\|？*')
+                    coll = Collection(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        title=coll_title,
+                        clip_ids=clip_ids,
+                        video_path=f"output/collections/{safe_title}.mp4",
+                    )
+                    db.add(coll)
 
-            # 完成后删除 raw 视频 + 临时音频，节省磁盘空间
-            # 保留：metadata/input.srt（用户可能要下载字幕）、output/clips/*.mp4、output/collections/*.mp4
-            try:
-                project_dir = settings.PROJECTS_DIR / project_id
-                # 删 raw 视频
-                raw_video = project_dir / "raw" / "input.mp4"
-                if raw_video.exists():
-                    raw_size = raw_video.stat().st_size
-                    raw_video.unlink()
-                    logger.info(f"清理：删除 raw/input.mp4 ({raw_size/1024/1024:.1f} MB)")
-                    try:
-                        (project_dir / "raw").rmdir()
-                    except OSError:
-                        pass
-                # 删临时音频
-                for temp_name in ("temp_audio.wav", "temp_audio.m4a", "extracted_audio.wav"):
-                    temp_file = project_dir / "metadata" / temp_name
-                    if temp_file.exists():
-                        temp_file.unlink()
-                        logger.info(f"清理：删除 {temp_file.name}")
-                # 删中间步骤 JSON（处理完已没用了）
-                for step_file in ("step1_outline.json", "step2_clips.json", "step3_collections.json"):
-                    f = project_dir / "metadata" / step_file
-                    if f.exists():
-                        f.unlink()
-                # 更新 DB：把 video_size 清零（文件已删）
+            # 更新项目状态为 completed（在 cleanup 前更新，确保 raw 删除失败也不影响 status）
+                project = db.query(Project).filter(Project.id == project_id).first()
+                if project:
+                    project.status = "completed"
+                    project.completed_at = datetime.utcnow()
+
+                db.commit()  # 先提交 clips/collections/project 状态
+            except Exception as db_error:
+                logger.error(f"数据库写入失败：{db_error}")
+                raise
+
+        # === 清理 raw 视频 + 临时文件（独立 try，不影响主流程已完成部分）===
+        try:
+            # 删 raw 视频（复用前面算的 project_dir 路径）
+            raw_video = project_dir / "raw" / "input.mp4"
+            if raw_video.exists():
+                raw_size = raw_video.stat().st_size
+                raw_video.unlink()
+                logger.info(f"清理：删除 raw/input.mp4 ({raw_size/1024/1024:.1f} MB)")
+                try:
+                    (project_dir / "raw").rmdir()
+                except OSError:
+                    pass
+
+            # 删临时音频
+            for temp_name in ("temp_audio.wav", "temp_audio.m4a", "extracted_audio.wav"):
+                temp_file = project_dir / "metadata" / temp_name
+                if temp_file.exists():
+                    temp_file.unlink()
+                    logger.info(f"清理：删除 {temp_file.name}")
+
+            # 删中间步骤 JSON（处理完已没用了）
+            for step_file in ("step1_outline.json", "step2_clips.json",
+                              "step3_scored.json", "step4_titled.json", "step5_collections.json"):
+                f = project_dir / "metadata" / step_file
+                if f.exists():
+                    f.unlink()
+        except Exception as cleanup_error:
+            logger.warning(f"清理临时文件失败（不影响主流程）：{cleanup_error}")
+
+        # === 单独事务：更新 video_size = 0（独立事务，cleanup 失败也不影响）===
+        try:
+            with sync_get_db() as db:
+                project = db.query(Project).filter(Project.id == project_id).first()
                 if project:
                     project.video_size = 0
-                    db.add(project)
-            except Exception as cleanup_error:
-                logger.warning(f"清理临时文件失败（不影响主流程）：{cleanup_error}")
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"更新 video_size=0 失败（不影响主流程）：{e}")
 
-            db.commit()
-            logger.info(f"数据库写入完成：{len(titled_clips)} clips, {len(collections)} collections")
-        except Exception as db_error:
-            if db:
-                db.rollback()
-            logger.error(f"数据库写入失败：{db_error}")
-            raise
-        finally:
-            if db:
-                db.close()
+        logger.info(f"数据库写入完成：{len(titled_clips)} clips, {len(collections)} collections")
 
         # 清理内存
         gc.collect()
@@ -317,3 +318,15 @@ def process_video_pipeline(
     except Exception as e:
         logger.error(f"处理失败：{e}", exc_info=True)
         raise
+
+
+@shared_task(name="backend.tasks.processing.scan_watch_folders", bind=True)
+def scan_watch_folders(self):
+    """每 30s 跑一次（被 celery beat 调度）—— 扫所有 enabled watch folders"""
+    from ..api.watch_folders import scan_all_due_folders
+    logger.info("scan_watch_folders tick")
+    try:
+        scan_all_due_folders()
+    except Exception as e:
+        logger.error(f"scan_watch_folders 失败: {e}", exc_info=True)
+    return {"ok": True}

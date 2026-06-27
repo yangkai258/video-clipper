@@ -232,29 +232,34 @@ def _parse_outline_response(response: str) -> List[Dict]:
         if match:
             json_str = match.group()
             return json.loads(json_str)
-    except:
-        pass
-    
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.debug(f"outline JSON 解析失败，回退到 Markdown：{e}")
+
     # 尝试解析 Markdown 格式
     outlines = []
     lines = response.split("\n")
     current_outline = None
-    
+
     for line in lines:
         line = line.strip()
         if re.match(r'^\d+\.\s*\*\*', line):
             if current_outline:
                 outlines.append(current_outline)
-            topic_name = line.split('**')[1] if '**' in line else line.split('.', 1)[1].strip()
+            # 安全提取 topic name（避免 IndexError）
+            if '**' in line:
+                parts = line.split('**')
+                topic_name = parts[1] if len(parts) > 1 else ""
+            else:
+                topic_name = line.split('.', 1)[1].strip() if '.' in line else line
             current_outline = {"title": topic_name, "subtopics": []}
         elif line.startswith('-') and current_outline:
             subtopic = line[1:].strip()
             if subtopic:
                 current_outline["subtopics"].append(subtopic)
-    
+
     if current_outline:
         outlines.append(current_outline)
-    
+
     return outlines
 
 
@@ -410,7 +415,8 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
         strategy_config: 策略配置（可选），包含 keep_rules / remove_rules / rules.min_score / rules.priority_keywords
     """
     strategy_config = strategy_config or {}
-    min_score = strategy_config.get("rules", {}).get("min_score", 0.7)
+    # 与 local_processor._score_clip_local 的默认 0.6 保持一致
+    min_score = strategy_config.get("rules", {}).get("min_score", 0.6)
 
     # 解析 keep_rules / remove_rules 关键词
     keep_keywords = _parse_rules_to_keywords(strategy_config.get("keep_rules", ""))
@@ -454,13 +460,6 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
         if priority_keywords and any(kw.lower() in title_lower for kw in priority_keywords):
             base_score = min(base_score + 0.15, 1.0)
             reasons.append("优先关键词命中")
-
-        # 4.5) 内容分类命中：加分
-        if content_types:
-            matched_types = [ct for ct in content_types if ct in title]
-            if matched_types:
-                base_score = min(base_score + 0.1, 1.0)
-                reasons.append(f"内容分类命中:{','.join(matched_types[:2])}")
 
         # 5) 只保留高于阈值的切片
         if base_score >= min_score:
