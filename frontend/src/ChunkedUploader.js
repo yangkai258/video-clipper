@@ -10,8 +10,8 @@
  *   uploader.resume()  // 恢复
  *   uploader.cancel()  // 取消（删 upload_id）
  */
-const CHUNK_SIZE = 50 * 1024 * 1024  // 50MB（实测：50MB 跑 2.8 Mbps 打满 2.13Mbps 上行）
-const MAX_CONCURRENT = 1              // 单并发：避免抢带宽导致 TCP 拥塞
+const CHUNK_SIZE = 1 * 1024 * 1024   // 1MB（cloudflared trycloudflare 限制：单 chunk 30s 内必须完成）
+const MAX_CONCURRENT = 1              // 单并发：避免抢带宽
 const MAX_RETRY = 3                   // 单片最多重试 3 次
 
 export class ChunkedUploader {
@@ -156,13 +156,18 @@ export class ChunkedUploader {
         await this._uploadOne(task)
         return
       } catch (e) {
-        if (attempt === MAX_RETRY) {
-          this.setState('error', { error: `分片 ${task.offset} 失败：${e.message}` })
+        const isLast = attempt === MAX_RETRY
+        this.setState(isLast ? 'error' : 'retrying', {
+          error: isLast ? `分片 ${task.offset} 失败（重试 ${attempt} 次）：${e.message}` : null,
+          attempt, maxAttempt: MAX_RETRY, offset: task.offset
+        })
+        if (isLast) {
           this.onError(e)
           throw e
         }
-        // 退避
-        await new Promise(r => setTimeout(r, 500 * attempt))
+        // 退避：500ms → 1500ms → 4500ms（指数增长）
+        const backoff = 500 * Math.pow(3, attempt - 1)
+        await new Promise(r => setTimeout(r, backoff))
       }
     }
   }
@@ -176,6 +181,8 @@ export class ChunkedUploader {
 
       const xhr = new XMLHttpRequest()
       xhr.open('PUT', url, true)
+      // 设置超时：50MB chunk 给 10 分钟（5MB/s 已经够宽裕）
+      xhr.timeout = 10 * 60 * 1000
 
       // headers（不带 Content-Type，让浏览器自动加 multipart 边界）
       const headers = this._authHeaders()

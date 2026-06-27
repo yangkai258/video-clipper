@@ -78,7 +78,7 @@ function App() {
         loadProjects()
       },
       onError: (err) => {
-        setUploading(false)
+        // 错误时不要隐藏进度条——让用户看到错误信息
         setUploadState('error')
         setUploadError(err.message)
       },
@@ -444,6 +444,7 @@ function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel
     resuming: '恢复中',
     pausing: '暂停中',
     paused: '已暂停',
+    retrying: '重试中',
     finalizing: '合并中',
     done: '完成',
     error: '出错',
