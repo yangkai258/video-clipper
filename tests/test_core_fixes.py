@@ -614,3 +614,44 @@ class TestProgressGranularity:
         from backend.tasks.processing import _update_task_progress
         # 不应抛错
         _update_task_progress("nonexistent_task_id_xxx", 50, "X")
+
+
+class TestEtaEstimation:
+    """进度 ETA 估算 (v2.1.5)"""
+
+    def test_eta_linear_extrapolation_after_5pct(self):
+        """progress >= 5% 时用线性外推"""
+        from backend.api.projects import _estimate_eta_seconds
+        # 跑了 60s, progress=20% → 预计总 300s → 剩余 240s
+        assert _estimate_eta_seconds(20, 60) == 240
+        # 跑了 120s, progress=50% → 预计总 240s → 剩余 120s
+        assert _estimate_eta_seconds(50, 120) == 120
+        # 跑了 300s, progress=99% → 预计总 303s → 剩余 3s (允许 ±1)
+        assert abs(_estimate_eta_seconds(99, 300) - 3) <= 1
+
+    def test_eta_heuristic_under_5pct(self):
+        """progress < 5% 时用启发式 (基于视频时长)"""
+        from backend.api.projects import _estimate_eta_seconds
+        # 跑了 30s, progress=0%, 视频 600s (10分钟)
+        # 启发式: 总 = 600 * 0.25 + 180 = 330s, 剩余 300s
+        eta = _estimate_eta_seconds(0, 30, video_duration_seconds=600)
+        assert eta == 300, f"启发式 10 分钟视频 30s 后剩余应 300s, 实际 {eta}"
+        # 跑了 30s, progress=3%, 同上
+        eta = _estimate_eta_seconds(3, 30, video_duration_seconds=600)
+        assert eta == 300
+        # 没视频时长 → None
+        assert _estimate_eta_seconds(0, 30, video_duration_seconds=None) is None
+
+    def test_eta_returns_none_when_too_early(self):
+        """elapsed = 0 时算不出"""
+        from backend.api.projects import _estimate_eta_seconds
+        assert _estimate_eta_seconds(50, 0) is None
+        assert _estimate_eta_seconds(50, -1) is None
+
+    def test_eta_floors_at_zero(self):
+        """剩余时间不会小于 0"""
+        from backend.api.projects import _estimate_eta_seconds
+        # 跑了 600s, progress=100% → 总 600s → 剩余 0
+        assert _estimate_eta_seconds(100, 600) == 0
+        # 跑了 800s, progress=100% → 负数 → clamp 0
+        assert _estimate_eta_seconds(100, 800) == 0

@@ -25,6 +25,75 @@ TYPICAL_CLIP_COUNT = 162
 TYPICAL_COLLECTION_COUNT = 21
 
 
+def _build_timing_info(task: Task, video_duration_seconds: float = None) -> dict:
+    """从 task 状态推算 elapsed / total / eta 秒数
+
+    返回给前端直接渲染的 dict:
+    - elapsed_seconds: 已用秒数 (None 如果还没 start)
+    - total_estimated_seconds: 预计总秒数 (None 如果算不出)
+    - eta_seconds: 剩余秒数 (None 如果算不出)
+    """
+    # 已用
+    if task.started_at and task.status == "running":
+        elapsed = int((datetime.utcnow() - task.started_at).total_seconds())
+    elif task.started_at and task.completed_at:
+        elapsed = int((task.completed_at - task.started_at).total_seconds())
+    else:
+        elapsed = 0
+
+    # 剩余 (核心)
+    progress = task.progress or 0
+    eta = _estimate_eta_seconds(progress, elapsed, video_duration_seconds)
+
+    # 总预计 (用于显示 "预计 X 分钟")
+    if eta is not None:
+        total_estimated = elapsed + eta
+    elif progress >= 5 and elapsed > 0:
+        total_estimated = int(elapsed / (progress / 100.0))
+    else:
+        total_estimated = None
+
+    return {
+        "elapsed_seconds": elapsed if elapsed > 0 else None,
+        "total_estimated_seconds": total_estimated,
+        "eta_seconds": eta,
+    }
+
+
+def _estimate_eta_seconds(
+    progress_pct: int,
+    elapsed_seconds: int,
+    video_duration_seconds: float = None,
+) -> int | None:
+    """估算剩余时间 (秒)
+
+    两阶段策略:
+    1. progress < 5% → 启发式: video_duration × 0.25 + 120s (whisper + LLM + 切割 + 合并)
+    2. progress >= 5% → 线性外推: 总时间 = elapsed / (progress/100)
+
+    返回 None 表示太早无法估算 (没视频时长 + progress = 0)
+    """
+    if elapsed_seconds <= 0:
+        return None
+
+    if progress_pct >= 5:
+        # 线性外推
+        total_estimated = elapsed_seconds / (progress_pct / 100.0)
+        return max(0, int(total_estimated - elapsed_seconds))
+
+    # 启发式 (progress < 5% 时不准, 用历史均值)
+    if video_duration_seconds and video_duration_seconds > 0:
+        # whisper base ≈ 0.25x 视频时长
+        # + LLM 4 步 ≈ 60s
+        # + 切割 (30 段 × 3s) ≈ 90s
+        # + 合并 ≈ 30s
+        # 合计 ≈ video_duration × 0.25 + 180s
+        estimated_total = video_duration_seconds * 0.25 + 180
+        return max(0, int(estimated_total - elapsed_seconds))
+
+    return None
+
+
 # 项目显示用的默认风格标识（DB 里没选过 style_id 时的占位）
 DEFAULT_STYLE_ID = "_default"
 DEFAULT_STYLE_NAME = "默认"
@@ -88,7 +157,11 @@ async def _get_last_subtitle_style(db: AsyncSession) -> Optional[dict]:
 
 
 def calculate_progress(project: Project) -> dict:
-    """计算项目处理进度"""
+    """计算项目处理进度
+
+    优先用 task 表的实时 progress + current_step (worker 每 5s 心跳写一次)
+    fallback 到 clip/collection 数量估算 (老逻辑, 兼容)
+    """
     if project.status == "completed":
         return {"progress": 100, "current_step": "已完成", "estimated_remaining": "0 分钟"}
 
@@ -98,16 +171,24 @@ def calculate_progress(project: Project) -> dict:
     if project.status == "failed":
         return {"progress": 0, "current_step": "处理失败", "estimated_remaining": "-"}
 
-    # processing 状态：根据已有数据估算进度
+    # 优先: 用 task 表的实时进度 (v2.1.4 心跳写入)
+    if project.tasks:
+        latest = max(project.tasks, key=lambda t: t.created_at, default=None)
+        if latest and latest.progress is not None and latest.progress > 0:
+            return {
+                "progress": latest.progress,
+                "current_step": latest.current_step or "处理中...",
+                "estimated_remaining": "见 timing.eta_seconds",
+            }
+
+    # Fallback: 根据已有数据估算 (老逻辑, 没 task 进度时用)
     clip_count = len(project.clips)
     collection_count = len(project.collections)
 
-    # 完整流程：字幕生成 (20%) → 大纲/时间线 (20%) → 评分 (10%) → 切割 (30%) → 合集 (15%) → 写入数据库 (5%)
     if clip_count == 0 and collection_count == 0:
         return {"progress": 15, "current_step": "生成字幕中...", "estimated_remaining": "约 8-12 分钟"}
 
     if clip_count > 0 and collection_count == 0:
-        # 已有切片记录，正在切割或刚完成切割
         progress = 50 + min(clip_count / TYPICAL_CLIP_COUNT * 30, 30)
         return {"progress": int(progress), "current_step": f"切割视频中... ({clip_count} 切片)", "estimated_remaining": "约 1-3 分钟"}
 
@@ -125,7 +206,11 @@ async def list_projects(
     db: AsyncSession = Depends(get_db)
 ):
     """获取项目列表（默认不显示已删除）"""
-    query = select(Project).options(selectinload(Project.clips), selectinload(Project.collections))
+    query = select(Project).options(
+        selectinload(Project.clips),
+        selectinload(Project.collections),
+        selectinload(Project.tasks),  # 进度估算需要 task.started_at/progress
+    )
     if not include_deleted:
         query = query.where(Project.deleted_at.is_(None))
     if search:
@@ -148,7 +233,11 @@ async def list_projects(
                 "completed_at": to_iso_utc(p.completed_at),
                 "deleted_at": to_iso_utc(p.deleted_at),
                 **(await _resolve_style(p, db)),
-                **calculate_progress(p)
+                **calculate_progress(p),
+                "timing": _build_timing_info(
+                    max(p.tasks, key=lambda t: t.created_at, default=None) if p.tasks else None,
+                    p.video_duration,
+                ) if p.tasks else None,
             }
             for p in projects
         ]
@@ -230,6 +319,7 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
                 "error_message": latest_task.error_message,
                 "started_at": to_iso_utc(latest_task.started_at),
                 "completed_at": to_iso_utc(latest_task.completed_at),
+                **_build_timing_info(latest_task, project.video_duration),
             } if latest_task else None,
             "clips": [
                 {

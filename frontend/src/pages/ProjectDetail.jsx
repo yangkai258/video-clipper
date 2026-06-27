@@ -18,6 +18,18 @@ function formatTime(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+function formatDuration(seconds) {
+  // 123 → "2 分 3 秒"; 3725 → "1 小时 2 分"; 45 → "45 秒"
+  if (seconds == null) return '估算中...'
+  if (seconds < 60) return `${Math.floor(seconds)} 秒`
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h} 小时 ${m} 分`
+  if (s > 0 && m < 5) return `${m} 分 ${s} 秒`
+  return `${m} 分钟`
+}
+
 function formatTC(s) {
   if (!s) return '--:--'
   const m = Math.floor(s / 60)
@@ -326,8 +338,26 @@ function ProjectDetail() {
                   transition: 'width 0.3s ease-out',
                 }} />
               </div>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-dim)', marginTop: 'var(--space-2)' }}>
-                每 2 秒自动刷新
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                fontSize: 'var(--text-xs)', color: 'var(--text-dim)',
+                marginTop: 'var(--space-3)', gap: 'var(--space-3)',
+              }}>
+                <span>
+                  {project.task.elapsed_seconds != null && (
+                    <>已用 <strong style={{ color: 'var(--text-secondary)' }}>{formatDuration(project.task.elapsed_seconds)}</strong></>
+                  )}
+                  {project.task.total_estimated_seconds != null && (
+                    <> · 预计 <strong style={{ color: 'var(--text-secondary)' }}>{formatDuration(project.task.total_estimated_seconds)}</strong></>
+                  )}
+                </span>
+                <span>
+                  {project.task.eta_seconds != null ? (
+                    <>剩余 <strong style={{ color: 'var(--accent)' }}>{formatDuration(project.task.eta_seconds)}</strong></>
+                  ) : (
+                    <em>估算中...</em>
+                  )}
+                </span>
               </div>
             </div>
           )}

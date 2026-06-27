@@ -53,7 +53,21 @@ def process_video_pipeline(
     from sqlalchemy import select
     
     logger.info(f"开始处理项目：{project_id}")
-    
+
+    # 标记 task 为 running + 写 started_at (v2.1.5 ETA 估算需要)
+    if task_id:
+        try:
+            with sync_get_db() as db:
+                from ..models.database import Task
+                task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+                if task:
+                    task.status = "running"
+                    if not task.started_at:
+                        task.started_at = datetime.utcnow()
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"task 启动标记失败: {e}")
+
     # 读取项目配置（包含切片策略 + 字幕配置）
     with sync_get_db() as db:
         project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
@@ -304,6 +318,14 @@ def process_video_pipeline(
                     project.status = "completed"
                     project.completed_at = datetime.utcnow()
 
+                # 同步 task.completed_at (v2.1.5 ETA 显示总耗时需要)
+                if task_id:
+                    task_row = db.query(Task).filter(Task.id == task_id).first()
+                    if task_row:
+                        task_row.status = "completed"
+                        task_row.completed_at = datetime.utcnow()
+                        task_row.progress = 100
+
                 db.commit()  # 先提交 clips/collections/project 状态
             except Exception as db_error:
                 logger.error(f"数据库写入失败：{db_error}")
@@ -365,6 +387,19 @@ def process_video_pipeline(
         
     except Exception as e:
         logger.error(f"处理失败：{e}", exc_info=True)
+        # 标记 task failed + completed_at
+        if task_id:
+            try:
+                with sync_get_db() as db:
+                    from ..models.database import Task
+                    task_row = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+                    if task_row:
+                        task_row.status = "failed"
+                        task_row.completed_at = datetime.utcnow()
+                        task_row.error_message = str(e)[:1000]
+                        db.commit()
+            except Exception:
+                pass
         raise
 
 
