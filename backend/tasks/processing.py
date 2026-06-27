@@ -232,11 +232,13 @@ def process_video_pipeline(
         logger.info("Step 9: 验证文件完整性")
         missing_files = []
         for clip in titled_clips:
-            # 优先检查 video_path 字段，如果不存在则根据索引构建预期路径
+            # 优先检查 video_path 字段 (v2.1.7 fix: 拼绝对路径, 之前相对路径用 cwd 找永远找不到)
             video_path = clip.get("video_path")
-            if video_path and Path(video_path).exists():
-                continue
-            # 构建预期路径并检查
+            if video_path:
+                abs_path = project_dir / video_path
+                if abs_path.exists():
+                    continue
+            # fallback: 用 index 构造预期路径 (如果 index 是 i+1 才对得上, 否则会假阳性)
             safe_title = "".join(c for c in clip.get("title", f"clip_{clip.get('index', 1)}") if c not in '<>:"/\\|？*')
             expected_path = clips_dir / f"{clip.get('index', 1)}_{safe_title[:50]}.mp4"
             if not expected_path.exists():
@@ -387,19 +389,23 @@ def process_video_pipeline(
         
     except Exception as e:
         logger.error(f"处理失败：{e}", exc_info=True)
-        # 标记 task failed + completed_at
-        if task_id:
-            try:
-                with sync_get_db() as db:
+        # 标记 task failed + project failed (修复: 之前只标 task, project 永远卡 processing)
+        try:
+            with sync_get_db() as db:
+                from ..models.database import Project
+                proj = db.query(Project).filter(Project.id == project_id).first()
+                if proj and proj.status == "processing":
+                    proj.status = "failed"
+                if task_id:
                     from ..models.database import Task
-                    task_row = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+                    task_row = db.query(Task).filter(Task.id == task_id).first()
                     if task_row:
                         task_row.status = "failed"
                         task_row.completed_at = datetime.utcnow()
                         task_row.error_message = str(e)[:1000]
-                        db.commit()
-            except Exception:
-                pass
+                db.commit()
+        except Exception as cleanup_err:
+            logger.warning(f"标记失败状态失败: {cleanup_err}")
         raise
 
 
