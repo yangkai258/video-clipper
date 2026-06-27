@@ -491,6 +491,18 @@ function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel
         <span>剩余 {formatTime(remain)}</span>
       </div>
 
+      {/* 网络慢提示（速度 < 200 KB/s 且已传 > 1MB） */}
+      {received > 1024 * 1024 && speed > 0 && speed < 200 * 1024 && (
+        <div style={{
+          padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)',
+          background: 'rgba(234, 179, 8, 0.1)', color: '#b45309',
+          borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)',
+          border: '1px solid rgba(234, 179, 8, 0.3)'
+        }}>
+          ⚠️ 网络较慢（{formatSpeed(speed)}）。建议：本地用 ffmpeg 转 720p 再传，文件小 3-5 倍
+        </div>
+      )}
+
       {error && (
         <div style={{
           padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)',

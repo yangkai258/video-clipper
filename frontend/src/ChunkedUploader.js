@@ -10,8 +10,8 @@
  *   uploader.resume()  // 恢复
  *   uploader.cancel()  // 取消（删 upload_id）
  */
-const CHUNK_SIZE = 5 * 1024 * 1024  // 5MB
-const MAX_CONCURRENT = 3              // 3 并发
+const CHUNK_SIZE = 20 * 1024 * 1024  // 20MB（最优：1GB 视频 50 chunks，2 小时）
+const MAX_CONCURRENT = 1              // 单并发：避免抢 0.6Mbps 上行导致 TCP 拥塞
 const MAX_RETRY = 3                   // 单片最多重试 3 次
 
 export class ChunkedUploader {
