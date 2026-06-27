@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -274,6 +275,31 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
         except OSError:
             pass
 
+    # 校验文件有效性（防止截断的假文件进入处理流程）
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(video_path)],
+            capture_output=True, text=True, timeout=30
+        )
+        duration_str = probe.stdout.strip()
+        if not duration_str or float(duration_str) <= 0:
+            # 文件不可读 / 无 moov atom / 截断
+            shutil.rmtree(project_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=400,
+                detail=f"文件无效：ffprobe 读不到时长（可能上传被截断、moov atom 缺失）",
+            )
+        video_duration = float(duration_str)
+    except HTTPException:
+        raise
+    except Exception as e:
+        shutil.rmtree(project_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"文件校验失败：{e}",
+        )
+
     # 创建项目记录
     subtitle_style = _get_last_subtitle_style()
     project = Project(
@@ -283,6 +309,7 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
         status="pending",
         video_path=str(video_path.relative_to(settings.PROJECTS_DIR)),
         video_size=meta["total_size"],
+        video_duration=video_duration,
         processing_config={"subtitle_style": subtitle_style} if subtitle_style else {},
     )
     db.add(project)
