@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 
 from ..core.database import get_db, to_iso_utc
 from ..core.config import settings
-from ..models.database import Project, Task, Clip, Collection, UserPreference
+from ..models.database import Project, Task, Clip, Collection, UserPreference, Style
 from sqlalchemy.orm import selectinload
 
 
@@ -23,6 +23,30 @@ logger = logging.getLogger(__name__)
 # 进度估算的典型切片数（用于"切割中"进度的近似计算）
 TYPICAL_CLIP_COUNT = 162
 TYPICAL_COLLECTION_COUNT = 21
+
+
+# 项目显示用的默认风格标识（DB 里没选过 style_id 时的占位）
+DEFAULT_STYLE_ID = "_default"
+DEFAULT_STYLE_NAME = "默认"
+
+
+async def _resolve_style(project: Project, db: AsyncSession) -> dict:
+    """解析项目用的风格 → {style_id, style_name}
+
+    优先级：
+    1. processing_config.style_id 存在 → 查 Style 表
+    2. 不存在或查不到 → 默认 (灰色)
+    """
+    style_id_raw = (project.processing_config or {}).get("style_id")
+    if not style_id_raw:
+        return {"style_id": DEFAULT_STYLE_ID, "style_name": DEFAULT_STYLE_NAME}
+
+    result = await db.execute(select(Style).where(Style.id == style_id_raw))
+    s = result.scalar_one_or_none()
+    if s:
+        return {"style_id": s.id, "style_name": s.name}
+    # style_id 写了但 Style 已被删
+    return {"style_id": style_id_raw, "style_name": "已删除"}
 
 
 async def _get_last_subtitle_style(db: AsyncSession) -> Optional[dict]:
@@ -100,6 +124,7 @@ async def list_projects(
                 "created_at": to_iso_utc(p.created_at),
                 "completed_at": to_iso_utc(p.completed_at),
                 "deleted_at": to_iso_utc(p.deleted_at),
+                **(await _resolve_style(p, db)),
                 **calculate_progress(p)
             }
             for p in projects
@@ -171,6 +196,7 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
             "video_size": project.video_size,
             "subtitle_path": project.subtitle_path,
             "processing_config": project.processing_config,
+            **(await _resolve_style(project, db)),
             "created_at": to_iso_utc(project.created_at),
             "completed_at": to_iso_utc(project.completed_at),
             "deleted_at": to_iso_utc(project.deleted_at),

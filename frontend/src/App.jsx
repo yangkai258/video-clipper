@@ -422,6 +422,9 @@ function App() {
                     >
                       <div className="reel-status-dot" />
                       <div className="reel-name">{p.name}</div>
+                      <span className={`style-badge ${p.style_id === '_default' ? 'style-badge-default' : ''}`}>
+                        {p.style_name || '默认'}
+                      </span>
                       <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
                       <div className="reel-cell">{formatTC(p.video_duration)}</div>
                       <div className="reel-cell">{p.clip_count || 0} 个切片</div>
