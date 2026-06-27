@@ -257,7 +257,39 @@ def process_video_pipeline(
             if project:
                 project.status = "completed"
                 project.completed_at = datetime.utcnow()
-            
+
+            # 完成后删除 raw 视频 + 临时音频，节省磁盘空间
+            # 保留：metadata/input.srt（用户可能要下载字幕）、output/clips/*.mp4、output/collections/*.mp4
+            try:
+                project_dir = settings.PROJECTS_DIR / project_id
+                # 删 raw 视频
+                raw_video = project_dir / "raw" / "input.mp4"
+                if raw_video.exists():
+                    raw_size = raw_video.stat().st_size
+                    raw_video.unlink()
+                    logger.info(f"清理：删除 raw/input.mp4 ({raw_size/1024/1024:.1f} MB)")
+                    try:
+                        (project_dir / "raw").rmdir()
+                    except OSError:
+                        pass
+                # 删临时音频
+                for temp_name in ("temp_audio.wav", "temp_audio.m4a", "extracted_audio.wav"):
+                    temp_file = project_dir / "metadata" / temp_name
+                    if temp_file.exists():
+                        temp_file.unlink()
+                        logger.info(f"清理：删除 {temp_file.name}")
+                # 删中间步骤 JSON（处理完已没用了）
+                for step_file in ("step1_outline.json", "step2_clips.json", "step3_collections.json"):
+                    f = project_dir / "metadata" / step_file
+                    if f.exists():
+                        f.unlink()
+                # 更新 DB：把 video_size 清零（文件已删）
+                if project:
+                    project.video_size = 0
+                    db.add(project)
+            except Exception as cleanup_error:
+                logger.warning(f"清理临时文件失败（不影响主流程）：{cleanup_error}")
+
             db.commit()
             logger.info(f"数据库写入完成：{len(titled_clips)} clips, {len(collections)} collections")
         except Exception as db_error:
@@ -268,12 +300,12 @@ def process_video_pipeline(
         finally:
             if db:
                 db.close()
-        
+
         # 清理内存
         gc.collect()
-        
+
         logger.info(f"项目处理完成：{project_id}")
-        
+
         return {
             "success": True,
             "project_id": project_id,
