@@ -68,8 +68,8 @@ def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_co
         logger.info(f"根据策略限制切片数：{len(clips)} → {max_clips}")
         clips = clips[:max_clips]
 
-    # 生成简单标题（传 all_segments 让标题取自覆盖该 clip 最长的段，更准）
-    titled_clips = generate_simple_titles(clips, all_segments=segments)
+    # 生成简单标题（传 all_segments 让标题取自覆盖该 clip 最长的段 + strategy_config 用于本地评分）
+    titled_clips = generate_simple_titles(clips, all_segments=segments, strategy_config=strategy_config)
     
     # 按时间分组为合集（根据策略的目标时长计算每组大小）
     # 假设每个切片约 15 秒，目标时长 60 秒 → 每组 4 个切片
@@ -373,13 +373,122 @@ def _pick_representative_text(clip: Dict, all_segments: List[Dict]) -> str:
     return best_text
 
 
-def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None) -> List[Dict]:
-    """生成简单标题（从该 clip 时间范围覆盖最长的字幕段提取）
+def _clip_subtitle_text(clip: Dict, all_segments: List[Dict]) -> str:
+    """收集该 clip 时间范围内所有字幕段的全文（用于评分）"""
+    parts = []
+    for seg in (all_segments or []):
+        if seg["end"] > clip["start"] and seg["start"] < clip["end"]:
+            parts.append(seg.get("text", ""))
+    return " ".join(parts)
+
+
+def _parse_keywords(text: str) -> List[str]:
+    """把 '保留规则' / '删除规则' 文本解析成关键词列表（按行 / 标点）"""
+    if not text:
+        return []
+    keywords = []
+    for line in text.replace("，", ",").replace("、", ",").replace("；", ",").split("\n"):
+        for part in line.split(","):
+            part = part.strip()
+            if part and len(part) >= 2:
+                keywords.append(part)
+    return keywords
+
+
+def _score_clip_local(clip: Dict, all_segments: List[Dict], strategy_config: Dict) -> float:
+    """本地兜底方案的真评分（基于字幕密度 + 时长匹配 + 关键词命中）
+
+    比 AI 路径粗糙，但比"全给 50"有用得多
+
+    评分维度（0-1）：
+    - 基础分 0.55
+    - 字幕字数合适（60-300 字）→ +0.10
+    - 字幕稀疏（<30 字）或密集（>400 字）→ -0.15
+    - 时长接近 target_duration（±50%）→ +0.10
+    - 时长过短（<5s）或过长（>120s）→ -0.10
+    - 命中 keep_rules 关键词（任一）→ +0.15
+    - 命中 priority_keywords（任一）→ +0.10
+    - 命中 content_types（任一）→ +0.05
+    """
+    config = strategy_config or {}
+    rules = config.get("rules") or {}
+    target_duration = config.get("target_duration", 45.0) or 45.0
+    keep_kw = _parse_keywords(config.get("keep_rules", ""))
+    remove_kw = _parse_keywords(config.get("remove_rules", ""))
+    priority_kw = rules.get("priority_keywords") or []
+    content_types = config.get("content_types") or []
+
+    text = _clip_subtitle_text(clip, all_segments)
+    title = _pick_representative_text(clip, all_segments) if all_segments else ""
+    # 合并标题+正文一起算关键词命中（标题通常是核心）
+    haystack = f"{title} {text}".lower()
+
+    score = 0.55
+    reasons = []
+
+    # 1. 删除规则：命中直接 0（不进 list）
+    if remove_kw and any(kw in haystack for kw in remove_kw):
+        return -1.0  # 标记丢弃
+
+    # 2. 字幕密度（按字数估算，1 字 ≈ 1 token）
+    char_count = len(re.sub(r'\s', '', text))
+    if 60 <= char_count <= 300:
+        score += 0.10
+        reasons.append(f"字数{char_count}")
+    elif char_count < 30:
+        score -= 0.15
+        reasons.append(f"字数{char_count}过少")
+    elif char_count > 400:
+        score -= 0.15
+        reasons.append(f"字数{char_count}过多")
+
+    # 3. 时长匹配 target_duration
+    duration = clip.get("duration", 0) or 0
+    if duration <= 0:
+        score -= 0.10
+    elif 5 <= duration <= 120 and 0.5 * target_duration <= duration <= 1.5 * target_duration:
+        score += 0.10
+        reasons.append(f"时长{duration:.0f}s匹配")
+    elif duration < 5:
+        score -= 0.10
+        reasons.append(f"时长{duration:.1f}s过短")
+    elif duration > 120:
+        score -= 0.10
+        reasons.append(f"时长{duration:.0f}s过长")
+
+    # 4. keep_rules 命中
+    if keep_kw:
+        matched = [kw for kw in keep_kw if kw.lower() in haystack]
+        if matched:
+            score += 0.15
+            reasons.append(f"保留规则×{len(matched)}")
+
+    # 5. priority_keywords 命中
+    if priority_kw and any(kw.lower() in haystack for kw in priority_kw):
+        score += 0.10
+        reasons.append("优先关键词")
+
+    # 6. content_types 命中
+    if content_types and any(ct.lower() in haystack for ct in content_types):
+        score += 0.05
+        reasons.append("内容分类")
+
+    # 限制在 0-1
+    return max(0.0, min(1.0, score))
+
+
+def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None,
+                            strategy_config: Dict = None) -> List[Dict]:
+    """生成简单标题（从该 clip 时间范围覆盖最长的字幕段提取）+ 本地评分
 
     Args:
         clips: 切片列表
-        all_segments: 全量 SRT 段落（可选；如果不传，回退到 clip.segments[0]）
+        all_segments: 全量 SRT 段落
+        strategy_config: 策略配置（用于本地评分：keep_rules / remove_rules / target_duration 等）
     """
+    config = strategy_config or {}
+    min_score = (config.get("rules") or {}).get("min_score", 0.6)  # 本地默认 0.6（比 AI 路径 0.7 略低，扣分项多）
+
     titled = []
 
     for clip in clips:
@@ -396,8 +505,17 @@ def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None) -
             text = ""
 
         # 清理标点
-        text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', text)
-        title = text[:30] + "..." if len(text) > 30 else text
+        text_clean = re.sub(r'[^\w\s\u4e00-\u9fff]', '', text)
+        title = text_clean[:30] + "..." if len(text_clean) > 30 else text_clean
+
+        # 本地评分
+        score = _score_clip_local(clip, all_segments, config)
+        if score < 0:
+            # 删除规则命中 → 跳过这个 clip
+            continue
+        if score < min_score:
+            # 低于阈值 → 也跳过（不写库）
+            continue
 
         titled.append({
             "index": clip["index"],
@@ -405,7 +523,7 @@ def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None) -
             "end": clip["end"],
             "duration": clip["duration"],
             "title": f"片段 {clip['index']}: {title}" if title else f"片段 {clip['index']}",
-            "score": 50,  # 默认分数
+            "score": round(score, 2),
         })
 
     return titled
