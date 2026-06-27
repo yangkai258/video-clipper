@@ -421,7 +421,23 @@ function App() {
                       onClick={() => navigate(`/project/${p.id}`)}
                     >
                       <div className="reel-status-dot" />
-                      <div className="reel-name">{p.name}</div>
+                      <div className="reel-name">
+                        <span className="reel-name-text">{p.name}</span>
+                        {p.status === 'processing' && (
+                          <span
+                            className="reel-progress-inline"
+                            title={p.current_step || `处理中 ${p.progress || 0}%`}
+                          >
+                            <span className="reel-progress-inline-bar">
+                              <span
+                                className="reel-progress-inline-fill"
+                                style={{ width: `${p.progress || 0}%` }}
+                              />
+                            </span>
+                            <span className="reel-progress-inline-label">{p.progress || 0}%</span>
+                          </span>
+                        )}
+                      </div>
                       <span
                         className={`style-badge ${p.style_id === '_default' ? 'style-badge-default' : ''}`}
                         title={
@@ -458,11 +474,6 @@ function App() {
                         <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
                         <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)}>✕</button>
                       </div>
-                      {p.status === 'processing' && (
-                        <div className="reel-progress-mini" style={{ gridColumn: '1 / -1', marginTop: 'var(--space-2)' }}>
-                          <div className="reel-progress-mini-fill" style={{ width: `${p.progress || 0}%` }} />
-                        </div>
-                      )}
                     </div>
                   ))}
                 </div>
