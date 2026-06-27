@@ -18,6 +18,8 @@ function App() {
   const [withSubtitle, setWithSubtitle] = useState(true)
   const [activeTab, setActiveTab] = useState('all')
   const [search, setSearch] = useState('')
+  const [showTrash, setShowTrash] = useState(false)  // 回收站模式
+  const [trashProjects, setTrashProjects] = useState([])
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -29,6 +31,15 @@ function App() {
       setProjects(res.data.projects)
     } catch (e) {
       console.error('加载项目失败:', e)
+    }
+  }
+
+  const loadTrash = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/projects/?include_deleted=true`)
+      setTrashProjects((res.data.projects || []).filter(p => p.deleted_at))
+    } catch (e) {
+      console.error('加载回收站失败:', e)
     }
   }
 
@@ -159,12 +170,41 @@ function App() {
     }
   }
 
-  const deleteProject = async (id, name) => {
-    if (!confirm(`确定删除「${name}」？此操作不可恢复。`)) return
+  const deleteProject = async (id, name, permanent = false) => {
+    const msg = permanent
+      ? `确定永久删除「${name}」？此操作不可恢复！`
+      : `确定删除「${name}」？会移到回收站，30 天内可恢复。`
+    if (!confirm(msg)) return
     try {
-      await axios.delete(`${API_BASE}/projects/${id}`)
+      await axios.delete(`${API_BASE}/projects/${id}${permanent ? '?permanent=true' : ''}`)
       loadProjects()
-    } catch (e) { alert(`删除失败：${e.message}`) }
+    } catch (e) {
+      const detail = e.response?.data?.detail || e.message
+      if (e.response?.status === 409) {
+        // processing 中 → 提示用户
+        if (confirm(`${detail}\n\n是否强制永久删除（会撤销 celery task）？`)) {
+          return deleteProject(id, name, true)
+        }
+      } else {
+        alert(`删除失败：${detail}`)
+      }
+    }
+  }
+
+  const restoreProject = async (id) => {
+    try {
+      await axios.post(`${API_BASE}/projects/${id}/restore`)
+      loadProjects()
+    } catch (e) { alert(`恢复失败：${e.response?.data?.detail || e.message}`) }
+  }
+
+  const purgeTrash = async () => {
+    if (!confirm('永久删除 30 天前的回收站项目？此操作不可恢复。')) return
+    try {
+      const res = await axios.post(`${API_BASE}/projects/trash/cleanup?older_than_days=30`)
+      alert(`已清理 ${res.data.cleaned_count} 个项目`)
+      loadProjects()
+    } catch (e) { alert(`清理失败：${e.message}`) }
   }
 
   const formatTC = (s) => {
@@ -215,12 +255,20 @@ function App() {
 
         <div className="sidebar-section-label">工作区</div>
         <button
-          className={`nav-item ${location.pathname === '/' ? 'active' : ''}`}
-          onClick={() => navigate('/')}
+          className={`nav-item ${location.pathname === '/' && !showTrash ? 'active' : ''}`}
+          onClick={() => { setShowTrash(false); navigate('/') }}
         >
           <span className="nav-item-icon">▶</span>
           切片项目
           <span className="nav-item-count">{projects.length}</span>
+        </button>
+        <button
+          className={`nav-item ${showTrash ? 'active' : ''}`}
+          onClick={() => { setShowTrash(true); loadTrash() }}
+        >
+          <span className="nav-item-icon">🗑</span>
+          回收站
+          <span className="nav-item-count">{trashProjects.length}</span>
         </button>
         <button
           className={`nav-item ${location.pathname === '/styles' ? 'active' : ''}`}
@@ -278,72 +326,118 @@ function App() {
         </div>
 
         <div className="content fade-in">
-          <div className="content-header">
-            <div>
-              <div className="content-title">所有切片</div>
-              <div className="content-subtitle">
-                {projects.length} 个项目 · {uploading ? `上传中 ${uploadProgress}%` : '空闲'}
-              </div>
-            </div>
-          </div>
-
-          <div className="tabs">
-            {[
-              ['all', '全部'],
-              ['processing', '处理中'],
-              ['completed', '已完成'],
-              ['pending', '待处理'],
-              ['failed', '失败'],
-            ].map(([k, label]) => (
-              <button
-                key={k}
-                className={`tab ${activeTab === k ? 'active' : ''}`}
-                onClick={() => setActiveTab(k)}
-              >
-                {label}
-                <span className="tab-count">{counts[k]}</span>
-              </button>
-            ))}
-          </div>
-
-          {filteredProjects.length > 0 ? (
-            <div className="reel-list">
-              {filteredProjects.map(p => (
-                <div
-                  key={p.id}
-                  className="reel-row"
-                  data-status={p.status}
-                  onClick={() => navigate(`/project/${p.id}`)}
-                >
-                  <div className="reel-status-dot" />
-                  <div className="reel-name">{p.name}</div>
-                  <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
-                  <div className="reel-cell">{formatTC(p.video_duration)}</div>
-                  <div className="reel-cell">{p.clip_count || 0} 个切片</div>
-                  <div className="reel-cell">{formatDate(p.created_at)}</div>
-                  <div className="reel-actions" onClick={e => e.stopPropagation()}>
-                    {p.status === 'pending' && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => startProcessing(p.id)}>▶ 处理</button>
-                    )}
-                    <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
-                    <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)}>✕</button>
+          {showTrash ? (
+            // === 回收站视图 ===
+            <>
+              <div className="content-header">
+                <div>
+                  <div className="content-title">回收站</div>
+                  <div className="content-subtitle">
+                    {trashProjects.length} 个已删除项目 · 30 天后自动清理
                   </div>
-                  {p.status === 'processing' && (
-                    <div className="reel-progress-mini" style={{ gridColumn: '1 / -1', marginTop: 'var(--space-2)' }}>
-                      <div className="reel-progress-mini-fill" style={{ width: `${p.progress || 0}%` }} />
-                    </div>
-                  )}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty">
-              <div className="empty-icon">∅</div>
-              <div className="empty-title">还没有切片项目</div>
-              <div className="empty-hint">
-                点击右上角 <b style={{ color: 'var(--accent)' }}>⏵ 新建切片</b> 上传第一个视频
+                <button className="btn btn-ghost btn-sm" onClick={purgeTrash}>
+                  清理 30 天前的
+                </button>
               </div>
-            </div>
+              {trashProjects.length > 0 ? (
+                <div className="reel-list">
+                  {trashProjects.map(p => (
+                    <div key={p.id} className="reel-row" data-status="deleted" style={{ opacity: 0.7 }}>
+                      <div className="reel-status-dot" />
+                      <div className="reel-name">{p.name}</div>
+                      <span className="status-pill" data-status="deleted">已删除</span>
+                      <div className="reel-cell">{formatTC(p.video_duration)}</div>
+                      <div className="reel-cell">{p.clip_count || 0} 个切片</div>
+                      <div className="reel-cell" style={{ fontSize: 'var(--text-xs)' }}>
+                        {p.deleted_at ? formatDate(p.deleted_at) : '—'}
+                      </div>
+                      <div className="reel-actions" onClick={e => e.stopPropagation()}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => restoreProject(p.id)}>↻ 恢复</button>
+                        <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name, true)}>永久删</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty">
+                  <div className="empty-icon">🗑</div>
+                  <div className="empty-title">回收站是空的</div>
+                  <div className="empty-hint">删除的项目会在这里，30 天内可恢复</div>
+                </div>
+              )}
+            </>
+          ) : (
+            // === 正常项目列表 ===
+            <>
+              <div className="content-header">
+                <div>
+                  <div className="content-title">所有切片</div>
+                  <div className="content-subtitle">
+                    {projects.length} 个项目 · {uploading ? `上传中 ${uploadProgress}%` : '空闲'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="tabs">
+                {[
+                  ['all', '全部'],
+                  ['processing', '处理中'],
+                  ['completed', '已完成'],
+                  ['pending', '待处理'],
+                  ['failed', '失败'],
+                ].map(([k, label]) => (
+                  <button
+                    key={k}
+                    className={`tab ${activeTab === k ? 'active' : ''}`}
+                    onClick={() => setActiveTab(k)}
+                  >
+                    {label}
+                    <span className="tab-count">{counts[k]}</span>
+                  </button>
+                ))}
+              </div>
+
+              {filteredProjects.length > 0 ? (
+                <div className="reel-list">
+                  {filteredProjects.map(p => (
+                    <div
+                      key={p.id}
+                      className="reel-row"
+                      data-status={p.status}
+                      onClick={() => navigate(`/project/${p.id}`)}
+                    >
+                      <div className="reel-status-dot" />
+                      <div className="reel-name">{p.name}</div>
+                      <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
+                      <div className="reel-cell">{formatTC(p.video_duration)}</div>
+                      <div className="reel-cell">{p.clip_count || 0} 个切片</div>
+                      <div className="reel-cell">{formatDate(p.created_at)}</div>
+                      <div className="reel-actions" onClick={e => e.stopPropagation()}>
+                        {p.status === 'pending' && (
+                          <button className="btn btn-ghost btn-sm" onClick={() => startProcessing(p.id)}>▶ 处理</button>
+                        )}
+                        <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
+                        <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)}>✕</button>
+                      </div>
+                      {p.status === 'processing' && (
+                        <div className="reel-progress-mini" style={{ gridColumn: '1 / -1', marginTop: 'var(--space-2)' }}>
+                          <div className="reel-progress-mini-fill" style={{ width: `${p.progress || 0}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty">
+                  <div className="empty-icon">∅</div>
+                  <div className="empty-title">还没有切片项目</div>
+                  <div className="empty-hint">
+                    点击右上角 <b style={{ color: 'var(--accent)' }}>⏵ 新建切片</b> 上传第一个视频
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>

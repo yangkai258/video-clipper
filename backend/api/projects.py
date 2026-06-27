@@ -1,14 +1,14 @@
 """项目 API 路由"""
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from ..core.database import get_db
 from ..core.config import settings
@@ -73,15 +73,18 @@ def calculate_progress(project: Project) -> dict:
 
 
 @router.get("/")
-async def list_projects(db: AsyncSession = Depends(get_db)):
-    """获取项目列表"""
-    result = await db.execute(
-        select(Project)
-        .options(selectinload(Project.clips), selectinload(Project.collections))
-        .order_by(Project.created_at.desc())
-    )
+async def list_projects(
+    include_deleted: bool = Query(default=False, description="是否包含已软删除的（回收站）"),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取项目列表（默认不显示已删除）"""
+    query = select(Project).options(selectinload(Project.clips), selectinload(Project.collections))
+    if not include_deleted:
+        query = query.where(Project.deleted_at.is_(None))
+    query = query.order_by(Project.created_at.desc())
+    result = await db.execute(query)
     projects = result.scalars().all()
-    
+
     return {
         "projects": [
             {
@@ -94,6 +97,7 @@ async def list_projects(db: AsyncSession = Depends(get_db)):
                 "collection_count": len(p.collections),
                 "created_at": p.created_at.isoformat(),
                 "completed_at": p.completed_at.isoformat() if p.completed_at else None,
+                "deleted_at": p.deleted_at.isoformat() if p.deleted_at else None,
                 **calculate_progress(p)
             }
             for p in projects
@@ -156,6 +160,7 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
             "processing_config": project.processing_config,
             "created_at": project.created_at.isoformat(),
             "completed_at": project.completed_at.isoformat() if project.completed_at else None,
+            "deleted_at": project.deleted_at.isoformat() if project.deleted_at else None,
             "task": {
                 "status": latest_task.status,
                 "progress": latest_task.progress,
@@ -382,23 +387,103 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
-    """删除项目"""
+async def delete_project(
+    project_id: str,
+    permanent: bool = Query(default=False, description="是否真删除（默认软删除进回收站）"),
+    db: AsyncSession = Depends(get_db)
+):
+    """删除项目（默认软删除到回收站，可恢复 30 天）"""
     import shutil
-    
+
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
-    
+
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
-    # 删除项目目录
-    project_dir = settings.PROJECTS_DIR / project_id
-    if project_dir.exists():
-        shutil.rmtree(project_dir)
-    
-    # 删除数据库记录
-    await db.delete(project)
+
+    # processing 状态禁止删除（避免 worker 写文件时目录被删）
+    if project.status == "processing" and not permanent:
+        raise HTTPException(
+            status_code=409,
+            detail="项目正在处理中，无法删除。请等待处理完成，或用 ?permanent=true 强制真删（会撤销 celery task）"
+        )
+
+    # 撤销 celery task（如果还在跑）—— 直接查 tasks 表，不用 lazy load
+    revoke_msg = None
+    tasks_result = await db.execute(select(Task).where(Task.project_id == project_id, Task.status == "running"))
+    running_tasks = [t for t in tasks_result.scalars().all() if t.celery_task_id]
+    for t in running_tasks:
+        try:
+            from ..core.celery_app import celery_app
+            celery_app.control.revoke(t.celery_task_id, terminate=True)
+        except Exception as e:
+            logger.warning(f"撤销 celery task 失败: {e}")
+    if running_tasks:
+        revoke_msg = f"已撤销 {len(running_tasks)} 个 celery task"
+
+    if permanent:
+        # 真删除：删目录 + 删 DB
+        project_dir = settings.PROJECTS_DIR / project_id
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        await db.delete(project)
+        await db.commit()
+        return {"message": "项目已永久删除", "permanent": True, "revoke": revoke_msg}
+    else:
+        # 软删除：标记 deleted_at，目录保留
+        project.deleted_at = datetime.utcnow()
+        project.status = "deleted"
+        await db.commit()
+        return {
+            "message": "项目已移到回收站，30 天内可恢复",
+            "permanent": False,
+            "deleted_at": project.deleted_at.isoformat(),
+            "restore_within_days": 30,
+            "revoke": revoke_msg,
+        }
+
+
+@router.post("/{project_id}/restore")
+async def restore_project(project_id: str, db: AsyncSession = Depends(get_db)):
+    """从回收站恢复项目"""
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if project.deleted_at is None:
+        raise HTTPException(status_code=400, detail="项目未被删除，无需恢复")
+
+    # 恢复：清掉 deleted_at，状态回 completed/pending
+    project.deleted_at = None
+    if project.status == "deleted":
+        # 看 clips 数量决定回到 completed 还是 failed（直接查不用 lazy load）
+        clip_count = await db.execute(select(func.count(Clip.id)).where(Clip.project_id == project_id))
+        has_clips = (clip_count.scalar() or 0) > 0
+        project.status = "completed" if has_clips else "pending"
     await db.commit()
-    
-    return {"message": "项目已删除"}
+    return {"message": "项目已恢复", "project_id": project_id, "status": project.status}
+
+
+@router.post("/trash/cleanup")
+async def cleanup_trash(older_than_days: int = Query(default=30, ge=1, le=365), db: AsyncSession = Depends(get_db)):
+    """清理回收站：永久删除 N 天前的软删除项目"""
+    import shutil
+
+    cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+    result = await db.execute(
+        select(Project).where(Project.deleted_at.isnot(None), Project.deleted_at < cutoff)
+    )
+    projects = result.scalars().all()
+
+    cleaned = []
+    for p in projects:
+        project_dir = settings.PROJECTS_DIR / p.id
+        if project_dir.exists():
+            shutil.rmtree(project_dir, ignore_errors=True)
+        await db.delete(p)
+        cleaned.append(p.id)
+    await db.commit()
+
+    return {"cleaned_count": len(cleaned), "project_ids": cleaned, "older_than_days": older_than_days}

@@ -15,7 +15,8 @@ class Project(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, default="")
     status = Column(String(50), default="pending")  # pending, processing, completed, failed
-    
+    deleted_at = Column(DateTime, nullable=True)  # 软删除：NULL = 正常，时间戳 = 进入回收站
+
     # 视频文件
     video_path = Column(String(512))
     video_duration = Column(Float, default=0.0)
