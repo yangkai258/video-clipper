@@ -215,15 +215,12 @@ body {
   letter-spacing: -0.01em;
 }
 
-.sidebar-section-label {
-  font-family: var(--text-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-dim);
-  font-weight: 600;
-  padding: 0 var(--space-3);
-  margin: var(--space-3) 0 var(--space-1);
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
 }
 
 .nav-item {
@@ -259,16 +256,6 @@ body {
   height: 16px;
   flex-shrink: 0;
   opacity: 0.8;
-}
-
-.nav-item-count {
-  margin-left: auto;
-  font-family: var(--text-mono);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  background: var(--bg-overlay);
-  padding: 1px var(--space-2);
-  border-radius: 999px;
 }
 
 .sidebar-bottom {

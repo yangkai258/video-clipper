@@ -25,15 +25,15 @@ const defaultStyle = {
   }
 }
 
-function StyleManager() {
+function StyleManager({ navigate: navProp, location: locProp }) {
   const [styles, setStyles] = useState([])
   const [presets, setPresets] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(defaultStyle)
   const [tab, setTab] = useState('basic')
-  const navigate = useNavigate()
-  const location = useLocation()
+  const navigate = navProp || useNavigate()
+  const location = locProp || useLocation()
 
   const loadStyles = async () => {
     try {
@@ -113,55 +113,20 @@ function StyleManager() {
   const updateSub = (k, v) => setForm(prev => ({ ...prev, subtitle_config: { ...prev.subtitle_config, [k]: v } }))
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="sidebar-brand-mark">VC</div>
-          <div className="sidebar-brand-name">视频切片工具</div>
+    <>
+      <div className="topbar">
+        <div className="topbar-right">
+          <button className="btn btn-primary" onClick={openCreate}>+ 新建风格</button>
         </div>
-        <div className="sidebar-section-label">工作区</div>
-        <button className={`nav-item ${location.pathname === '/' ? 'active' : ''}`} onClick={() => navigate('/')}>
-          <span className="nav-item-icon">▶</span>
-          切片项目
-          <span className="nav-item-count">—</span>
-        </button>
-        <button className={`nav-item ${location.pathname === '/styles' ? 'active' : ''}`} onClick={() => navigate('/styles')}>
-          <span className="nav-item-icon">✎</span>
-          风格管理
-          <span className="nav-item-count">{styles.length}</span>
-        </button>
-        <div className="sidebar-bottom">
-          <div className="user-chip">
-            <div className="user-avatar">U</div>
-            <div>
-              <div className="user-name">工作台</div>
-              <div className="user-status">● 在线</div>
-            </div>
-          </div>
-        </div>
-      </aside>
+      </div>
 
-      <main className="main">
-        <div className="topbar">
-          <div className="topbar-left">
-            <span className="breadcrumb">
-              <span>工作台</span>
-              <span className="breadcrumb-sep">/</span>
-              <span className="page-title">风格管理</span>
-            </span>
-          </div>
-          <div className="topbar-right">
-            <button className="btn btn-primary" onClick={openCreate}>+ 新建风格</button>
+      <div className="content fade-in">
+        <div className="content-header">
+          <div>
+            <div className="content-title">自定义风格</div>
+            <div className="content-subtitle">{styles.length} 个 · AI 切片的编辑风格</div>
           </div>
         </div>
-
-        <div className="content fade-in">
-          <div className="content-header">
-            <div>
-              <div className="content-title">自定义风格</div>
-              <div className="content-subtitle">{styles.length} 个 · AI 切片的编辑风格</div>
-            </div>
-          </div>
 
           {presets.length > 0 && (
             <>
@@ -225,8 +190,7 @@ function StyleManager() {
               <div className="empty-hint">创建一个，或从上方选个预设</div>
             </div>
           )}
-        </div>
-      </main>
+      </div>
 
       {showModal && (
         <div className="modal-overlay">
@@ -470,7 +434,7 @@ function StyleManager() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 

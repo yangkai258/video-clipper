@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import { ChunkedUploader, formatBytes, formatSpeed, formatTime } from './ChunkedUploader'
 import WatchFolders from './pages/WatchFolders'
+import StyleManager from './pages/StyleManager'
 import ThemeToggle from './ThemeToggle'
 import './index.css'
 
@@ -256,14 +257,12 @@ function App() {
           <div className="sidebar-brand-name">视频切片工具</div>
         </div>
 
-        <div className="sidebar-section-label">工作区</div>
         <button
           className={`nav-item ${location.pathname === '/' && !showTrash && !showWatchFolders ? 'active' : ''}`}
           onClick={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/') }}
         >
           <span className="nav-item-icon">▶</span>
           切片项目
-          <span className="nav-item-count">{projects.length}</span>
         </button>
         <button
           className={`nav-item ${showTrash ? 'active' : ''}`}
@@ -271,7 +270,6 @@ function App() {
         >
           <span className="nav-item-icon">🗑</span>
           回收站
-          <span className="nav-item-count">{trashProjects.length}</span>
         </button>
         <button
           className={`nav-item ${location.pathname === '/styles' ? 'active' : ''}`}
@@ -279,7 +277,6 @@ function App() {
         >
           <span className="nav-item-icon">✎</span>
           风格管理
-          <span className="nav-item-count">{customStyles.length}</span>
         </button>
         <button
           className={`nav-item ${showWatchFolders ? 'active' : ''}`}
@@ -306,7 +303,12 @@ function App() {
             <span className="breadcrumb">
               <span>工作台</span>
               <span className="breadcrumb-sep">/</span>
-              <span className="page-title">{showWatchFolders ? '监控文件夹' : showTrash ? '回收站' : '切片项目'}</span>
+              <span className="page-title">
+                {location.pathname === '/styles' ? '风格管理'
+                  : showWatchFolders ? '监控文件夹'
+                  : showTrash ? '回收站'
+                  : '切片项目'}
+              </span>
             </span>
           </div>
           <div className="topbar-right">
@@ -337,7 +339,9 @@ function App() {
         </div>
 
         <div className="content fade-in">
-          {showWatchFolders ? (
+          {location.pathname === '/styles' ? (
+            <StyleManager navigate={navigate} location={location} />
+          ) : showWatchFolders ? (
             <WatchFolders />
           ) : showTrash ? (
             // === 回收站视图 ===
