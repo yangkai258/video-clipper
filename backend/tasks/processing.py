@@ -11,6 +11,31 @@ from ..core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _update_task_progress(task_id: str, progress: int, current_step: str) -> None:
+    """更新 Task 表的 progress + current_step（短事务，写完即关）
+
+    约定：
+    - progress: 0-100
+    - current_step: 显示给用户的中文标签
+    - 失败仅 warning，不影响主流程
+    """
+    if not task_id:
+        return
+    try:
+        from ..core.database import sync_get_db
+        from ..models.database import Task
+        from sqlalchemy import select
+
+        with sync_get_db() as db:
+            task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+            if task:
+                task.progress = max(0, min(100, progress))
+                task.current_step = current_step[:255]  # 列宽保护
+                db.commit()
+    except Exception as e:
+        logger.warning(f"进度更新失败 (progress={progress}, step={current_step}): {e}")
+
+
 @shared_task(bind=True)
 def process_video_pipeline(
     self,
@@ -55,9 +80,27 @@ def process_video_pipeline(
         clips_dir.mkdir(parents=True, exist_ok=True)
         collections_dir.mkdir(parents=True, exist_ok=True)
         
-        # Step 1: 字幕生成（按 with_subtitle 决定是否落盘到项目目录）
+        # === Step 1: 字幕生成 (进度 2% → 30%) ===
         logger.info("Step 1: 生成字幕")
+        _update_task_progress(task_id, 2, "准备生成字幕")
         # 从 strategy_config 提取 with_subtitle 标志（默认 True 保持向后兼容）
+        with_subtitle = strategy_config.get("with_subtitle", True) if strategy_config else True
+        logger.info(f"字幕模式：{'落盘到项目目录' if with_subtitle else 'in_memory 模式（不写项目目录，用完即删）'}")
+
+        # === Step 1 心跳: whisper 跑得慢（30s-3min），每 5s 推一次进度 ===
+        import threading
+        _heartbeat_stop = threading.Event()
+        def _heartbeat():
+            import time as _time
+            _t0 = _time.time()
+            while not _heartbeat_stop.is_set():
+                _elapsed = int(_time.time() - _t0)
+                # 0s→2%, 60s→16%, 120s→25%, 180s+→30%
+                _pct = 2 + min(28, int(_elapsed / 120 * 28))
+                _update_task_progress(task_id, _pct, f"生成字幕中... ({_elapsed}s)")
+                _heartbeat_stop.wait(5)  # 5s 一次，可被 stop 提前唤醒
+        _hb_thread = threading.Thread(target=_heartbeat, daemon=True)
+        _hb_thread.start()
         with_subtitle = strategy_config.get("with_subtitle", True) if strategy_config else True
         logger.info(f"字幕模式：{'落盘到项目目录' if with_subtitle else 'in_memory 模式（不写项目目录，用完即删）'}")
 
@@ -103,25 +146,20 @@ def process_video_pipeline(
         if not srt_path or not Path(srt_path).exists():
             raise Exception("字幕生成失败")
 
+        # 停心跳 + 推到 30%
+        _heartbeat_stop.set()
+        _update_task_progress(task_id, 30, "字幕生成完成")
+
         # 清理内存
         gc.collect()
 
-        # 更新进度到 50%
-        from ..core.database import sync_get_db
-        from ..models.database import Task
-        from sqlalchemy import select
-
-        with sync_get_db() as db:
-            task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
-            if task:
-                task.progress = 50
-                task.current_step = "分析内容结构"
-                db.commit()
-        
+        # === Step 2: 大纲提取 (进度 30% → 45%) ===
+        _update_task_progress(task_id, 32, "提取内容大纲")
         # Step 2: 大纲提取（可选，失败时使用本地备用方案）
         logger.info("Step 2: 提取大纲")
         outlines = extract_outline(srt_path, metadata_dir, strategy_config)
-        
+        _update_task_progress(task_id, 40, "提取内容大纲")
+
         if not outlines:
             logger.warning("AI 大纲提取失败，使用本地备用方案（基于字幕段落自动切片）")
             # 使用本地方案：直接从字幕生成时间线
@@ -130,25 +168,32 @@ def process_video_pipeline(
             outlines = clips_data.get("outlines", [])
             titled_clips = clips_data.get("clips", [])
             collections = clips_data.get("collections", [])
+            _update_task_progress(task_id, 55, "本地方案生成完成")
         else:
             # Step 3: 时间线创建
             logger.info("Step 3: 创建时间线")
+            _update_task_progress(task_id, 45, "构建时间线")
             timeline = create_timeline(outlines, srt_path, metadata_dir, strategy_config)
 
             # Step 4: 切片评分（使用策略参数）
             logger.info("Step 4: 切片评分")
+            _update_task_progress(task_id, 50, "评分候选片段")
             scored_clips = score_clips(timeline, metadata_dir, strategy_config)
 
             # Step 5: 生成标题（传入 srt 让 LLM 看内容生成吸引人标题）
             logger.info("Step 5: 生成标题")
+            _update_task_progress(task_id, 55, "生成片段标题")
             titled_clips = generate_titles(scored_clips, metadata_dir, srt_path=srt_path, strategy_config=strategy_config)
 
             # Step 6: 主题聚类（使用策略参数）
             logger.info("Step 6: 主题聚类")
+            _update_task_progress(task_id, 60, "主题聚类")
             collections = cluster_collections(titled_clips, metadata_dir, strategy_config)
 
         # Step 7: 切割视频（传入字幕配置 + with_subtitle 标志）
+        # 切割 step 内部自己维护 70% → 90% 的逐片进度 (见 video_service.cut_clips)
         logger.info("Step 7: 切割视频")
+        _update_task_progress(task_id, 65, "开始切割视频")
         # 从 strategy_config 提取 with_subtitle 标志（默认 True 保持向后兼容）
         with_subtitle = strategy_config.get("with_subtitle", True) if strategy_config else True
         logger.info(f"字幕烧录：{'开启' if with_subtitle else '关闭（纯剪片子）'}")
@@ -161,9 +206,12 @@ def process_video_pipeline(
             subtitle_config=subtitle_config,
             with_subtitle=with_subtitle,
         )
-        
+        _update_task_progress(task_id, 92, "切割完成")
+
         # Step 8: 合并合集
+        # 合并内部维护 90% → 99% 进度 (见 video_service.merge_collections)
         logger.info("Step 8: 合并合集")
+        _update_task_progress(task_id, 93, "合并合集")
         merge_collections(collections, clips_dir, collections_dir, task_id=task_id)
         
         # Step 9: 验证文件完整性

@@ -31,22 +31,45 @@ DEFAULT_STYLE_NAME = "默认"
 
 
 async def _resolve_style(project: Project, db: AsyncSession) -> dict:
-    """解析项目用的风格 → {style_id, style_name}
+    """解析项目用的风格 → {style_id, style_name, target_duration, max_clips, has_subtitle}
 
     优先级：
     1. processing_config.style_id 存在 → 查 Style 表
     2. 不存在或查不到 → 默认 (灰色)
+    3. target_duration / max_clips：项目级 processing_config 覆盖 Style 表
+    4. has_subtitle：直接读 cfg.with_subtitle（None=未设置 = 视作 False）
     """
-    style_id_raw = (project.processing_config or {}).get("style_id")
+    cfg = project.processing_config or {}
+    style_id_raw = cfg.get("style_id")
+    has_subtitle = bool(cfg.get("with_subtitle", False))
+
     if not style_id_raw:
-        return {"style_id": DEFAULT_STYLE_ID, "style_name": DEFAULT_STYLE_NAME}
+        return {
+            "style_id": DEFAULT_STYLE_ID,
+            "style_name": DEFAULT_STYLE_NAME,
+            "target_duration": cfg.get("target_duration"),
+            "max_clips": cfg.get("max_clips"),
+            "has_subtitle": has_subtitle,
+        }
 
     result = await db.execute(select(Style).where(Style.id == style_id_raw))
     s = result.scalar_one_or_none()
     if s:
-        return {"style_id": s.id, "style_name": s.name}
+        return {
+            "style_id": s.id,
+            "style_name": s.name,
+            "target_duration": cfg.get("target_duration", s.target_duration),
+            "max_clips": cfg.get("max_clips", s.max_clips),
+            "has_subtitle": has_subtitle,
+        }
     # style_id 写了但 Style 已被删
-    return {"style_id": style_id_raw, "style_name": "已删除"}
+    return {
+        "style_id": style_id_raw,
+        "style_name": "已删除",
+        "target_duration": cfg.get("target_duration"),
+        "max_clips": cfg.get("max_clips"),
+        "has_subtitle": has_subtitle,
+    }
 
 
 async def _get_last_subtitle_style(db: AsyncSession) -> Optional[dict]:

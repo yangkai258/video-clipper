@@ -422,8 +422,30 @@ function App() {
                     >
                       <div className="reel-status-dot" />
                       <div className="reel-name">{p.name}</div>
-                      <span className={`style-badge ${p.style_id === '_default' ? 'style-badge-default' : ''}`}>
+                      <span
+                        className={`style-badge ${p.style_id === '_default' ? 'style-badge-default' : ''}`}
+                        title={
+                          p.target_duration || p.max_clips
+                            ? `${p.style_name || '默认'}` +
+                              (p.target_duration ? ` · ${p.target_duration}s/片` : '') +
+                              (p.max_clips ? ` · ≤${p.max_clips}片` : '')
+                            : undefined
+                        }
+                      >
                         {p.style_name || '默认'}
+                        {(p.target_duration || p.max_clips) && (
+                          <span className="style-badge-meta">
+                            {p.target_duration && <> · {p.target_duration}s</>}
+                            {p.max_clips && <> · ≤{p.max_clips}</>}
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className={`subtitle-pill ${p.has_subtitle ? 'subtitle-pill-on' : 'subtitle-pill-off'}`}
+                        title={p.has_subtitle ? '本项目已生成字幕' : '本项目未生成字幕'}
+                      >
+                        <span className="subtitle-pill-icon">📝</span>
+                        <span className="subtitle-pill-label">{p.has_subtitle ? '带字幕' : '无字幕'}</span>
                       </span>
                       <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
                       <div className="reel-cell">{formatTC(p.video_duration)}</div>

@@ -283,7 +283,7 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
         )
 
     # 创建项目记录
-    subtitle_style = _get_last_subtitle_style()
+    subtitle_style = await _get_last_subtitle_style(db)
     project = Project(
         id=project_id,
         name=meta["name"],

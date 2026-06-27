@@ -306,24 +306,12 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
             # 保存相对路径
             clip["video_path"] = str(output_path.relative_to(output_path.parent.parent.parent))
             
-            # ✅ 修复：每 5 个切片或最后一个切片时更新进度（70% → 90%）
+            # ✅ 修复：每 5 个切片或最后一个切片时更新进度（65% → 90%）
             if task_id and ((i + 1) % 5 == 0 or i == len(clips) - 1):
                 try:
-                    from ..core.database import sync_get_db
-                    from ..models.database import Task
-                    from sqlalchemy import select
-                    
-                    progress = 70 + int(((i + 1) / len(clips)) * 20)  # 70% → 90%
-                    db_gen = sync_get_db()
-                    db = next(db_gen)
-                    try:
-                        task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
-                        if task:
-                            task.progress = progress
-                            task.current_step = f"切割中... ({i+1}/{len(clips)})"
-                            db.commit()
-                    finally:
-                        db.close()
+                    from ..tasks.processing import _update_task_progress
+                    progress = 65 + int(((i + 1) / len(clips)) * 25)  # 65% → 90%
+                    _update_task_progress(task_id, progress, f"切割中... ({i+1}/{len(clips)})")
                 except Exception as e:
                     logger.warning(f"进度更新失败：{e}")
             
@@ -391,24 +379,12 @@ def merge_collections(collections: List[Dict], clips_dir: Path, output_dir: Path
             collection["video_path"] = str(output_path.relative_to(output_path.parent.parent.parent))
             logger.info(f"合集 {i+1} 合并完成：{output_path}")
             
-            # ✅ 修复：每个合集完成后更新进度（90% → 100%）
+            # ✅ 修复：每个合集完成后更新进度（93% → 99%）
             if task_id:
                 try:
-                    from ..core.database import sync_get_db
-                    from ..models.database import Task
-                    from sqlalchemy import select
-                    
-                    progress = 90 + int(((i + 1) / len(collections)) * 10)  # 90% → 100%
-                    db_gen = sync_get_db()
-                    db = next(db_gen)
-                    try:
-                        task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
-                        if task:
-                            task.progress = min(progress, 99)  # 保留 100% 给最终状态更新
-                            task.current_step = f"合并合集中... ({i+1}/{len(collections)})"
-                            db.commit()
-                    finally:
-                        db.close()
+                    from ..tasks.processing import _update_task_progress
+                    progress = 93 + int(((i + 1) / len(collections)) * 6)  # 93% → 99%
+                    _update_task_progress(task_id, min(progress, 99), f"合并合集中... ({i+1}/{len(collections)})")
                 except Exception as e:
                     logger.warning(f"进度更新失败：{e}")
             

@@ -527,3 +527,90 @@ class TestUploadsValidation:
             files={"chunk": ("chunk", io.BytesIO(b"x"), "application/octet-stream")}
         )
         assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_complete_upload_passes_db_to_get_subtitle_style(self, client, tmp_path, monkeypatch):
+        """complete_upload 不再漏传 db 给 _get_last_subtitle_style (回归测试 v2.1.3)
+
+        之前 bug: _get_last_subtitle_style() 漏传 db, 触发 500
+        修法: await _get_last_subtitle_style(db)
+        """
+        # 准备：init + 上传一个 1KB 文件 + 调 complete
+        import io
+        r = await client.post(
+            "/api/v1/uploads/init",
+            data={"name": "回归测试", "filename": "tiny.mp4", "total_size": 1024},
+        )
+        assert r.status_code == 200, r.text
+        upload_id = r.json()["upload_id"]
+
+        # 上传 1 个 1KB 分片
+        r = await client.put(
+            f"/api/v1/uploads/{upload_id}/chunk?offset=0",
+            files={"chunk": ("chunk", io.BytesIO(b"\x00" * 1024), "application/octet-stream")},
+        )
+        assert r.status_code == 200, r.text
+
+        # 关键: complete 不应 500 (老 bug 是 500)
+        r = await client.post(f"/api/v1/uploads/{upload_id}/complete")
+        # 可能 200 (成功) 或 4xx (ffprobe 拒绝非真 mp4)，但绝对不能 500
+        assert r.status_code != 500, f"complete_upload 仍然 500: {r.text}"
+        assert r.status_code in (200, 400, 422), f"unexpected status {r.status_code}: {r.text}"
+
+
+class TestProgressGranularity:
+    """进度更新细粒度 (v2.1.4)"""
+
+    def test_update_task_progress_helper_writes_to_db(self):
+        """_update_task_progress 应该写入 progress + current_step 到 db"""
+        from backend.core.database import sync_get_db
+        from backend.models.database import Task, Project
+        from backend.tasks.processing import _update_task_progress
+        from datetime import datetime
+
+        with sync_get_db() as db:
+            db.add(Project(id="p_prog", name="P", status="processing",
+                           created_at=datetime.utcnow()))
+            db.add(Task(id="t_prog", project_id="p_prog", task_type="video_processing",
+                        status="running", progress=0, current_step=""))
+            db.commit()
+
+        _update_task_progress("t_prog", 42, "测试中")
+
+        with sync_get_db() as db:
+            from sqlalchemy import select
+            t = db.execute(select(Task).where(Task.id == "t_prog")).scalar_one()
+            assert t.progress == 42, f"期望 42, 实际 {t.progress}"
+            assert t.current_step == "测试中"
+
+    def test_update_task_progress_clamps_range(self):
+        """progress 限制在 0-100 之间"""
+        from backend.core.database import sync_get_db
+        from backend.models.database import Task, Project
+        from backend.tasks.processing import _update_task_progress
+        from datetime import datetime
+        from sqlalchemy import select
+
+        with sync_get_db() as db:
+            db.add(Project(id="p_clamp", name="P", status="processing",
+                           created_at=datetime.utcnow()))
+            db.add(Task(id="t_clamp", project_id="p_clamp", task_type="video_processing",
+                        status="running", progress=0, current_step=""))
+            db.commit()
+
+        # 上界
+        _update_task_progress("t_clamp", 150, "X")
+        with sync_get_db() as db:
+            t = db.execute(select(Task).where(Task.id == "t_clamp")).scalar_one()
+            assert t.progress == 100, f"150 应被 clamp 到 100, 实际 {t.progress}"
+        # 下界
+        _update_task_progress("t_clamp", -5, "X")
+        with sync_get_db() as db:
+            t = db.execute(select(Task).where(Task.id == "t_clamp")).scalar_one()
+            assert t.progress == 0, f"-5 应被 clamp 到 0, 实际 {t.progress}"
+
+    def test_update_task_progress_nonexistent_task_safe(self):
+        """task_id 不存在时只 warning, 不抛错"""
+        from backend.tasks.processing import _update_task_progress
+        # 不应抛错
+        _update_task_progress("nonexistent_task_id_xxx", 50, "X")

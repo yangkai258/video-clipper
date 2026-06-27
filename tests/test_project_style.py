@@ -129,3 +129,69 @@ def test_orphan_style_id_falls_back(client):
     p = next(p for p in res.json()["projects"] if p["name"] == "Orphan")
     assert p["style_id"] == "nonexistent_style"  # 保留原 ID 用于追溯
     assert p["style_name"] == "已删除"  # 但显示"已删除"
+
+
+def test_style_returns_target_duration_and_max_clips(client):
+    """list 应返回 target_duration + max_clips（来自 Style 或 project config 覆盖）"""
+    from backend.core.database import sync_get_db
+    from backend.models.database import Project, Style
+    with sync_get_db() as db:
+        db.add(Style(id="s1", name="金句优先", target_duration=45, max_clips=30,
+                     content_types=[], rules={}))
+        # 1. 无项目级覆盖 → 用 Style 表的值
+        db.add(Project(id="p1", name="FromStyle", status="completed",
+                       processing_config={"style_id": "s1"}))
+        # 2. 项目级覆盖 target_duration + max_clips
+        db.add(Project(id="p2", name="Overridden", status="completed",
+                       processing_config={
+                           "style_id": "s1",
+                           "target_duration": 120,
+                           "max_clips": 5,
+                       }))
+        # 3. 没选过风格 → None
+        db.add(Project(id="p3", name="NoStyle", status="completed"))
+        db.commit()
+
+    import asyncio
+    loop = asyncio.new_event_loop()
+    res = loop.run_until_complete(client.get("/api/v1/projects/"))
+    loop.close()
+
+    by_name = {p["name"]: p for p in res.json()["projects"]}
+    # 1. 默认从 Style 表拿
+    p1 = by_name["FromStyle"]
+    assert p1["target_duration"] == 45, f"期望 45, 实际 {p1['target_duration']}"
+    assert p1["max_clips"] == 30
+    # 2. project config 覆盖
+    p2 = by_name["Overridden"]
+    assert p2["target_duration"] == 120  # 覆盖 Style 的 45
+    assert p2["max_clips"] == 5  # 覆盖 Style 的 30
+    # 3. 没选过 → None
+    p3 = by_name["NoStyle"]
+    assert p3["target_duration"] is None
+    assert p3["max_clips"] is None
+
+
+def test_list_returns_has_subtitle_from_processing_config(client):
+    """has_subtitle 直接来自 processing_config.with_subtitle (bool)"""
+    from backend.core.database import sync_get_db
+    from backend.models.database import Project
+    with sync_get_db() as db:
+        db.add(Project(id="p_sub_on", name="WithSub", status="completed",
+                       processing_config={"style_id": "s1", "with_subtitle": True}))
+        db.add(Project(id="p_sub_off", name="NoSub", status="completed",
+                       processing_config={"style_id": "s1", "with_subtitle": False}))
+        db.add(Project(id="p_sub_default", name="UnsetSub", status="completed",
+                       processing_config={"style_id": "s1"}))  # 没设置
+        db.commit()
+
+    import asyncio
+    loop = asyncio.new_event_loop()
+    res = loop.run_until_complete(client.get("/api/v1/projects/"))
+    loop.close()
+
+    by_name = {p["name"]: p for p in res.json()["projects"]}
+    assert by_name["WithSub"]["has_subtitle"] is True
+    assert by_name["NoSub"]["has_subtitle"] is False
+    # 未设置默认 False (没字幕 = 默认行为)
+    assert by_name["UnsetSub"]["has_subtitle"] is False
