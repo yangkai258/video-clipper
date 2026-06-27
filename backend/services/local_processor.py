@@ -19,37 +19,55 @@ def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_co
     strategy_config = strategy_config or {}
     target_duration = strategy_config.get("target_duration", 45.0)
     max_clips = strategy_config.get("max_clips", 20)
-    
-    logger.info(f"本地处理 - 目标时长：{target_duration}s, 最大切片数：{max_clips}")
-    
+    rules = strategy_config.get("rules") or {}
+    even_split = rules.get("even_split", False)
+    avoid_silence = rules.get("avoid_silence", False)
+
+    logger.info(f"本地处理 - 目标时长：{target_duration}s, 最大切片数：{max_clips}, even_split={even_split}, avoid_silence={avoid_silence}")
+
     # 解析字幕
     segments = parse_srt(srt_path)
     logger.info(f"解析到 {len(segments)} 个字幕段落")
-    
+
     if not segments:
         return {"outlines": [], "clips": [], "collections": []}
-    
+
     # 合并短段落（<3 秒）
     merged = merge_short_segments(segments, min_duration=3.0)
     logger.info(f"合并后 {len(merged)} 个段落")
 
-    # 短视频场景不再走"按时间等分"——尊重语义边界：
-    # - 单段超长 → 硬切
-    # - 段间静默 > target/2 → 强制切
-    # - 累积接近 target → 切
-    # 短段（< target）也保持原长，不补齐
-    clips = generate_clips(merged, target_duration=target_duration)
-    logger.info(f"生成 {len(clips)} 个切片（按语义边界）")
+    # 决定切分路径：
+    # - even_split=true：按 target_duration 均匀切（教程/课程类内容）
+    # - 否则：按语义边界（单段超长硬切 / 段间静默强制切 / 累积接近 target 切）
+    if even_split:
+        video_end = segments[-1]["end"]
+        clips = generate_clips_even_split(video_end, target_duration, segments=merged)
+        logger.info(f"生成 {len(clips)} 个切片（even_split 均匀切分）")
+    else:
+        # 短视频场景不再走"按时间等分"——尊重语义边界：
+        # - 单段超长 → 硬切
+        # - 段间静默 > target/2 → 强制切
+        # - 累积接近 target → 切
+        # 短段（< target）也保持原长，不补齐
+        clips = generate_clips(merged, target_duration=target_duration)
+        logger.info(f"生成 {len(clips)} 个切片（按语义边界）")
+
+    # avoid_silence：丢掉静默占比 > 50% 的切片（视频很长的内部静默或单人独白空段）
+    if avoid_silence and clips:
+        before = len(clips)
+        clips = filter_silent_clips(clips, segments, silence_threshold=0.5)
+        if len(clips) != before:
+            logger.info(f"avoid_silence：{before} → {len(clips)} 个切片（丢弃静默段）")
 
     # 前置 1s + 退出 1s 缓冲（避免相邻重叠）
     video_end = segments[-1]["end"] if segments else None
     clips = _apply_buffers(clips, pre_roll=1.0, post_roll=1.0, video_end=video_end)
-    
+
     # 根据策略限制最大切片数
     if len(clips) > max_clips:
         logger.info(f"根据策略限制切片数：{len(clips)} → {max_clips}")
         clips = clips[:max_clips]
-    
+
     # 生成简单标题
     titled_clips = generate_simple_titles(clips)
     
@@ -281,6 +299,60 @@ def _apply_buffers(clips: List[Dict], pre_roll: float = 1.0, post_roll: float = 
         c["duration"] = new_end - new_start
 
     return clips
+
+
+def generate_clips_even_split(video_end: float, target_duration: float, segments: List[Dict] = None) -> List[Dict]:
+    """even_split 路径：按 target_duration 均匀切视频（教学/课程类内容）"""
+    if video_end <= 0 or target_duration <= 0:
+        return []
+
+    n = max(1, int(round(video_end / target_duration)))
+    piece = video_end / n
+    clips = []
+    for i in range(n):
+        s = i * piece
+        e = (i + 1) * piece if i < n - 1 else video_end
+        overlaps = [
+            (max(0.0, min(e, seg["end"]) - max(s, seg["start"])), seg)
+            for seg in (segments or [])
+        ]
+        overlaps = [(ov, seg) for ov, seg in overlaps if ov > 0]
+        overlaps.sort(key=lambda x: -x[0])
+        seg = overlaps[0][1] if overlaps else None
+        text = seg.get("text", "") if seg else ""
+        clips.append({
+            "start": s,
+            "end": e,
+            "duration": e - s,
+            "index": i + 1,
+            "segments": [seg] if seg else [],
+            "_title_text": text,
+        })
+    return clips
+
+
+def filter_silent_clips(clips: List[Dict], segments: List[Dict], silence_threshold: float = 0.5) -> List[Dict]:
+    """avoid_silence 路径：丢弃静默占比超过阈值的切片
+
+    静默判定：切片时段内没有字幕段覆盖的时长 / 切片总时长 > silence_threshold
+    """
+    if not clips or not segments:
+        return clips
+
+    out = []
+    for c in clips:
+        covered = 0.0
+        for seg in segments:
+            ov = max(0.0, min(c["end"], seg["end"]) - max(c["start"], seg["start"]))
+            covered += ov
+        if c["duration"] <= 0:
+            continue
+        silence_ratio = 1.0 - min(1.0, covered / c["duration"])
+        if silence_ratio <= silence_threshold:
+            out.append(c)
+        else:
+            logger.info(f"avoid_silence 丢弃: [{c['start']:.1f}, {c['end']:.1f}] 静默占比 {silence_ratio:.0%}")
+    return out
 
 
 def generate_simple_titles(clips: List[Dict]) -> List[Dict]:

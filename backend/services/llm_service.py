@@ -153,6 +153,11 @@ def _build_style_prompt_block(strategy_config: dict) -> str:
     if style_positioning:
         blocks.append(f"【风格定位】{style_positioning}\n（内容应匹配此调性——这是账号/人设的差异化标签）")
 
+    content_types = strategy_config.get("content_types") or []
+    if content_types:
+        types_str = "、".join(content_types)
+        blocks.append(f"【内容分类】{types_str}\n（只挑选这些分类下的内容，其他分类的话题不列入大纲）")
+
     content_guidelines = strategy_config.get("content_guidelines", "").strip()
     if content_guidelines:
         blocks.append(f"【内容指南】{content_guidelines}\n（只关注这些类型的内容）")
@@ -411,11 +416,14 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
     keep_keywords = _parse_rules_to_keywords(strategy_config.get("keep_rules", ""))
     remove_keywords = _parse_rules_to_keywords(strategy_config.get("remove_rules", ""))
     priority_keywords = strategy_config.get("rules", {}).get("priority_keywords", [])
+    # 内容分类命中加分（同时匹配分类词 = 这个分类下的话题）
+    content_types = strategy_config.get("content_types") or []
 
-    logger.info(f"切片评分 - 阈值:{min_score}, 保留关键词:{len(keep_keywords)}, 删除关键词:{len(remove_keywords)}, 优先关键词:{len(priority_keywords)}")
+    logger.info(f"切片评分 - 阈值:{min_score}, 保留关键词:{len(keep_keywords)}, 删除关键词:{len(remove_keywords)}, 优先关键词:{len(priority_keywords)}, 内容分类:{content_types}")
 
     scored = []
     dropped_by_remove = 0
+    dropped_by_type = 0
 
     for item in timeline:
         title = item.get("title", "")
@@ -424,6 +432,11 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
         # 1) 删除规则优先：命中任何一个 remove_keyword 直接丢弃
         if remove_keywords and any(kw in title for kw in remove_keywords):
             dropped_by_remove += 1
+            continue
+
+        # 1.5) 内容分类过滤：title 不属于 content_types 任意一项就丢（只在配置了 content_types 时生效）
+        if content_types and not any(ct in title for ct in content_types):
+            dropped_by_type += 1
             continue
 
         # 2) 基础分
@@ -442,6 +455,13 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
             base_score = min(base_score + 0.15, 1.0)
             reasons.append("优先关键词命中")
 
+        # 4.5) 内容分类命中：加分
+        if content_types:
+            matched_types = [ct for ct in content_types if ct in title]
+            if matched_types:
+                base_score = min(base_score + 0.1, 1.0)
+                reasons.append(f"内容分类命中:{','.join(matched_types[:2])}")
+
         # 5) 只保留高于阈值的切片
         if base_score >= min_score:
             reason_str = " + ".join(reasons) if reasons else "基础分通过"
@@ -455,7 +475,7 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
     with open(scored_path, "w", encoding="utf-8") as f:
         json.dump(scored, f, ensure_ascii=False, indent=2)
 
-    logger.info(f"评分完成：{len(scored)} 个通过 / {dropped_by_remove} 个被删除规则过滤")
+    logger.info(f"评分完成：{len(scored)} 个通过 / {dropped_by_remove} 个被删除规则过滤 / {dropped_by_type} 个被内容分类过滤")
     return scored
 
 
