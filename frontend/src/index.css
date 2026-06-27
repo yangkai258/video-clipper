@@ -24,9 +24,18 @@
   --text-xl: 20px;
   --text-2xl: 28px;
 
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* v2.1.9 Glass 2.0: 通用玻璃面板 */
+  --glass-bg-dark: rgba(19, 19, 22, 0.55);
+  --glass-bg-light: rgba(255, 255, 255, 0.55);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.10);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --glass-shadow-dark: 0 8px 32px rgba(0, 0, 0, 0.32);
+  --glass-shadow-light: 0 8px 32px rgba(0, 0, 0, 0.08);
   --radius-xl: 12px;
 
   --transition-fast: 0.1s cubic-bezier(0.4, 0, 0.2, 1);
@@ -44,6 +53,11 @@
   --bg-elevated: #131316;
   --bg-overlay: #1c1c20;
   --bg-hover: #1f1f24;
+  /* v2.1.9 glass 2.0: 背景光晕 (3 个柔光圆叠加在渐变上) */
+  --bg-glow:
+    radial-gradient(70% 60% at 12% 18%, rgba(251, 146, 60, 0.55), transparent 70%),
+    radial-gradient(60% 50% at 88% 28%, rgba(6, 182, 212, 0.50), transparent 70%),
+    radial-gradient(80% 70% at 50% 95%, rgba(236, 72, 153, 0.40), transparent 70%);
   --bg-glass: rgba(19, 19, 22, 0.55);
   --bg-card: rgba(28, 28, 32, 0.6);
   --bg-modal: rgba(20, 20, 24, 0.75);
@@ -74,12 +88,16 @@
   --text-on-accent: #ffffff;
 
   /* Glassmorphism 配置 */
-  --blur-strength: 24px;
-  --saturate-strength: 180%;
+  --blur-strength: 32px;
+  --saturate-strength: 200%;
 
   /* 背景渐变（深色 = 暗夜森林 — 无紫） */
   --bg-gradient: linear-gradient(135deg, #0d1b2a 0%, #1b3a4b 50%, #2d5a6b 100%);
   --bg-gradient-soft: linear-gradient(135deg, rgba(13, 27, 42, 0.85) 0%, rgba(27, 58, 75, 0.85) 50%, rgba(45, 90, 107, 0.85) 100%);
+  --bg-glow:
+    radial-gradient(60% 50% at 15% 20%, rgba(251, 146, 60, 0.20), transparent 70%),
+    radial-gradient(50% 40% at 85% 30%, rgba(6, 182, 212, 0.15), transparent 70%),
+    radial-gradient(70% 60% at 50% 90%, rgba(236, 72, 153, 0.12), transparent 70%);
 
   /* Shadow (dark mode) */
   --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.4);
@@ -124,12 +142,16 @@
   --text-on-accent: #ffffff;
 
   /* Glassmorphism 配置 (浅色 blur 稍弱 — 白底过模糊会糊) */
-  --blur-strength: 20px;
-  --saturate-strength: 150%;
+  --blur-strength: 28px;
+  --saturate-strength: 180%;
 
   /* 背景渐变（浅色 = 天蓝晴空） */
   --bg-gradient: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 50%, #7dd3fc 100%);
   --bg-gradient-soft: linear-gradient(135deg, rgba(224, 242, 254, 0.85) 0%, rgba(186, 230, 253, 0.85) 50%, rgba(125, 211, 252, 0.85) 100%);
+  --bg-glow:
+    radial-gradient(60% 50% at 15% 20%, rgba(251, 146, 60, 0.45), transparent 70%),
+    radial-gradient(50% 40% at 85% 30%, rgba(6, 182, 212, 0.40), transparent 70%),
+    radial-gradient(70% 60% at 50% 90%, rgba(236, 72, 153, 0.30), transparent 70%);
 
   /* Shadow (light mode) */
   --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
@@ -148,7 +170,10 @@ body {
   font-size: var(--text-base);
   line-height: 1.5;
   color: var(--text-default);
-  background: var(--bg-gradient);
+  /* v2.1.9 glass 2.0: 渐变 + 3 个柔光圆叠加 */
+  background:
+    var(--bg-glow),
+    var(--bg-gradient);
   background-attachment: fixed;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -165,22 +190,31 @@ body {
 
 /* === App layout (sidebar + main) === */
 .app-shell {
-  display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  display: block;
   min-height: 100vh;
 }
 
-/* === Sidebar (Linear-style) === */
+/* === Sidebar (glass 2.0 floating panel) === */
 .sidebar {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  bottom: 24px;
+  width: var(--sidebar-width);
   background: var(--bg-glass);
   backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
   -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
-  border-right: 1px solid var(--border-subtle);
+  border: var(--glass-border);
+  border-radius: var(--radius-xl);
   padding: var(--space-5) var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  position: sticky;
+  gap: var(--space-2);
+  z-index: 100;
+  box-shadow:
+    var(--glass-highlight),
+    var(--shadow-glass);
+}
   top: 0;
   height: 100vh;
   overflow-y: auto;
@@ -308,23 +342,32 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* v2.1.9 glass 2.0: 让位给浮窗 sidebar + topbar */
+  margin-left: calc(24px + var(--sidebar-width) + 16px);
+  margin-right: 24px;
+  margin-top: calc(24px + var(--topbar-height) + 16px);
+  margin-bottom: 24px;
 }
 
 .topbar {
   height: var(--topbar-height);
-  border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-glass);
   backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
   -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-6);
-  position: sticky;
-  top: 0;
+  padding: 0 var(--space-5);
+  position: fixed;
+  top: 24px;
+  left: calc(24px + var(--sidebar-width) + 16px);
+  right: 24px;
   z-index: 50;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border: var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    var(--glass-highlight),
+    var(--shadow-glass);
 }
 
 .topbar-left {
@@ -462,10 +505,12 @@ body {
 .reel-list {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  background: var(--bg-elevated);
+  /* v2.1.9 glass 2.0: 卡片之间留 6px 间距, 像分离的玻璃片 */
+  gap: 6px;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xl);
 }
 
 .reel-row {
@@ -478,13 +523,19 @@ body {
   transition: background var(--transition-base), color var(--transition-base);
   cursor: pointer;
   font-size: var(--text-sm);
-  /* 列表项轻毛玻璃 */
+  /* 列表项轻毛玻璃 (v2.1.9 glass 2.0) */
   background: var(--bg-glass);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  margin: 2px 8px;
-  border-radius: var(--radius-md);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  margin: 0;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
+  /* 内层顶部高光 + 柔光阴影 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 2px 12px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
 }
 
 /* === Style Badge (项目列表里显示用的风格) === */
@@ -546,6 +597,11 @@ body {
 
 .reel-row:hover {
   background: var(--bg-hover);
+  /* v2.1.9 glass 2.0: hover 上浮 + 强光 */
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 .reel-row-head {
