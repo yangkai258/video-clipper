@@ -350,7 +350,10 @@ function App() {
             />
             <ThemeToggle />
             <label className="btn btn-primary upload-compact">
-              <span>⏵</span>
+              {/* v2.1.35: SVG 替换 unicode ⏵, 玻璃按钮上的 emoji 看着糙 */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
               <span>新建切片</span>
               <input type="file" accept="video/*" onChange={handleUpload} disabled={uploading} />
             </label>
