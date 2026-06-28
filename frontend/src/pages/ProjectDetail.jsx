@@ -19,26 +19,11 @@ function formatTime(seconds) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function formatDuration(seconds) {
-  if (!seconds && seconds !== 0) return '—'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = Math.floor(seconds % 60)
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  return `${m}:${String(s).padStart(2, '0')}`
-}
-
 function formatTC(s) {
   if (!s) return '00:00'
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-}
-
-function formatSize(bytes) {
-  if (!bytes) return '—'
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
 function formatDate(iso) {
@@ -54,7 +39,7 @@ function friendlyError(taskError) {
   if (!taskError) return { title: '处理失败', hint: '请查看日志或重新处理' }
   const err = String(taskError).toLowerCase()
   if (err.includes('ffmpeg') || err.includes('invalid data')) {
-    return { title: '视频格式不支持', hint: 'ffmpeg 解析失败，请确认视频文件完整且格式标准 (mp4/mov)' }
+    return { title: '视频格式不支持', hint: 'ffmpeg 解析失败，请确认视频文件完整且格式标准' }
   }
   if (err.includes('memory') || err.includes('out of memory')) {
     return { title: '内存不足', hint: '视频可能过大，建议分段或降低分辨率' }
@@ -159,9 +144,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
         <div className="empty-icon">∅</div>
         <div className="empty-title">项目不存在</div>
         <div className="empty-hint">它可能已被删除</div>
-        <button className="btn btn-primary" style={{ marginTop: 'var(--space-3)' }} onClick={() => navigate('/')}>
-          返回列表
-        </button>
+        <button className="btn btn-primary" style={{ marginTop: 'var(--space-3)' }} onClick={() => navigate('/')}>返回列表</button>
       </div>
     )
   }
@@ -175,229 +158,261 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   const cfg = project.processing_config || {}
   const isProcessing = project.status === 'processing'
 
+  // 衍生指标
+  const avgClipDuration = clips.length > 0 ? (clips.reduce((a, c) => a + (c.duration || 0), 0) / clips.length) : 0
+  const avgScore = clips.length > 0 ? (clips.reduce((a, c) => a + (c.score || 0), 0) / clips.length) : 0
+  const elapsed = (task?.started_at && (task?.completed_at || task?.failed_at)) ?
+    (new Date(task.completed_at || task.failed_at) - new Date(task.started_at)) / 1000 : null
+  const elapsedStr = elapsed ? `${Math.round(elapsed / 60)} 分钟` : '—'
+
   return (
-    <div className="pd-layout">
-      {/* === 左: 主内容 === */}
-      <div className="pd-main">
-        {/* Header: 名称 + 状态 + 操作 */}
-        <div className="pd-header">
-          <div className="pd-header-left">
-            <div className="pd-title-row">
-              <h1 className="pd-title">{project.name}</h1>
-              <span className="status-pill" data-status={project.status}>{statusLabel[project.status] || project.status}</span>
-            </div>
-            <div className="pd-meta">
-              <span className="pd-meta-item">⏱ {formatTC(project.video_duration)}</span>
-              <span className="pd-meta-sep">·</span>
-              <span className="pd-meta-item">📁 {formatSize(project.video_size)}</span>
-              <span className="pd-meta-sep">·</span>
-              <span className="pd-meta-item">✂ {clips.length} 切片</span>
-              <span className="pd-meta-sep">·</span>
-              <span className="pd-meta-item">📦 {collections.length} 合集</span>
-              <span className="pd-meta-sep">·</span>
-              <span className="pd-meta-item">{cfg.with_subtitle !== false ? '📝 字幕开启' : '📝 字幕关闭'}</span>
+    <div className="pda-layout">
+      {/* === 顶部: 封面 + 标题 + actions === */}
+      <div className="pda-header">
+        {project.status === 'completed' ? (
+          <div className="pda-cover">
+            <img
+              className="pda-cover-img"
+              src={`/api/v1/thumbnails/${id}.jpg`}
+              alt={project.name}
+              onError={(e) => { e.currentTarget.style.display = 'none' }}
+            />
+            <div className="pda-cover-play">▶</div>
+          </div>
+        ) : (
+          <div className="pda-cover pda-cover-placeholder">
+            <div className="pda-cover-icon">
+              {isProcessing ? '⏳' : project.status === 'failed' ? '❌' : '🎬'}
             </div>
           </div>
-          <div className="pd-header-right">
+        )}
+        <div className="pda-info">
+          <div className="pda-info-top">
+            <span className="status-pill" data-status={project.status}>{statusLabel[project.status] || project.status}</span>
+          </div>
+          <h1 className="pda-title">{project.name}</h1>
+          <div className="pda-meta">
+            <span>⏱ {formatTC(project.video_duration)}</span>
+            <span className="pda-meta-sep">·</span>
+            <span>📁 {project.video_size ? `${(project.video_size / 1024 / 1024).toFixed(1)} MB` : '—'}</span>
+            <span className="pda-meta-sep">·</span>
+            <span>📅 {formatDate(project.created_at)}</span>
+          </div>
+          <div className="pda-actions">
             {project.status === 'pending' && (
               <button className="btn btn-primary" onClick={startProcessing}>▶ 开始处理</button>
             )}
-            <button className="btn btn-ghost btn-danger btn-sm" onClick={deleteProject}>✕ 删除</button>
+            {project.status === 'completed' && (
+              <button className="btn btn-primary">▶ 播放预览</button>
+            )}
+            <button className="btn btn-ghost btn-sm">⏬ 下载 SRT</button>
+            <button className="btn btn-ghost btn-sm btn-danger" onClick={deleteProject}>✕ 删除</button>
           </div>
         </div>
-
-        {/* Tabs */}
-        {showTabs && (
-          <div className="tabs">
-            {clips.length > 0 && (
-              <button className={`tab ${activeTab === 'clips' ? 'active' : ''}`} onClick={() => { setActiveTab('clips'); setCurrentPage(1) }}>
-                切片 <span className="tab-count">{clips.length}</span>
-              </button>
-            )}
-            {collections.length > 0 && (
-              <button className={`tab ${activeTab === 'collections' ? 'active' : ''}`} onClick={() => { setActiveTab('collections'); setCurrentPage(1) }}>
-                合集 <span className="tab-count">{collections.length}</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Clips grid */}
-        {activeTab === 'clips' && clips.length > 0 && (
-          <div>
-            <div className="pd-grid-header">
-              <span>显示 {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, clips.length)} / {clips.length} 个切片</span>
-              <span>第 {currentPage} / {totalPages} 页</span>
-            </div>
-
-            <div className="pd-clip-grid">
-              {pageClips.map((clip, i) => (
-                <div key={clip.id || i} className="pd-clip-card">
-                  <div className="pd-clip-header">
-                    <div className="pd-clip-title" title={clip.title}>{clip.title || `切片 ${i + 1}`}</div>
-                    <div className="pd-clip-score">⭐ {clip.score?.toFixed(2) || '—'}</div>
-                  </div>
-                  <div className="pd-clip-meta">
-                    <span className="pd-chip">⏱ {formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span>
-                    <span className="pd-chip">{clip.duration?.toFixed(1)} 秒</span>
-                  </div>
-                  <video
-                    controls
-                    className="pd-video"
-                    src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
-                  >
-                    {cfg.with_subtitle === false && (
-                      <track
-                        label="中文"
-                        kind="subtitles"
-                        srclang="zh"
-                        src={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
-                        default
-                      />
-                    )}
-                  </video>
-                  <div className="pd-clip-footer">
-                    <a
-                      className="pd-link"
-                      href={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
-                      download={`${project.name}_字幕.srt`}
-                    >
-                      ↓ 字幕
-                    </a>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {totalPages > 1 && (
-              <div className="pd-pagination">
-                <button className="btn btn-ghost btn-sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} style={{ opacity: currentPage === 1 ? 0.4 : 1 }}>← 上一页</button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                  <button key={p} className={`btn btn-sm ${currentPage === p ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setCurrentPage(p)}>{p}</button>
-                ))}
-                <button className="btn btn-ghost btn-sm" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} style={{ opacity: currentPage >= totalPages ? 0.4 : 1 }}>下一页 →</button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Collections grid */}
-        {activeTab === 'collections' && collections.length > 0 && (
-          <div className="pd-clip-grid">
-            {collections.map((coll, i) => (
-              <div key={coll.id || i} className="pd-clip-card">
-                <div className="pd-clip-header">
-                  <div className="pd-clip-title" title={coll.title}>{coll.title || `合集 ${i + 1}`}</div>
-                  <div className="pd-clip-score">📦 {coll.clip_count} 片</div>
-                </div>
-                {coll.video_path ? (
-                  <video controls className="pd-video" src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(coll.video_path)}`} />
-                ) : (
-                  <div className="pd-error">⚠ 视频文件不存在</div>
-                )}
-                <div className="pd-clip-footer"><span className="pd-meta-item">合集暂不支持字幕</span></div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty */}
-        {!showTabs && (
-          <div className="empty">
-            <div className="empty-icon">{isProcessing ? '⏳' : project.status === 'failed' ? '❌' : '∅'}</div>
-            <div className="empty-title">
-              {isProcessing ? '处理中，请稍候...'
-                : project.status === 'pending' ? '项目就绪'
-                : project.status === 'failed' ? '处理失败'
-                : '暂无视频数据'}
-            </div>
-            <div className="empty-hint">
-              {project.status === 'pending' && '点击右上角「▶ 开始处理」生成切片'}
-              {project.status === 'failed' && '请检查日志或重新处理'}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* === 右: 信息面板 (sticky) === */}
-      <aside className="pd-side">
-        {/* 处理中: 进度卡 */}
-        {isProcessing && task && (
-          <div className="pd-card pd-progress-card">
-            <div className="pd-card-label">处理进度</div>
-            <div className="pd-step">{task.current_step || '处理中...'}</div>
-            <div className="pd-progress">
-              <div className="pd-progress-bar">
-                <div className="pd-progress-fill" style={{ width: `${task.progress || 0}%` }} />
+      {/* === 4 列 metric 行 === */}
+      <div className="pda-metrics">
+        <div className="pda-metric">
+          <div className="pda-metric-label">切片</div>
+          <div className="pda-metric-value">{clips.length}</div>
+        </div>
+        <div className="pda-metric">
+          <div className="pda-metric-label">合集</div>
+          <div className="pda-metric-value">{collections.length}</div>
+        </div>
+        <div className="pda-metric">
+          <div className="pda-metric-label">平均时长</div>
+          <div className="pda-metric-value">
+            {avgClipDuration > 0 ? avgClipDuration.toFixed(1) : '—'}
+            <span className="pda-metric-unit"> 秒</span>
+          </div>
+        </div>
+        <div className="pda-metric">
+          <div className="pda-metric-label">平均分</div>
+          <div className="pda-metric-value">
+            {avgScore > 0 ? avgScore.toFixed(2) : '—'}
+          </div>
+        </div>
+      </div>
+
+      {/* === 处理中进度卡 (插在 metric 行下方) === */}
+      {isProcessing && task && (
+        <div className="pda-progress-card">
+          <div className="pda-progress-step">{task.current_step || '处理中...'}</div>
+          <div className="pda-progress">
+            <div className="pda-progress-bar">
+              <div className="pda-progress-fill" style={{ width: `${task.progress || 0}%` }} />
+            </div>
+            <span className="pda-progress-label">{task.progress || 0}%</span>
+          </div>
+          <div className="pda-progress-timing">
+            {task.elapsed_seconds != null && <span>已用 <strong>{Math.round(task.elapsed_seconds / 60)} 分钟</strong></span>}
+            {task.eta_seconds != null && <span>剩余 <strong>{Math.round(task.eta_seconds / 60)} 分钟</strong></span>}
+            {task.total_estimated_seconds != null && <span>预计共 <strong>{Math.round(task.total_estimated_seconds / 60)} 分钟</strong></span>}
+          </div>
+        </div>
+      )}
+
+      {/* === 失败错误卡 === */}
+      {project.status === 'failed' && task?.error_message && (
+        <div className="pda-error-card">
+          <div className="pda-error-title">❌ {friendlyError(task.error_message).title}</div>
+          <div className="pda-error-hint">{friendlyError(task.error_message).hint}</div>
+          <details className="pda-error-detail">
+            <summary>查看原始错误</summary>
+            <code>{task.error_message.slice(0, 400)}</code>
+          </details>
+          <button className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-3)' }} onClick={startProcessing}>🔄 重新处理</button>
+        </div>
+      )}
+
+      {/* === 2 列: 左 tabs+grid, 右 2 张卡 === */}
+      <div className="pda-body">
+        <div className="pda-main">
+          {showTabs ? (
+            <>
+              <div className="pda-tabs">
+                {clips.length > 0 && (
+                  <button className={`pda-tab ${activeTab === 'clips' ? 'active' : ''}`} onClick={() => { setActiveTab('clips'); setCurrentPage(1) }}>
+                    切片 <span className="pda-tab-count">{clips.length}</span>
+                  </button>
+                )}
+                {collections.length > 0 && (
+                  <button className={`pda-tab ${activeTab === 'collections' ? 'active' : ''}`} onClick={() => { setActiveTab('collections'); setCurrentPage(1) }}>
+                    合集 <span className="pda-tab-count">{collections.length}</span>
+                  </button>
+                )}
+                <button className={`pda-tab ${activeTab === 'srt' ? 'active' : ''}`} onClick={() => setActiveTab('srt')}>字幕</button>
+                <button className={`pda-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>设置</button>
               </div>
-              <span className="pd-progress-label">{task.progress || 0}%</span>
-            </div>
-            <div className="pd-timing">
-              {task.elapsed_seconds != null && (
-                <div><span>已用</span><strong>{formatDuration(task.elapsed_seconds)}</strong></div>
-              )}
-              {task.total_estimated_seconds != null && (
-                <div><span>预计</span><strong>{formatDuration(task.total_estimated_seconds)}</strong></div>
-              )}
-              {task.eta_seconds != null ? (
-                <div><span>剩余</span><strong className="pd-accent">{formatDuration(task.eta_seconds)}</strong></div>
-              ) : (
-                <div><em>估算中...</em></div>
-              )}
-            </div>
-          </div>
-        )}
 
-        {/* 失败: 错误卡 */}
-        {project.status === 'failed' && task?.error_message && (
-          <div className="pd-card pd-error-card">
-            <div className="pd-card-label">❌ {friendlyError(task.error_message).title}</div>
-            <div className="pd-error-hint">{friendlyError(task.error_message).hint}</div>
-            <details className="pd-error-detail">
-              <summary>原始错误</summary>
-              <code>{task.error_message.slice(0, 400)}</code>
-            </details>
-            <button className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-3)', width: '100%' }} onClick={startProcessing}>
-              🔄 重新处理
-            </button>
-          </div>
-        )}
+              {activeTab === 'clips' && clips.length > 0 && (
+                <>
+                  <div className="pda-grid-header">
+                    <span>显示 {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, clips.length)} / {clips.length}</span>
+                    <span>第 {currentPage} / {totalPages} 页</span>
+                  </div>
+                  <div className="pda-grid">
+                    {pageClips.map((clip, i) => (
+                      <div key={clip.id || i} className="pda-clip">
+                        <div className="pda-clip-thumb">
+                          <video
+                            controls
+                            preload="metadata"
+                            className="pda-clip-video"
+                            src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
+                          >
+                            {cfg.with_subtitle === false && (
+                              <track
+                                label="中文"
+                                kind="subtitles"
+                                srclang="zh"
+                                src={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
+                                default
+                              />
+                            )}
+                          </video>
+                        </div>
+                        <div className="pda-clip-body">
+                          <div className="pda-clip-title" title={clip.title}>{clip.title || `片段 ${i + 1}`}</div>
+                          <div className="pda-clip-meta">
+                            <span className="mono">⏱ {formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span>
+                            <span className="mono">⭐ {clip.score?.toFixed(2) || '—'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="pda-pagination">
+                      <button className="btn btn-ghost btn-sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} style={{ opacity: currentPage === 1 ? 0.4 : 1 }}>← 上一页</button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                        <button key={p} className={`btn btn-sm ${currentPage === p ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setCurrentPage(p)}>{p}</button>
+                      ))}
+                      <button className="btn btn-ghost btn-sm" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} style={{ opacity: currentPage >= totalPages ? 0.4 : 1 }}>下一页 →</button>
+                    </div>
+                  )}
+                </>
+              )}
 
-        {/* 元数据卡 */}
-        <div className="pd-card">
-          <div className="pd-card-label">元数据</div>
-          <dl className="pd-dl">
-            <dt>风格</dt><dd>{project.style_name || '默认'}</dd>
-            <dt>目标时长</dt><dd>{cfg.target_duration ? `${cfg.target_duration} 秒/片` : '—'}</dd>
-            <dt>最大切片</dt><dd>{cfg.max_clips ? `≤ ${cfg.max_clips} 片` : '—'}</dd>
-            <dt>字幕</dt><dd>{cfg.with_subtitle !== false ? '烧录到视频' : '不烧录'}</dd>
-            <dt>处理策略</dt><dd>{cfg.processing_mode || 'standard'}</dd>
-          </dl>
+              {activeTab === 'collections' && collections.length > 0 && (
+                <div className="pda-grid">
+                  {collections.map((coll, i) => (
+                    <div key={coll.id || i} className="pda-clip">
+                      <div className="pda-clip-thumb">
+                        {coll.video_path ? (
+                          <video controls preload="metadata" className="pda-clip-video" src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(coll.video_path)}`} />
+                        ) : (
+                          <div className="pda-clip-empty">⚠ 视频文件不存在</div>
+                        )}
+                      </div>
+                      <div className="pda-clip-body">
+                        <div className="pda-clip-title" title={coll.title}>{coll.title || `合集 ${i + 1}`}</div>
+                        <div className="pda-clip-meta">
+                          <span className="mono">📦 {coll.clip_count} 个切片</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeTab === 'srt' && (
+                <div className="pda-srt">
+                  <div className="pda-srt-info">
+                    <div>📝 字幕文件 (SRT)</div>
+                    <a className="btn btn-primary btn-sm" href={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`} download={`${project.name}_字幕.srt`}>⏬ 下载 SRT</a>
+                  </div>
+                  <pre className="pda-srt-preview">（字幕预览待加载）</pre>
+                </div>
+              )}
+
+              {activeTab === 'settings' && (
+                <div className="pda-settings">
+                  <div className="pda-setting-row"><span>风格</span><strong>{project.style_name || '默认'}</strong></div>
+                  <div className="pda-setting-row"><span>目标时长</span><strong>{cfg.target_duration ? `${cfg.target_duration} 秒/片` : '—'}</strong></div>
+                  <div className="pda-setting-row"><span>最大切片</span><strong>{cfg.max_clips ? `≤ ${cfg.max_clips} 片` : '—'}</strong></div>
+                  <div className="pda-setting-row"><span>字幕</span><strong>{cfg.with_subtitle !== false ? '烧录到视频' : '不烧录'}</strong></div>
+                  <div className="pda-setting-row"><span>处理策略</span><strong>{cfg.processing_mode || 'standard'}</strong></div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="empty">
+              <div className="empty-icon">{isProcessing ? '⏳' : project.status === 'failed' ? '❌' : '∅'}</div>
+              <div className="empty-title">
+                {isProcessing ? '处理中，请稍候...' : project.status === 'pending' ? '项目就绪' : project.status === 'failed' ? '处理失败' : '暂无视频数据'}
+              </div>
+              <div className="empty-hint">
+                {project.status === 'pending' && '点击顶部「▶ 开始处理」生成切片'}
+                {project.status === 'failed' && '请检查日志或重新处理'}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* 时间卡 */}
-        <div className="pd-card">
-          <div className="pd-card-label">时间</div>
-          <dl className="pd-dl">
-            <dt>创建</dt><dd>{formatDate(project.created_at)}</dd>
-            <dt>开始</dt><dd>{formatDate(task?.started_at) || '—'}</dd>
-            <dt>完成</dt><dd>{formatDate(project.completed_at) || '—'}</dd>
-          </dl>
-        </div>
-
-        {/* 任务卡 */}
-        {task && (
-          <div className="pd-card">
-            <div className="pd-card-label">任务</div>
-            <dl className="pd-dl">
-              <dt>状态</dt><dd><span className="status-pill" data-status={task.status} style={{ fontSize: 10 }}>{statusLabel[task.status] || task.status}</span></dd>
-              <dt>当前步骤</dt><dd>{task.current_step || '—'}</dd>
-              <dt>进度</dt><dd>{task.progress || 0}%</dd>
-              {task.id && <><dt>ID</dt><dd className="mono" style={{ fontSize: 10 }}>{task.id.slice(0, 8)}</dd></>}
+        <aside className="pda-side">
+          <div className="pda-side-card">
+            <div className="pda-side-label">处理信息</div>
+            <dl className="pda-dl">
+              <dt>风格</dt><dd>{project.style_name || '默认'}</dd>
+              <dt>目标时长</dt><dd>{cfg.target_duration ? `${cfg.target_duration} 秒/片` : '—'}</dd>
+              <dt>最大切片</dt><dd>{cfg.max_clips ? `≤ ${cfg.max_clips} 片` : '—'}</dd>
+              <dt>字幕</dt><dd>{cfg.with_subtitle !== false ? '开启' : '关闭'}</dd>
             </dl>
           </div>
-        )}
-      </aside>
+          <div className="pda-side-card">
+            <div className="pda-side-label">时间</div>
+            <dl className="pda-dl">
+              <dt>创建</dt><dd>{formatDate(project.created_at)}</dd>
+              <dt>开始</dt><dd>{formatDate(task?.started_at) || '—'}</dd>
+              <dt>完成</dt><dd>{formatDate(project.completed_at) || '—'}</dd>
+              <dt>耗时</dt><dd>{elapsedStr}</dd>
+            </dl>
+          </div>
+        </aside>
+      </div>
     </div>
   )
 }
