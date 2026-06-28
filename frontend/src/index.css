@@ -403,14 +403,18 @@ body {
 }
 
 .search-input {
+  /* v2.1.36: 统一高度 32px, 跟 topbar 其它控件对齐 */
+  height: 32px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: 6px var(--space-3);
+  padding: 0 var(--space-3);
   color: var(--text-bright);
   font-size: var(--text-sm);
+  line-height: 1;
   width: 240px;
   transition: all var(--transition-fast);
+  box-sizing: border-box;
 }
 
 .search-input:focus {
@@ -1022,10 +1026,12 @@ body {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  height: 36px;
+  height: 32px;  /* v2.1.36: 跟 topbar 其它控件统一 32px */
+  box-sizing: border-box;  /* v2.1.36: 跟 .search-input / ThemeToggle 一致, 防止 border 把 visual height 撑大 2px */
   padding: 0 14px;
-  border-radius: 14px;
+  border-radius: 12px;
   font-size: 13px;
+  line-height: 1;  /* 配合 height:32 垂直居中 */
   font-weight: 500;
   font-family: var(--text-sans);
   cursor: pointer;
@@ -1507,8 +1513,9 @@ input[type="color"] {
 /* === Upload zone (compact) === */
 .upload-compact {
   position: relative;
-  display: inline-block;
+  /* v2.1.36 fix: 不覆盖 .btn 的 inline-flex, 否则 align-items: center 失效, 文字不居中 */
   flex-shrink: 0;  /* v2.1.33 fix: 防止 topbar-right flex 容器把按钮压缩到 overflow:hidden 切字 */
+  margin: 0;  /* v2.1.36 fix: 全局 label 样式有 margin-bottom: 8px, 意外让按钮 y 偏上 4px */
 }
 
 .upload-compact input[type="file"] {
