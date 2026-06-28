@@ -76,6 +76,133 @@ function notify(title, body) {
   if (Notification.permission === 'granted') new Notification(title, { body })
 }
 
+// v2.1.30: 详细报告 modal — 弹出来看项目元数据 / 处理参数 / 任务历史 / 输出统计
+function ReportModal({ project, onClose }) {
+  if (!project) return null
+  const cfg = project.processing_config || {}
+  const task = project.task || {}
+  const clips = project.clips || []
+  const collections = project.collections || []
+  const orientation = getOrientation(project.video_width, project.video_height)
+  const orientationText = orientationLabel[orientation] || '未知'
+  // 总切片文件大小 (从 video_path 推不出 size, 用 clips 数量 + 平均时长估算, 真实数据需要后端加)
+  const totalDuration = clips.reduce((sum, c) => sum + (c.duration || 0), 0)
+  const avgScore = clips.length > 0 ? clips.reduce((s, c) => s + (c.score || 0), 0) / clips.length : 0
+  const elapsedSec = task.started_at && task.completed_at
+    ? (new Date(task.completed_at) - new Date(task.started_at)) / 1000
+    : null
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">
+            <span className="modal-title-icon" />
+            <span>📊 {project.name} · 详细报告</span>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {/* === 1. 项目信息 === */}
+          <Section title="🗂 项目信息">
+            <Row label="项目 ID" value={<span className="mono">{project.id}</span>} />
+            <Row label="项目名称" value={project.name} />
+            <Row label="状态" value={<span className="status-pill" data-status={project.status}>{statusLabel[project.status] || project.status}</span>} />
+            <Row label="创建时间" value={formatDate(project.created_at)} />
+            <Row label="完成时间" value={formatDate(project.completed_at)} />
+            {project.description && <Row label="描述" value={project.description} />}
+          </Section>
+
+          {/* === 2. 视频信息 === */}
+          <Section title="🎬 视频元数据">
+            <Row label="文件路径" value={<span className="mono" style={{ fontSize: 'var(--text-xs)' }}>{project.video_path || '—'}</span>} />
+            <Row label="文件大小" value={project.video_size ? `${(project.video_size / 1024 / 1024).toFixed(1)} MB` : '—'} />
+            <Row label="时长" value={project.video_duration ? formatTC(project.video_duration) : '—'} />
+            <Row label="分辨率" value={project.video_width && project.video_height ? `${project.video_width} × ${project.video_height} (${orientationText})` : '—'} />
+            <Row label="字幕文件" value={<span className="mono" style={{ fontSize: 'var(--text-xs)' }}>{project.subtitle_path || '—'}</span>} />
+            <Row label="字幕生成" value={project.subtitle_method || '—'} />
+          </Section>
+
+          {/* === 3. 处理参数 === */}
+          <Section title="⚙️ 处理参数">
+            <Row label="风格" value={project.style_name || project.style_id || '默认'} />
+            <Row label="目标时长" value={cfg.target_duration ? `${cfg.target_duration} 秒/片` : '—'} />
+            <Row label="最大切片数" value={cfg.max_clips ? `≤ ${cfg.max_clips} 片` : '—'} />
+            <Row label="字幕烧录" value={cfg.with_subtitle !== false ? '✅ 烧录到视频' : '⏭ 不烧录'} />
+            <Row label="输出格式" value={
+              cfg.output_format === '9:16-letterbox' ? '📱 9:16 上下黑边' :
+              cfg.output_format === '9:16-smart-crop' ? '📱 9:16 智能裁剪' :
+              '🎬 保持原比例'
+            } />
+            <Row label="处理策略" value={cfg.processing_mode || 'standard'} />
+            {cfg.min_score !== undefined && (
+              <Row label="最低分阈值" value={`${cfg.min_score}`} />
+            )}
+          </Section>
+
+          {/* === 4. 任务执行 === */}
+          <Section title="🚀 任务执行">
+            <Row label="任务状态" value={task.status || '—'} />
+            <Row label="进度" value={task.progress != null ? `${task.progress}% · ${task.current_step || ''}` : '—'} />
+            <Row label="开始时间" value={formatDate(task.started_at)} />
+            <Row label="完成时间" value={formatDate(task.completed_at)} />
+            {elapsedSec && <Row label="实际耗时" value={`${Math.floor(elapsedSec / 60)} 分 ${Math.floor(elapsedSec % 60)} 秒`} />}
+            {task.error_message && (
+              <Row label="错误信息" value={<span style={{ color: '#ef4444' }}>{task.error_message}</span>} />
+            )}
+            {task.estimated_remaining && task.status === 'running' && (
+              <Row label="预计剩余" value={task.estimated_remaining} />
+            )}
+          </Section>
+
+          {/* === 5. 输出统计 === */}
+          <Section title="📦 输出统计">
+            <Row label="切片数" value={`${clips.length} 个`} />
+            <Row label="合集数" value={`${collections.length} 个`} />
+            <Row label="切片总时长" value={`${totalDuration.toFixed(1)} 秒`} />
+            <Row label="平均分" value={avgScore > 0 ? avgScore.toFixed(2) : '—'} />
+            {clips.length > 0 && (
+              <Row label="最高分" value={
+                `${Math.max(...clips.map(c => c.score || 0)).toFixed(2)} · ${
+                  (clips.find(c => c.score === Math.max(...clips.map(x => x.score || 0))) || {}).title || ''
+                }`
+              } />
+            )}
+          </Section>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>关闭</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{ marginBottom: 'var(--space-5)' }}>
+      <div style={{
+        fontSize: 'var(--text-sm)',
+        fontWeight: 600,
+        color: 'var(--text-bright)',
+        marginBottom: 'var(--space-3)',
+        paddingBottom: 'var(--space-2)',
+        borderBottom: '1px solid var(--border-subtle)',
+      }}>{title}</div>
+      <div style={{ display: 'grid', gap: 'var(--space-2)' }}>{children}</div>
+    </div>
+  )
+}
+
+function Row({ label, value }) {
+  return (
+    <div style={{ display: 'flex', gap: 'var(--space-3)', fontSize: 'var(--text-sm)' }}>
+      <span style={{ minWidth: '110px', color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{ flex: 1, color: 'var(--text-bright)' }}>{value}</span>
+    </div>
+  )
+}
+
 // 懒加载视频卡: 默认只显示缩略图, 点 play 才挂载 video 标签
 function ClipCard({ clip, index, projectId, withSubtitle }) {
   const [playing, setPlaying] = useState(false)
@@ -120,6 +247,14 @@ function ClipCard({ clip, index, projectId, withSubtitle }) {
         <div className="pda-clip-meta">
           <span className="mono">⏱ {formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span>
           <span className="mono">⭐ {clip.score?.toFixed(2) || '—'}</span>
+          {/* v2.1.30: 按片下载按钮 */}
+          <a
+            className="pda-clip-download"
+            href={videoSrc}
+            download={clip.video_path ? clip.video_path.split('/').pop() : `clip_${index + 1}.mp4`}
+            title="下载本片"
+            onClick={(e) => e.stopPropagation()}
+          >⏬</a>
         </div>
       </div>
     </div>
@@ -155,6 +290,18 @@ function CollectionCard({ coll, index, projectId }) {
       </div>
       <div className="pda-clip-body">
         <div className="pda-clip-title" title={coll.title}>{coll.title || `合集 ${index + 1}`}</div>
+        {/* v2.1.30: 合集下载按钮 */}
+        {videoSrc && (
+          <div className="pda-clip-meta">
+            <a
+              className="pda-clip-download"
+              href={videoSrc}
+              download={coll.video_path ? coll.video_path.split('/').pop() : `collection_${index + 1}.mp4`}
+              title="下载合集"
+              onClick={(e) => e.stopPropagation()}
+            >⏬</a>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -166,6 +313,8 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('clips')
+  // v2.1.30: 详细报告 modal
+  const [showReport, setShowReport] = useState(false)
   // 每个 tab 独立分页 (避免切到合集再切回切片被重置到第 1 页)
   // v2.1.27: page 用 URL search params 存 (绕过 React state 反复重置的 bug)
   // 即使 ProjectDetail 组件被反复 unmount/remount (Vite Fast Refresh / 路由变化), URL 还在
@@ -331,6 +480,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
             {project.status === 'completed' && (
               <button className="btn btn-primary">▶ 播放预览</button>
             )}
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowReport(true)}>📊 查看报告</button>
             <button className="btn btn-ghost btn-sm">⏬ 下载 SRT</button>
             <button className="btn btn-ghost btn-sm btn-danger" onClick={deleteProject}>✕ 删除</button>
           </div>
@@ -521,6 +671,9 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
           </div>
         </aside>
       </div>
+
+      {/* v2.1.30: 详细报告 modal */}
+      {showReport && <ReportModal project={project} onClose={() => setShowReport(false)} />}
     </div>
   )
 }
