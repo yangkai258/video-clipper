@@ -1508,6 +1508,7 @@ input[type="color"] {
 .upload-compact {
   position: relative;
   display: inline-block;
+  flex-shrink: 0;  /* v2.1.33 fix: 防止 topbar-right flex 容器把按钮压缩到 overflow:hidden 切字 */
 }
 
 .upload-compact input[type="file"] {
