@@ -541,10 +541,18 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     video_path = settings.PROJECTS_DIR / project.video_path
     logger = logging.getLogger(__name__)
     logger.info(f"项目 {project_id} 视频路径：{video_path.absolute()}")
-    
+
     if not video_path.exists():
         logger.error(f"视频文件不存在：{video_path.absolute()}")
         raise HTTPException(status_code=404, detail="Video file not found")
+
+    # 检查文件大小 (v2.1.20 修 0 byte 卡完成假成功)
+    video_size = video_path.stat().st_size
+    if video_size < 1024 * 1024:  # 小于 1MB 视作无效
+        raise HTTPException(
+            status_code=400,
+            detail=f"视频文件过小 ({video_size} bytes / 0 MB), 上传可能未完成. 请重新上传完整视频."
+        )
     
     # 更新项目状态
     project.status = "processing"

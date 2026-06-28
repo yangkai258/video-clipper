@@ -84,7 +84,15 @@ def process_video_pipeline(
             logger.warning("项目配置不存在，使用默认策略")
     
     try:
-        project_dir = Path(input_video_path).parent.parent
+        # === 前置检查: 视频文件必须存在 + 大小 > 0 (v2.1.20 修 0 byte 视频卡完成假成功) ===
+        input_path = Path(input_video_path)
+        if not input_path.exists():
+            raise FileNotFoundError(f"视频文件不存在: {input_video_path}")
+        input_size = input_path.stat().st_size
+        if input_size < 1024:  # 小于 1KB 视作无效 (正常视频至少几 MB)
+            raise ValueError(f"视频文件过小 ({input_size} bytes), 上传可能未完成. 请重新上传.")
+
+        project_dir = input_path.parent.parent
         metadata_dir = project_dir / "metadata"
         output_dir = project_dir / "output"
         clips_dir = output_dir / "clips"
