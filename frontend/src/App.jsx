@@ -291,8 +291,8 @@ function App() {
           回收站
         </button>
         <button
-          className={`nav-item ${location.pathname === '/styles' ? 'active' : ''}`}
-          onClick={() => navigate('/styles')}
+          className={`nav-item ${location.pathname === '/styles' && !showTrash && !showWatchFolders ? 'active' : ''}`}
+          onClick={() => { navigate('/styles'); setShowTrash(false); setShowWatchFolders(false) }}
         >
           <span className="nav-item-icon">✎</span>
           风格管理
