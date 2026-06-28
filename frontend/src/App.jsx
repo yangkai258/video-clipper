@@ -220,7 +220,10 @@ function App() {
 
   const formatDate = (iso) => {
     if (!iso) return '—'
-    return new Date(iso + 'Z').toLocaleString('zh-CN', {
+    // 后端 to_iso_utc 已加 'Z', 前端不要再加, 否则 'Z'+'Z' = Invalid Date
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
+    if (isNaN(d.getTime())) return '—'
+    return d.toLocaleString('zh-CN', {
       timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
     })
   }
@@ -266,7 +269,7 @@ function App() {
         </button>
         <button
           className={`nav-item ${showTrash ? 'active' : ''}`}
-          onClick={() => { setShowTrash(true); setShowWatchFolders(false); loadTrash() }}
+          onClick={() => { navigate('/'); setShowTrash(true); setShowWatchFolders(false); loadTrash() }}
         >
           <span className="nav-item-icon">🗑</span>
           回收站
@@ -280,7 +283,7 @@ function App() {
         </button>
         <button
           className={`nav-item ${showWatchFolders ? 'active' : ''}`}
-          onClick={() => { setShowWatchFolders(true); setShowTrash(false) }}
+          onClick={() => { navigate('/'); setShowWatchFolders(true); setShowTrash(false) }}
         >
           <span className="nav-item-icon">📁</span>
           监控文件夹
@@ -451,7 +454,17 @@ function App() {
                           <span className="reel-status-dot" data-status={p.status} />
                           <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
                         </div>
-                        <div className="reel-card-thumb-icon">
+                        {/* 封面图: 已完成项目尝试加载第一片抽帧, 失败 fallback 图标 */}
+                        {p.status === 'completed' ? (
+                          <img
+                            className="reel-card-thumb-img"
+                            src={`/api/v1/thumbnails/${p.id}.jpg`}
+                            alt={p.name}
+                            loading="lazy"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling.style.display = 'flex' }}
+                          />
+                        ) : null}
+                        <div className="reel-card-thumb-icon" style={{ display: p.status === 'completed' ? 'none' : 'flex' }}>
                           {p.status === 'processing' ? '⏵' : p.status === 'completed' ? '✓' : p.status === 'failed' ? '!' : '○'}
                         </div>
                         {p.status === 'processing' && (

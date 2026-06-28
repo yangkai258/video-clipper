@@ -1,7 +1,9 @@
 """FastAPI 应用"""
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from .core.config import settings
 from .core.database import init_db
@@ -41,6 +43,19 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(user_preferences.router, prefix="/api/v1", tags=["preferences"])
 app.include_router(uploads.router, prefix="/api/v1", tags=["uploads"])
 app.include_router(watch_folders.router, prefix="/api/v1", tags=["watch-folders"])
+
+
+@app.get("/api/v1/thumbnails/{project_id}.jpg")
+async def get_project_thumbnail(project_id: str):
+    """项目封面缩略图 (cut_clips 完成后抽帧生成)"""
+    # 防路径穿越
+    if "/" in project_id or ".." in project_id or not project_id.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(400, "invalid project_id")
+    data_dir = Path(settings.DATA_DIR) if hasattr(settings, "DATA_DIR") else Path("data")
+    thumb_path = data_dir / "projects" / project_id / "output" / "thumbnails" / f"{project_id}.jpg"
+    if not thumb_path.exists():
+        raise HTTPException(404, "thumbnail not generated")
+    return FileResponse(thumb_path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/")

@@ -219,6 +219,7 @@ def process_video_pipeline(
             task_id=task_id,
             subtitle_config=subtitle_config,
             with_subtitle=with_subtitle,
+            project_id=project_id,  # 切完第一片后抽帧做封面
         )
         _update_task_progress(task_id, 92, "切割完成")
 

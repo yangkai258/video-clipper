@@ -221,7 +221,7 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
     logger.info(f"字幕烧录完成：{output_path}")
 
 
-def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt: Path = None, task_id: str = None, subtitle_config: dict = None, with_subtitle: bool = True):
+def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt: Path = None, task_id: str = None, subtitle_config: dict = None, with_subtitle: bool = True, project_id: str = None):
     """切割视频切片
 
     Args:
@@ -319,6 +319,26 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
             logger.error(f"切割切片 {i+1} 超时（300 秒），跳过")
         except Exception as e:
             logger.error(f"切割切片 {i+1} 失败：{e}")
+
+    # ✅ 切完第一个成功后生成项目封面缩略图
+    if project_id and clips:
+        try:
+            thumb_dir = output_dir.parent / "thumbnails"
+            thumb_dir.mkdir(parents=True, exist_ok=True)
+            thumb_path = thumb_dir / f"{project_id}.jpg"
+            # 用第一片抽 1 秒处一帧
+            first_clip = next((c for c in clips if c.get("video_path")), None)
+            if first_clip:
+                clip_path = output_dir.parent.parent / first_clip["video_path"]
+                if clip_path.exists():
+                    subprocess.run([
+                        "ffmpeg", "-y", "-ss", "1", "-i", str(clip_path),
+                        "-vframes", "1", "-q:v", "2",
+                        "-vf", "scale=600:-1", str(thumb_path)
+                    ], check=True, capture_output=True, timeout=30)
+                    logger.info(f"项目封面已生成：{thumb_path}")
+        except Exception as e:
+            logger.warning(f"项目封面生成失败（非阻塞）：{e}")
 
 
 def merge_collections(collections: List[Dict], clips_dir: Path, output_dir: Path, task_id: str = None):

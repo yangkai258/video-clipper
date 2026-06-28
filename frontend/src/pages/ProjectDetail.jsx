@@ -45,7 +45,10 @@ function formatSize(bytes) {
 
 function formatDate(iso) {
   if (!iso) return '--'
-  return new Date(iso + 'Z').toLocaleString('zh-CN', {
+  // 后端 to_iso_utc 已加 'Z', 前端不要再加, 否则 'Z'+'Z' = Invalid Date
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
+  if (isNaN(d.getTime())) return '--'
+  return d.toLocaleString('zh-CN', {
     timeZone: 'Asia/Shanghai',
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit'

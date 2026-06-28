@@ -54,3 +54,10 @@ Thumbs.db
 
 # Brainstorm / Visual Companion session artifacts
 .superpowers/
+
+# Venv
+.venv/
+
+# SQLite WAL/SHM (临时文件, 不入仓)
+*.db-wal
+*.db-shm
