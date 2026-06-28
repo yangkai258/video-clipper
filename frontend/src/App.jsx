@@ -268,12 +268,6 @@ function App() {
     pending: projects.filter(p => p.status === 'pending').length,
   }
 
-  // 包装 ProjectDetail 拿路由 params
-  function ProjectDetailInShell() {
-    const { id } = useParams()
-    return <ProjectDetail projectId={id} navigate={navigate} />
-  }
-
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -696,6 +690,16 @@ function App() {
       )}
     </div>
   )
+}
+
+// v2.1.32: ProjectDetailInShell 提到模块顶层 (不再嵌在 App 内部)
+// 原因: 嵌在 App 内部时, 每次 App re-render 它都是新的 function reference,
+//       React unmount + remount 整个 ProjectDetail → 每 5s 一次 '加载中...' 闪烁
+// 注: useNavigate() 必须在 router context 内, 模块顶层函数能正常用因为它在 <Routes> 内部被渲染
+function ProjectDetailInShell() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  return <ProjectDetail projectId={id} navigate={navigate} />
 }
 
 function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel }) {
