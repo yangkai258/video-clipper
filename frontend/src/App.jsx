@@ -227,6 +227,16 @@ function App() {
     } catch (e) { alert(`清理失败：${e.message}`) }
   }
 
+  // v2.1.41: 立即清空所有回收站 (不只是 30 天前)
+  const purgeAllTrash = async () => {
+    if (!confirm(`永久删除回收站里全部 ${trashProjects.length} 个项目？此操作不可恢复！`)) return
+    try {
+      const res = await axios.post(`${API_BASE}/projects/trash/purge-all`)
+      alert(`已清理 ${res.data.cleaned_count} 个项目`)
+      loadTrash()
+    } catch (e) { alert(`清理失败：${e.message}`) }
+  }
+
   const formatTC = (s) => {
     if (!s) return '00:00'
     const m = Math.floor(s / 60)
@@ -388,9 +398,14 @@ function App() {
                     {trashProjects.length} 个已删除项目 · 30 天后自动清理
                   </div>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={purgeTrash}>
-                  清理 30 天前的
-                </button>
+                <div className="content-actions">
+                  <button className="btn btn-ghost btn-sm btn-danger" onClick={purgeAllTrash} disabled={trashProjects.length === 0}>
+                    清空回收站
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={purgeTrash}>
+                    清理 30 天前的
+                  </button>
+                </div>
               </div>
               {trashProjects.length > 0 ? (
                 <div className="reel-list">

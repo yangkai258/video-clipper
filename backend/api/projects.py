@@ -706,3 +706,25 @@ async def cleanup_trash(older_than_days: int = Query(default=30, ge=1, le=365), 
     await db.commit()
 
     return {"cleaned_count": len(cleaned), "project_ids": cleaned, "older_than_days": older_than_days}
+
+
+@router.post("/trash/purge-all")
+async def purge_all_trash(db: AsyncSession = Depends(get_db)):
+    """v2.1.41: 立即清空回收站 (永久删除所有软删除项目, 不可恢复)"""
+    import shutil
+
+    result = await db.execute(
+        select(Project).where(Project.deleted_at.isnot(None))
+    )
+    projects = result.scalars().all()
+
+    cleaned = []
+    for p in projects:
+        project_dir = settings.PROJECTS_DIR / p.id
+        if project_dir.exists():
+            shutil.rmtree(project_dir, ignore_errors=True)
+        await db.delete(p)
+        cleaned.append(p.id)
+    await db.commit()
+
+    return {"cleaned_count": len(cleaned), "project_ids": cleaned}
