@@ -467,12 +467,16 @@ body {
 }
 
 .tab {
-  padding: var(--space-3) var(--space-4);
+  /* v2.1.37: 统一 tab 高度 32px (跟 topbar 控件 + 详情页 pda-tab 一致) */
+  height: 32px;
+  padding: 0 14px;
+  box-sizing: border-box;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
   font-size: var(--text-sm);
+  line-height: 1;
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -2092,8 +2096,12 @@ input[type="color"] {
   overflow-x: auto;
 }
 .pda-tab {
-  padding: 10px 14px;
+  /* v2.1.37: 统一 tab 高度 32px (跟主页 .tab + topbar 控件一致) */
+  height: 32px;
+  padding: 0 14px;
+  box-sizing: border-box;
   font-size: 13px;
+  line-height: 1;
   font-weight: 500;
   color: var(--text-muted);
   background: none;

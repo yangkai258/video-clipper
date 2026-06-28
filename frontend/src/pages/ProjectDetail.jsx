@@ -485,7 +485,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
               <button className="btn btn-primary" onClick={startProcessing}>▶ 开始处理</button>
             )}
             {project.status === 'completed' && (
-              <button className="btn btn-primary">▶ 播放预览</button>
+              <button className="btn btn-primary btn-sm">▶ 播放预览</button>
             )}
             <button className="btn btn-ghost btn-sm" onClick={() => setShowReport(true)}>📊 查看报告</button>
             <button className="btn btn-ghost btn-sm">⏬ 下载 SRT</button>
