@@ -6,6 +6,7 @@ import WatchFolders from './pages/WatchFolders'
 import StyleManager from './pages/StyleManager'
 import ProjectDetail from './pages/ProjectDetail'
 import ThemeToggle from './ThemeToggle'
+import Icon from './Icon'
 import './index.css'
 
 // 把秒数格式化成 "MM:SS" 或 "HH:MM:SS"
@@ -290,28 +291,28 @@ function App() {
           className={`nav-item ${(location.pathname === '/' || location.pathname.startsWith('/project/')) && !showTrash && !showWatchFolders ? 'active' : ''}`}
           onClick={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/') }}
         >
-          <span className="nav-item-icon">▶</span>
+          <span className="nav-item-icon"><Icon name="list" /></span>
           切片项目
         </button>
         <button
           className={`nav-item ${showTrash ? 'active' : ''}`}
           onClick={() => { navigate('/'); setShowTrash(true); setShowWatchFolders(false); loadTrash() }}
         >
-          <span className="nav-item-icon">🗑</span>
+          <span className="nav-item-icon"><Icon name="trash" /></span>
           回收站
         </button>
         <button
           className={`nav-item ${location.pathname === '/styles' && !showTrash && !showWatchFolders ? 'active' : ''}`}
           onClick={() => { navigate('/styles'); setShowTrash(false); setShowWatchFolders(false) }}
         >
-          <span className="nav-item-icon">✎</span>
+          <span className="nav-item-icon"><Icon name="edit" /></span>
           风格管理
         </button>
         <button
           className={`nav-item ${showWatchFolders ? 'active' : ''}`}
           onClick={() => { navigate('/'); setShowWatchFolders(true); setShowTrash(false) }}
         >
-          <span className="nav-item-icon">📁</span>
+          <span className="nav-item-icon"><Icon name="folder" /></span>
           监控文件夹
         </button>
 
@@ -332,7 +333,7 @@ function App() {
             <span className="breadcrumb">
               {location.pathname.startsWith('/project/') ? (
                 <>
-                  <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← 返回</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}><Icon name="chevronLeft" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />返回</button>
                   <span className="breadcrumb-sep">/</span>
                   <span className="page-title">项目详情</span>
                 </>
@@ -428,7 +429,7 @@ function App() {
                 </div>
               ) : (
                 <div className="empty">
-                  <div className="empty-icon">🗑</div>
+                  <div className="empty-icon"><Icon name="trash" size={32} /></div>
                   <div className="empty-title">回收站是空的</div>
                   <div className="empty-hint">删除的项目会在这里，30 天内可恢复</div>
                 </div>
@@ -440,7 +441,7 @@ function App() {
               {/* v2.1.11: Hero 行 — 信息卡 + metric (按钮在 topbar) */}
               <div className="hero-row">
                 <div className="hero-card">
-                  <div className="hero-card-icon">▶</div>
+                  <div className="hero-card-icon"><Icon name="film" size={20} /></div>
                   <div className="hero-card-body">
                     <div className="hero-card-title">
                       {uploading ? `上传中 ${uploadProgress}%` : '视频切片 AI'}
@@ -511,9 +512,7 @@ function App() {
                             onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling.style.display = 'flex' }}
                           />
                         ) : null}
-                        <div className="reel-card-thumb-icon" style={{ display: p.status === 'completed' ? 'none' : 'flex' }}>
-                          {p.status === 'processing' ? '⏵' : p.status === 'completed' ? '✓' : p.status === 'failed' ? '!' : '○'}
-                        </div>
+                        {/* v2.1.43: 删 reel-card-thumb-icon 播放三角 (completed 时本就被缩略图覆盖, 其他状态意义不大) */}
                         {p.status === 'processing' && (
                           <div className="reel-card-progress" title={p.current_step || `处理中 ${p.progress || 0}%`}>
                             <div className="reel-card-progress-bar">
@@ -525,7 +524,7 @@ function App() {
                         {p.status === 'processing' && p.timing && (
                           <div className="reel-card-timing">
                             <span className="reel-card-timing-elapsed" title="已用时间">
-                              ⏱ {formatDuration(p.timing.elapsed_seconds || 0)}
+                              <Icon name="clock" size={11} style={{ verticalAlign: '-2px', marginRight: 2 }} /> {formatDuration(p.timing.elapsed_seconds || 0)}
                             </span>
                             {p.timing.eta_seconds != null && p.timing.eta_seconds > 0 && (
                               <span className="reel-card-timing-eta" title="预计剩余">
@@ -554,7 +553,7 @@ function App() {
                             {p.style_name || '默认'}
                           </span>
                           <span className={`subtitle-pill ${p.has_subtitle ? 'subtitle-pill-on' : 'subtitle-pill-off'}`}>
-                            <span className="subtitle-pill-icon">📝</span>
+                            <span className="subtitle-pill-icon"><Icon name="tag" size={10} /></span>
                           </span>
                         </div>
                         <div className="reel-card-stats">
@@ -573,10 +572,10 @@ function App() {
                         </div>
                         <div className="reel-card-actions" onClick={e => e.stopPropagation()}>
                           {p.status === 'pending' && (
-                            <button className="btn btn-primary btn-sm" onClick={() => startProcessing(p.id)}>▶ 处理</button>
+                            <button className="btn btn-primary btn-sm" onClick={() => startProcessing(p.id)}>处理</button>
                           )}
                           <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
-                          <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)}>✕</button>
+                          <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)} title="删除"><Icon name="x" size={12} /></button>
                         </div>
                       </div>
                     </div>
@@ -587,7 +586,7 @@ function App() {
                   <div className="empty-icon">∅</div>
                   <div className="empty-title">还没有切片项目</div>
                   <div className="empty-hint">
-                    点击右上角 <b style={{ color: 'var(--accent)' }}>⏵ 新建切片</b> 上传第一个视频
+                    点击右上角 <b style={{ color: 'var(--accent)' }}><Icon name="plus" size={11} style={{ verticalAlign: '-2px', marginRight: 2 }} />新建切片</b> 上传第一个视频
                   </div>
                 </div>
               )}
@@ -604,7 +603,7 @@ function App() {
                 <div className="modal-title-icon" />
                 选择处理策略
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setShowStrategyModal(false); setPendingProject(null) }}>✕</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setShowStrategyModal(false); setPendingProject(null) }} title="关闭"><Icon name="x" size={12} /></button>
             </div>
 
             <div className="modal-body">
@@ -633,7 +632,7 @@ function App() {
               <div className="toggle-row">
                 <div>
                   <div className="toggle-info-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                    📱 输出格式
+                    <Icon name="monitor" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />输出格式
                     {outputFormat === '9:16-letterbox' && (
                       <span style={{
                         fontSize: 'var(--text-xs)', color: '#06b6d4',
@@ -647,8 +646,8 @@ function App() {
                   </div>
                   <div className="toggle-info-hint">
                     {outputFormat === 'original'
-                      ? '🎬 保持原比例 — 直播带货 / 竖屏短视频用'
-                      : '📱 转 9:16 上下黑边 — 横屏电影/解说用, 适合抖音上传'}
+                      ? <><Icon name="film" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />保持原比例 — 直播带货 / 竖屏短视频用</>
+                      : <><Icon name="monitor" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />转 9:16 上下黑边 — 横屏电影/解说用, 适合抖音上传</>}
                   </div>
                 </div>
                 <div
@@ -684,7 +683,7 @@ function App() {
                   <div className="strategy-grid">
                     {customStyles.map(s => (
                       <button key={s.id} className="strategy-item" onClick={() => selectStrategy(s)}>
-                        <div className="strategy-icon">✎</div>
+                        <div className="strategy-icon"><Icon name="edit" size={14} /></div>
                         <div className="strategy-body">
                           <div className="strategy-name">{s.name}</div>
                           {s.description && <div className="strategy-desc">{s.description}</div>}
@@ -786,7 +785,7 @@ function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel
           borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)',
           border: '1px solid rgba(234, 179, 8, 0.3)'
         }}>
-          ⚠️ 网络较慢（{formatSpeed(speed)}）。建议：本地用 ffmpeg 转 720p 再传，文件小 3-5 倍
+          <Icon name="warning" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />网络较慢（{formatSpeed(speed)}）。建议：本地用 ffmpeg 转 720p 再传，文件小 3-5 倍
         </div>
       )}
 

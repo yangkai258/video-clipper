@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Icon from './Icon'
 
 const STORAGE_KEY = 'video-clipper-theme'
 const DARK = 'dark'
@@ -22,7 +23,7 @@ function readSavedTheme() {
  * - 默认 dark
  * - 写 document.documentElement.dataset.theme（CSS 变量自动切换）
  * - 持久化到 localStorage
- * - 顶栏右侧 ☀ / 🌙 切换
+ * - 顶栏右侧 SVG icon 切换
  */
 export default function ThemeToggle() {
   const [theme, setTheme] = useState(readSavedTheme)
@@ -51,7 +52,7 @@ export default function ThemeToggle() {
       title={`切换到${nextLabel}主题`}
     >
       <span className="theme-toggle-icon" aria-hidden="true">
-        {isDark ? '☀️' : '🌙'}
+        <Icon name={isDark ? 'sun' : 'moon'} size={14} />
       </span>
     </button>
   )

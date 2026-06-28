@@ -46,7 +46,7 @@
   --topbar-height: 52px;
 }
 
-/* === 🌙 深色主题（默认） === */
+/* === 深色主题（默认） === */
 :root[data-theme="dark"] {
   /* Surfaces */
   --bg-base: #0a0a0c;
@@ -105,7 +105,7 @@
   --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
-/* === ☀️ 浅色主题 === */
+/* === 浅色主题 === */
 :root[data-theme="light"] {
   /* Surfaces (macOS 标准浅灰) */
   --bg-base: #f5f5f7;

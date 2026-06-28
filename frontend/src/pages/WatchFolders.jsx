@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
+import Icon from '../Icon'
 
 const API_BASE = '/api/v1'
 
@@ -126,7 +127,7 @@ export default function WatchFolders() {
     <div className="watch-folders">
       <div className="watch-folders-header">
         <div>
-          <h2>📁 Watch Folders</h2>
+          <h2><Icon name="folder" size={16} style={{ verticalAlign: '-3px', marginRight: 4 }} />Watch Folders</h2>
           <p className="watch-folders-subtitle">
             监控文件夹内的视频自动处理。文件被识别后，根据 source_action 自动删除/保留/移动。
           </p>
@@ -140,8 +141,8 @@ export default function WatchFolders() {
         </button>
       </div>
 
-      {error && <div className="alert alert-error">⚠️ {error}</div>}
-      {successMsg && <div className="alert alert-success">✓ {successMsg}</div>}
+      {error && <div className="alert alert-error"><Icon name="warning" size={12} style={{ verticalAlign: '-1px', marginRight: 3 }} />{error}</div>}
+      {successMsg && <div className="alert alert-success"><Icon name="check" size={12} style={{ verticalAlign: '-1px', marginRight: 3 }} />{successMsg}</div>}
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
@@ -237,7 +238,7 @@ export default function WatchFolders() {
 
       {folders.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-icon">📁</div>
+          <div className="empty-icon"><Icon name="folder" size={32} /></div>
           <p>还没有监控文件夹</p>
           <p className="empty-hint">点击右上角"添加监控"开始</p>
         </div>
@@ -271,26 +272,26 @@ export default function WatchFolders() {
                 <div className="stat">
                   <div className="stat-label">源文件</div>
                   <div className="stat-value">
-                    {wf.source_action === 'delete' && '🗑 自动删除'}
-                    {wf.source_action === 'keep' && '🔒 保留'}
-                    {wf.source_action === 'move_done' && '↪ 移到 done/'}
+                    {wf.source_action === 'delete' && <><Icon name="trash" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />自动删除</>}
+                    {wf.source_action === 'keep' && <><Icon name="save" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />保留</>}
+                    {wf.source_action === 'move_done' && <><Icon name="chevronRight" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />移到 done/</>}
                   </div>
                 </div>
                 <div className="stat">
                   <div className="stat-label">字幕</div>
-                  <div className="stat-value">{wf.with_subtitle ? '✓ 开启' : '— 关闭'}</div>
+                  <div className="stat-value">{wf.with_subtitle ? <><Icon name="check" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />开启</> : <><Icon name="close" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />关闭</>}</div>
                 </div>
               </div>
 
               <div className="watch-folder-actions">
                 <button className="btn btn-sm btn-ghost" onClick={() => handleScanNow(wf.id)}>
-                  🔍 立即扫描
+                  <Icon name="search" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />立即扫描
                 </button>
                 <button className="btn btn-sm btn-ghost" onClick={() => handleToggle(wf)}>
-                  {wf.enabled ? '⏸ 停用' : '▶ 启用'}
+                  {wf.enabled ? <><Icon name="x" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />停用</> : <><Icon name="play" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />启用</>}
                 </button>
                 <button className="btn btn-sm btn-ghost" onClick={() => handleEdit(wf)}>
-                  ✎ 编辑
+                  <Icon name="edit" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />编辑
                 </button>
                 <button className="btn btn-sm btn-danger" onClick={() => handleDelete(wf.id)}>
                   删除

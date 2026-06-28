@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
+import Icon from '../Icon'
 
 const API_BASE = '/api/v1'
 
@@ -98,13 +99,13 @@ function ReportModal({ project, onClose }) {
         <div className="modal-header">
           <div className="modal-title">
             <span className="modal-title-icon" />
-            <span>📊 {project.name} · 详细报告</span>
+            <span><Icon name="chart" size={14} style={{ verticalAlign: '-2px', marginRight: 4 }} />{project.name} · 详细报告</span>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} title="关闭"><Icon name="x" size={12} /></button>
         </div>
         <div className="modal-body">
           {/* === 1. 项目信息 === */}
-          <Section title="🗂 项目信息">
+          <Section title="项目信息" icon="list">
             <Row label="项目 ID" value={<span className="mono">{project.id}</span>} />
             <Row label="项目名称" value={project.name} />
             <Row label="状态" value={<span className="status-pill" data-status={project.status}>{statusLabel[project.status] || project.status}</span>} />
@@ -114,7 +115,7 @@ function ReportModal({ project, onClose }) {
           </Section>
 
           {/* === 2. 视频信息 === */}
-          <Section title="🎬 视频元数据">
+          <Section title="视频元数据" icon="film">
             <Row label="文件路径" value={<span className="mono" style={{ fontSize: 'var(--text-xs)' }}>{project.video_path || '—'}</span>} />
             <Row label="文件大小" value={project.video_size ? `${(project.video_size / 1024 / 1024).toFixed(1)} MB` : '—'} />
             <Row label="时长" value={project.video_duration ? formatTC(project.video_duration) : '—'} />
@@ -124,15 +125,15 @@ function ReportModal({ project, onClose }) {
           </Section>
 
           {/* === 3. 处理参数 === */}
-          <Section title="⚙️ 处理参数">
+          <Section title="处理参数" icon="settings">
             <Row label="风格" value={project.style_name || project.style_id || '默认'} />
             <Row label="目标时长" value={cfg.target_duration ? `${cfg.target_duration} 秒/片` : '—'} />
             <Row label="最大切片数" value={cfg.max_clips ? `≤ ${cfg.max_clips} 片` : '—'} />
-            <Row label="字幕烧录" value={cfg.with_subtitle !== false ? '✅ 烧录到视频' : '⏭ 不烧录'} />
+            <Row label="字幕烧录" value={cfg.with_subtitle !== false ? <><Icon name="check" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />烧录到视频</> : <><Icon name="close" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />不烧录</>} />
             <Row label="输出格式" value={
-              cfg.output_format === '9:16-letterbox' ? '📱 9:16 上下黑边' :
-              cfg.output_format === '9:16-smart-crop' ? '📱 9:16 智能裁剪' :
-              '🎬 保持原比例'
+              cfg.output_format === '9:16-letterbox' ? '9:16 上下黑边' :
+              cfg.output_format === '9:16-smart-crop' ? '9:16 智能裁剪' :
+              '保持原比例'
             } />
             <Row label="处理策略" value={cfg.processing_mode || 'standard'} />
             {cfg.min_score !== undefined && (
@@ -141,7 +142,7 @@ function ReportModal({ project, onClose }) {
           </Section>
 
           {/* === 4. 任务执行 === */}
-          <Section title="🚀 任务执行">
+          <Section title="任务执行" icon="play">
             <Row label="任务状态" value={task.status || '—'} />
             <Row label="进度" value={task.progress != null ? `${task.progress}% · ${task.current_step || ''}` : '—'} />
             <Row label="开始时间" value={formatDate(task.started_at)} />
@@ -156,7 +157,7 @@ function ReportModal({ project, onClose }) {
           </Section>
 
           {/* === 5. 输出统计 === */}
-          <Section title="📦 输出统计">
+          <Section title="输出统计" icon="chart">
             <Row label="切片数" value={`${clips.length} 个`} />
             <Row label="合集数" value={`${collections.length} 个`} />
             <Row label="切片总时长" value={`${totalDuration.toFixed(1)} 秒`} />
@@ -178,7 +179,7 @@ function ReportModal({ project, onClose }) {
   )
 }
 
-function Section({ title, children }) {
+function Section({ title, icon, children }) {
   return (
     <div style={{ marginBottom: 'var(--space-5)' }}>
       <div style={{
@@ -186,9 +187,12 @@ function Section({ title, children }) {
         fontWeight: 600,
         color: 'var(--text-bright)',
         marginBottom: 'var(--space-3)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-2)',
         paddingBottom: 'var(--space-2)',
         borderBottom: '1px solid var(--border-subtle)',
-      }}>{title}</div>
+      }}>{icon && <Icon name={icon} size={14} />}{title}</div>
       <div style={{ display: 'grid', gap: 'var(--space-2)' }}>{children}</div>
     </div>
   )
@@ -236,7 +240,7 @@ function ClipCard({ clip, index, projectId, withSubtitle }) {
               }}
             />
             <div className="pda-clip-poster-overlay">
-              <div className="pda-clip-play-btn">▶</div>
+              <div className="pda-clip-play-btn"><Icon name="play" size={16} /></div>
               <div className="pda-clip-duration">{(clip.duration || 0).toFixed(1)} 秒</div>
             </div>
           </button>
@@ -245,16 +249,16 @@ function ClipCard({ clip, index, projectId, withSubtitle }) {
       <div className="pda-clip-body">
         <div className="pda-clip-title" title={clip.title}>{clip.title || `片段 ${index + 1}`}</div>
         <div className="pda-clip-meta">
-          <span className="mono">⏱ {formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span>
-          <span className="mono">⭐ {clip.score?.toFixed(2) || '—'}</span>
+          <span className="mono"><Icon name="clock" size={10} style={{ verticalAlign: '-1px', marginRight: 2 }} />{formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span>
+          <span className="mono"><Icon name="star" size={10} style={{ verticalAlign: '-1px', marginRight: 2 }} />{clip.score?.toFixed(2) || '—'}</span>
           {/* v2.1.30: 按片下载按钮 */}
           <a
             className="pda-clip-download"
             href={videoSrc}
             download={clip.video_path ? clip.video_path.split('/').pop() : `clip_${index + 1}.mp4`}
             title="下载本片"
-            onClick={(e) => e.stopPropagation()}
-          >⏬</a>
+             onClick={(e) => e.stopPropagation()}
+           ><Icon name="download" size={12} /></a>
         </div>
       </div>
     </div>
@@ -271,7 +275,7 @@ function CollectionCard({ coll, index, projectId }) {
     <div className="pda-clip">
       <div className="pda-clip-thumb">
         {!videoSrc ? (
-          <div className="pda-clip-empty">⚠ 视频文件不存在</div>
+          <div className="pda-clip-empty"><Icon name="warning" size={14} style={{ verticalAlign: '-2px', marginRight: 3 }} />视频文件不存在</div>
         ) : playing ? (
           <video controls autoPlay className="pda-clip-video" src={videoSrc} />
         ) : (
@@ -282,8 +286,8 @@ function CollectionCard({ coll, index, projectId }) {
               loading="lazy"
             />
             <div className="pda-clip-poster-overlay">
-              <div className="pda-clip-play-btn">▶</div>
-              <div className="pda-clip-duration">📦 {coll.clip_count} 切片</div>
+              <div className="pda-clip-play-btn"><Icon name="play" size={16} /></div>
+              <div className="pda-clip-duration"><Icon name="film" size={10} style={{ verticalAlign: '-1px', marginRight: 2 }} />{coll.clip_count} 切片</div>
             </div>
           </button>
         )}
@@ -299,7 +303,7 @@ function CollectionCard({ coll, index, projectId }) {
               download={coll.video_path ? coll.video_path.split('/').pop() : `collection_${index + 1}.mp4`}
               title="下载合集"
               onClick={(e) => e.stopPropagation()}
-            >⏬</a>
+            ><Icon name="download" size={12} /></a>
           </div>
         )}
       </div>
@@ -364,12 +368,12 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
     lastStatusRef.current = status
     if (prev === 'processing' && status === 'completed' && !notifiedRef.current.has(project.id + ':done')) {
       notifiedRef.current.add(project.id + ':done')
-      notify('✅ 切片完成', `「${project.name}」处理完成，共 ${project.clips?.length || 0} 个片段`)
+      notify('切片完成', `「${project.name}」处理完成，共 ${project.clips?.length || 0} 个片段`)
     }
     if (prev === 'processing' && status === 'failed' && !notifiedRef.current.has(project.id + ':fail')) {
       notifiedRef.current.add(project.id + ':fail')
       const err = friendlyError(project.task?.error_message)
-      notify('❌ 切片失败', `「${project.name}」处理失败：${err.title}`)
+      notify('切片失败', `「${project.name}」处理失败：${err.title}`)
     }
   }, [project?.status])
 
@@ -406,7 +410,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   if (loading) {
     return (
       <div className="empty">
-        <div className="empty-icon">⏳</div>
+        <div className="empty-icon"><Icon name="clock" size={32} /></div>
         <div className="empty-title">加载中...</div>
       </div>
     )
@@ -458,12 +462,12 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
                 alt={project.name}
                 onError={(e) => { e.currentTarget.style.display = 'none' }}
               />
-              <div className="pda-cover-play">▶</div>
+              <div className="pda-cover-play"><Icon name="play" size={20} /></div>
             </div>
           ) : (
             <div className={`${coverClass} pda-cover-placeholder`} title={`${orientationLabel[orientation] || ''} ${project.video_width || '?'}×${project.video_height || '?'}`}>
               <div className="pda-cover-icon">
-                {isProcessing ? '⏳' : project.status === 'failed' ? '❌' : '🎬'}
+                {isProcessing ? <Icon name="clock" size={20} /> : project.status === 'failed' ? <Icon name="x" size={20} /> : <Icon name="film" size={20} />}
               </div>
             </div>
           )
@@ -474,22 +478,22 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
           </div>
           <h1 className="pda-title">{project.name}</h1>
           <div className="pda-meta">
-            <span>⏱ {formatTC(project.video_duration)}</span>
+            <span><Icon name="clock" size={11} style={{ verticalAlign: '-2px', marginRight: 3 }} />{formatTC(project.video_duration)}</span>
             <span className="pda-meta-sep">·</span>
-            <span>📁 {project.video_size ? `${(project.video_size / 1024 / 1024).toFixed(1)} MB` : '—'}</span>
+            <span><Icon name="folder" size={11} style={{ verticalAlign: '-2px', marginRight: 3 }} />{project.video_size ? `${(project.video_size / 1024 / 1024).toFixed(1)} MB` : '—'}</span>
             <span className="pda-meta-sep">·</span>
-            <span>📅 {formatDate(project.created_at)}</span>
+            <span><Icon name="chart" size={11} style={{ verticalAlign: '-2px', marginRight: 3 }} />{formatDate(project.created_at)}</span>
           </div>
           <div className="pda-actions">
             {project.status === 'pending' && (
-              <button className="btn btn-primary" onClick={startProcessing}>▶ 开始处理</button>
+              <button className="btn btn-primary" onClick={startProcessing}>开始处理</button>
             )}
             {project.status === 'completed' && (
-              <button className="btn btn-primary btn-sm">▶ 播放预览</button>
+              <button className="btn btn-primary btn-sm">播放预览</button>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowReport(true)}>📊 查看报告</button>
-            <button className="btn btn-ghost btn-sm">⏬ 下载 SRT</button>
-            <button className="btn btn-ghost btn-sm btn-danger" onClick={deleteProject}>✕ 删除</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowReport(true)}><Icon name="chart" size={11} style={{ verticalAlign: '-2px', marginRight: 3 }} />查看报告</button>
+            <button className="btn btn-ghost btn-sm"><Icon name="download" size={11} style={{ verticalAlign: '-2px', marginRight: 3 }} />下载 SRT</button>
+            <button className="btn btn-ghost btn-sm btn-danger" onClick={deleteProject}><Icon name="x" size={11} style={{ verticalAlign: '-2px', marginRight: 3 }} />删除</button>
           </div>
         </div>
       </div>
@@ -540,13 +544,13 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
       {/* === 失败错误卡 === */}
       {project.status === 'failed' && task?.error_message && (
         <div className="pda-error-card">
-          <div className="pda-error-title">❌ {friendlyError(task.error_message).title}</div>
+          <div className="pda-error-title"><Icon name="alert" size={14} style={{ verticalAlign: '-2px', marginRight: 4 }} />{friendlyError(task.error_message).title}</div>
           <div className="pda-error-hint">{friendlyError(task.error_message).hint}</div>
           <details className="pda-error-detail">
             <summary>查看原始错误</summary>
             <code>{task.error_message.slice(0, 400)}</code>
           </details>
-          <button className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-3)' }} onClick={startProcessing}>🔄 重新处理</button>
+          <button className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-3)' }} onClick={startProcessing}><Icon name="refresh" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />重新处理</button>
         </div>
       )}
 
@@ -610,8 +614,8 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
               {activeTab === 'srt' && (
                 <div className="pda-srt">
                   <div className="pda-srt-info">
-                    <div>📝 字幕文件 (SRT)</div>
-                    <a className="btn btn-primary btn-sm" href={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`} download={`${project.name}_字幕.srt`}>⏬ 下载 SRT</a>
+                    <div><Icon name="tag" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />字幕文件 (SRT)</div>
+                    <a className="btn btn-primary btn-sm" href={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`} download={`${project.name}_字幕.srt`}><Icon name="download" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />下载 SRT</a>
                   </div>
                   <pre className="pda-srt-preview">（字幕预览待加载）</pre>
                 </div>
@@ -628,11 +632,11 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
                   <div className="pda-setting-row">
                     <span>输出格式</span>
                     <strong style={{ color: cfg.output_format && cfg.output_format !== 'original' ? '#06b6d4' : undefined }}>
-                      {cfg.output_format === '9:16-letterbox' ? '📱 9:16 上下黑边 (抖音适配)' : cfg.output_format === '9:16-smart-crop' ? '📱 9:16 智能裁剪 (TODO)' : '🎬 保持原比例'}
+                      {cfg.output_format === '9:16-letterbox' ? '9:16 上下黑边 (抖音适配)' : cfg.output_format === '9:16-smart-crop' ? '9:16 智能裁剪 (TODO)' : '保持原比例'}
                     </strong>
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted, rgba(255,255,255,0.45))', marginTop: '4px' }}>
-                    💡 输出格式在上传时确定, 切完不可改 (改的话需要重新上传)
+                    <Icon name="info" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />输出格式在上传时确定, 切完不可改 (改的话需要重新上传)
                   </div>
                   {project.video_width && project.video_height && (
                     <div className="pda-setting-row">
@@ -645,12 +649,12 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
             </>
           ) : (
             <div className="empty">
-              <div className="empty-icon">{isProcessing ? '⏳' : project.status === 'failed' ? '❌' : '∅'}</div>
+              <div className="empty-icon">{isProcessing ? <Icon name="clock" size={32} /> : project.status === 'failed' ? <Icon name="x" size={32} /> : <Icon name="film" size={32} />}</div>
               <div className="empty-title">
                 {isProcessing ? '处理中，请稍候...' : project.status === 'pending' ? '项目就绪' : project.status === 'failed' ? '处理失败' : '暂无视频数据'}
               </div>
               <div className="empty-hint">
-                {project.status === 'pending' && '点击顶部「▶ 开始处理」生成切片'}
+                {project.status === 'pending' && '点击顶部「开始处理」生成切片'}
                 {project.status === 'failed' && '请检查日志或重新处理'}
               </div>
             </div>

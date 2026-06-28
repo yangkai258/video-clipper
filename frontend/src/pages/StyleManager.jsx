@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
+import Icon from '../Icon'
 
 const API_BASE = '/api/v1'
 
@@ -161,7 +162,7 @@ function StyleManager({ navigate: navProp, location: locProp }) {
             <div className="style-list">
               {styles.map(s => (
                 <div key={s.id} className="style-item">
-                  <div className="style-item-icon">✎</div>
+                  <div className="style-item-icon"><Icon name="edit" size={14} /></div>
                   <div className="style-item-body">
                     <div className="style-item-name">{s.name}</div>
                     {s.description && <div className="style-item-desc">{s.description}</div>}
@@ -177,7 +178,7 @@ function StyleManager({ navigate: navProp, location: locProp }) {
                   </div>
                   <div className="style-item-actions">
                     <button className="btn btn-ghost btn-sm" onClick={() => openEdit(s)}>编辑</button>
-                    <button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(s.id, s.name)}>✕</button>
+                    <button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(s.id, s.name)} title="删除"><Icon name="x" size={12} /></button>
                   </div>
                 </div>
               ))}
@@ -199,7 +200,7 @@ function StyleManager({ navigate: navProp, location: locProp }) {
                 <div className="modal-title-icon" />
                 {editing ? `编辑 · ${editing.name}` : '新建风格'}
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}>✕</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)} title="关闭"><Icon name="x" size={12} /></button>
             </div>
 
             <div className="tabs" style={{ paddingLeft: 'var(--space-6)' }}>

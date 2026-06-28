@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import Icon from '../Icon'
 
 const API_BASE = '/api/v1'
 
@@ -69,9 +70,9 @@ function Admin() {
     <div className="container fade-in">
       {/* 页面标题 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1>⚙️ 系统管理后台</h1>
+        <h1><Icon name="settings" size={18} style={{ verticalAlign: '-3px', marginRight: 6 }} />系统管理后台</h1>
         <button className="btn btn-secondary" onClick={handleRefresh}>
-          🔄 刷新状态
+          <Icon name="refresh" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />刷新状态
         </button>
       </div>
 
@@ -79,7 +80,7 @@ function Admin() {
       <div className="project-grid">
         {/* 系统信息 */}
         <div className="card">
-          <h2>💻 系统信息</h2>
+                <h2><Icon name="monitor" size={16} style={{ verticalAlign: '-3px', marginRight: 4 }} />系统信息</h2>
           <div style={{ marginTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
               <span style={{ color: 'var(--text-secondary)' }}>应用版本</span>
@@ -88,7 +89,7 @@ function Admin() {
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
               <span style={{ color: 'var(--text-secondary)' }}>运行状态</span>
               <span style={{ color: systemInfo?.status === 'running' ? 'var(--color-success)' : 'var(--color-error)' }}>
-                {systemInfo?.status === 'running' ? '✅ 运行中' : '❌ 异常'}
+                {systemInfo?.status === 'running' ? <><Icon name="check" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />运行中</> : <><Icon name="x" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />异常</>}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
@@ -104,12 +105,12 @@ function Admin() {
 
         {/* Worker 状态 */}
         <div className="card">
-          <h2>👷 Worker 状态</h2>
+                <h2><Icon name="settings" size={16} style={{ verticalAlign: '-3px', marginRight: 4 }} />Worker 状态</h2>
           <div style={{ marginTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Worker 状态</span>
               <span style={{ color: workerStatus?.running ? 'var(--color-success)' : 'var(--color-error)' }}>
-                {workerStatus?.running ? '✅ 运行中' : '❌ 未运行'}
+                {workerStatus?.running ? <><Icon name="check" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />运行中</> : <><Icon name="x" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />未运行</>}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
@@ -135,7 +136,7 @@ function Admin() {
 
         {/* 数据库统计 */}
         <div className="card">
-          <h2>🗄️ 数据库统计</h2>
+          <h2><Icon name="database" size={16} style={{ verticalAlign: '-3px', marginRight: 4 }} />数据库统计</h2>
           <div style={{ marginTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
               <span style={{ color: 'var(--text-secondary)' }}>项目总数</span>
@@ -158,12 +159,12 @@ function Admin() {
 
         {/* Redis 状态 */}
         <div className="card">
-          <h2>📦 Redis 状态</h2>
+                <h2><Icon name="database" size={16} style={{ verticalAlign: '-3px', marginRight: 4 }} />Redis 状态</h2>
           <div style={{ marginTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
               <span style={{ color: 'var(--text-secondary)' }}>连接状态</span>
               <span style={{ color: databaseStats?.redis_connected ? 'var(--color-success)' : 'var(--color-error)' }}>
-                {databaseStats?.redis_connected ? '✅ 已连接' : '❌ 未连接'}
+                {databaseStats?.redis_connected ? <><Icon name="check" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />已连接</> : <><Icon name="x" size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />未连接</>}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-color)' }}>
@@ -179,7 +180,7 @@ function Admin() {
       </div>
 
       {/* 任务列表 */}
-      <h2 style={{ marginTop: '32px' }}>📋 最近任务</h2>
+                <h2 style={{ marginTop: '32px' }}><Icon name="list" size={16} style={{ verticalAlign: '-3px', marginRight: 4 }} />最近任务</h2>
       <div className="card">
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>

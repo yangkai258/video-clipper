@@ -132,7 +132,7 @@ def test_theme_toggle_component_exists():
     assert "dataset.theme" in code, "ThemeToggle 必须设 document.documentElement.dataset.theme"
     assert "useState" in code, "ThemeToggle 必须用 useState 管理 theme state"
     assert "useEffect" in code, "ThemeToggle 必须用 useEffect 同步 DOM"
-    assert ("☀️" in code or "🌙" in code), "ThemeToggle 应有 emoji 图标"
+    assert ("Icon" in code and "sun" in code and "moon" in code), "ThemeToggle 应有 SVG icon 切换 (v2.1.43 替代 emoji)"
 
     # App.jsx 必须 import + 渲染
     app_code = APP_JSX.read_text(encoding="utf-8")
