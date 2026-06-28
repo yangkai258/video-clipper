@@ -58,6 +58,80 @@ function notify(title, body) {
   if (Notification.permission === 'granted') new Notification(title, { body })
 }
 
+// 懒加载视频卡: 默认只显示缩略图, 点 play 才挂载 video 标签
+function ClipCard({ clip, index, projectId, withSubtitle }) {
+  const [playing, setPlaying] = useState(false)
+  const videoSrc = `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(clip.video_path)}`
+  const srtSrc = `${API_BASE}/projects/${projectId}/files/${encodeURIComponent('metadata/input.srt')}`
+  return (
+    <div className="pda-clip">
+      <div className="pda-clip-thumb">
+        {playing ? (
+          <video
+            controls
+            autoPlay
+            className="pda-clip-video"
+            src={videoSrc}
+          >
+            {!withSubtitle && (
+              <track label="中文" kind="subtitles" srclang="zh" src={srtSrc} default />
+            )}
+          </video>
+        ) : (
+          <button className="pda-clip-poster" onClick={() => setPlaying(true)} title="点击播放">
+            <img
+              src={`/api/v1/thumbnails/${projectId}.jpg`}
+              alt={clip.title || `片段 ${index + 1}`}
+              loading="lazy"
+            />
+            <div className="pda-clip-poster-overlay">
+              <div className="pda-clip-play-btn">▶</div>
+              <div className="pda-clip-duration">{(clip.duration || 0).toFixed(1)} 秒</div>
+            </div>
+          </button>
+        )}
+      </div>
+      <div className="pda-clip-body">
+        <div className="pda-clip-title" title={clip.title}>{clip.title || `片段 ${index + 1}`}</div>
+        <div className="pda-clip-meta">
+          <span className="mono">⏱ {formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span>
+          <span className="mono">⭐ {clip.score?.toFixed(2) || '—'}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 合集卡 (同懒加载)
+function CollectionCard({ coll, index, projectId }) {
+  const [playing, setPlaying] = useState(false)
+  const videoSrc = coll.video_path
+    ? `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(coll.video_path)}`
+    : null
+  return (
+    <div className="pda-clip">
+      <div className="pda-clip-thumb">
+        {!videoSrc ? (
+          <div className="pda-clip-empty">⚠ 视频文件不存在</div>
+        ) : playing ? (
+          <video controls autoPlay className="pda-clip-video" src={videoSrc} />
+        ) : (
+          <button className="pda-clip-poster" onClick={() => setPlaying(true)} title="点击播放">
+            <img src={`/api/v1/thumbnails/${projectId}.jpg`} alt={coll.title || `合集 ${index + 1}`} loading="lazy" />
+            <div className="pda-clip-poster-overlay">
+              <div className="pda-clip-play-btn">▶</div>
+              <div className="pda-clip-duration">📦 {coll.clip_count} 切片</div>
+            </div>
+          </button>
+        )}
+      </div>
+      <div className="pda-clip-body">
+        <div className="pda-clip-title" title={coll.title}>{coll.title || `合集 ${index + 1}`}</div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProjectDetail({ projectId, navigate: navProp }) {
   const navigate = navProp || useNavigate()
   const id = projectId
@@ -295,33 +369,13 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
                   </div>
                   <div className="pda-grid">
                     {pageClips.map((clip, i) => (
-                      <div key={clip.id || i} className="pda-clip">
-                        <div className="pda-clip-thumb">
-                          <video
-                            controls
-                            preload="metadata"
-                            className="pda-clip-video"
-                            src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
-                          >
-                            {cfg.with_subtitle === false && (
-                              <track
-                                label="中文"
-                                kind="subtitles"
-                                srclang="zh"
-                                src={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
-                                default
-                              />
-                            )}
-                          </video>
-                        </div>
-                        <div className="pda-clip-body">
-                          <div className="pda-clip-title" title={clip.title}>{clip.title || `片段 ${i + 1}`}</div>
-                          <div className="pda-clip-meta">
-                            <span className="mono">⏱ {formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span>
-                            <span className="mono">⭐ {clip.score?.toFixed(2) || '—'}</span>
-                          </div>
-                        </div>
-                      </div>
+                      <ClipCard
+                        key={clip.id || i}
+                        clip={clip}
+                        index={i}
+                        projectId={id}
+                        withSubtitle={cfg.with_subtitle !== false}
+                      />
                     ))}
                   </div>
                   {totalPages > 1 && (
@@ -339,21 +393,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
               {activeTab === 'collections' && collections.length > 0 && (
                 <div className="pda-grid">
                   {collections.map((coll, i) => (
-                    <div key={coll.id || i} className="pda-clip">
-                      <div className="pda-clip-thumb">
-                        {coll.video_path ? (
-                          <video controls preload="metadata" className="pda-clip-video" src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(coll.video_path)}`} />
-                        ) : (
-                          <div className="pda-clip-empty">⚠ 视频文件不存在</div>
-                        )}
-                      </div>
-                      <div className="pda-clip-body">
-                        <div className="pda-clip-title" title={coll.title}>{coll.title || `合集 ${i + 1}`}</div>
-                        <div className="pda-clip-meta">
-                          <span className="mono">📦 {coll.clip_count} 个切片</span>
-                        </div>
-                      </div>
-                    </div>
+                    <CollectionCard key={coll.id || i} coll={coll} index={i} projectId={id} />
                   ))}
                 </div>
               )}
