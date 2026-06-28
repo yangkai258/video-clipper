@@ -684,11 +684,114 @@ class TestZeroClipGuard:
         processing_path = Path(__file__).parent.parent / "backend" / "tasks" / "processing.py"
         content = processing_path.read_text()
 
-        # 找到 0-clip guard 的位置
-        guard_idx = content.find("0-clip guard")
-        assert guard_idx > 0
-        # 找到 db.commit() (Step 10 那个) 的位置
-        commit_idx = content.find("先提交 clips/collections/project 状态")
-        assert commit_idx > 0
-        # guard 必须在 commit 之后
+        # 用专用 marker 定位 (v2.1.23 review fix: 不依赖注释文字)
+        guard_idx = content.find("# ZERO_CLIP_GUARD_MARKER")
+        commit_idx = content.find("# STEP10_DB_COMMIT_MARKER")
+        assert guard_idx > 0, "0-clip guard marker not found"
+        assert commit_idx > 0, "Step 10 db.commit marker not found"
+        # guard 必须在 commit 之后 (能在 commit 写库后改写 status)
         assert guard_idx > commit_idx, "0-clip guard must run after db.commit()"
+
+    @pytest.mark.asyncio
+    async def test_zero_clip_guard_skips_deleted_projects(self, client):
+        """guard 不应覆盖已 soft-delete 的项目 (review fix: 加 deleted_at 检查)"""
+        from pathlib import Path
+        processing_path = Path(__file__).parent.parent / "backend" / "tasks" / "processing.py"
+        content = processing_path.read_text()
+
+        # 找 helper 函数定义位置 (review fix: helper 抽出来后, deleted_at 检查也在 helper 里)
+        helper_idx = content.find("def _mark_zero_output_failed")
+        assert helper_idx > 0, "helper _mark_zero_output_failed not found"
+        # helper 函数体必须包含 deleted_at 检查
+        helper_block = content[helper_idx:helper_idx + 1500]
+        assert "deleted_at is None" in helper_block, \
+            "guard should skip soft-deleted projects to avoid overriding user delete"
+
+    @pytest.mark.asyncio
+    async def test_mark_zero_output_failed_actually_marks_failed(self, client):
+        """真触发 helper: completed 项目 → 调 helper → 变 failed (end-to-end 行为测试)"""
+        from backend.tasks.processing import _mark_zero_output_failed
+        from backend.core.database import sync_get_db
+        from backend.models.database import Project, Task
+        from datetime import datetime
+
+        # 直接用 sync engine 准备数据 (避免 asyncio.run 在 pytest-asyncio 里冲突)
+        with sync_get_db() as db:
+            proj = Project(
+                id="proj_zcg_e2e",
+                name="0-clip 测试",
+                status="completed",
+                video_path="raw/input.mp4",
+                completed_at=datetime.utcnow(),
+            )
+            db.add(proj)
+            task = Task(
+                id="task_zcg_e2e",
+                project_id="proj_zcg_e2e",
+                task_type="video_processing",
+                name="test task",
+                status="completed",
+                progress=100,
+            )
+            db.add(task)
+            db.commit()
+
+        # 触发: 调 helper
+        _mark_zero_output_failed(
+            project_id="proj_zcg_e2e",
+            task_id="task_zcg_e2e",
+            reason="未能识别到任何切片片段 (视频过短 或 无有效切点)",
+        )
+
+        # 断言: status 改了
+        with sync_get_db() as db:
+            proj = db.query(Project).filter(Project.id == "proj_zcg_e2e").first()
+            assert proj.status == "failed"
+            assert proj.completed_at is None
+
+            task_row = db.query(Task).filter(Task.id == "task_zcg_e2e").first()
+            assert task_row.status == "failed"
+            assert "未能识别" in task_row.error_message
+
+        # 清理
+        with sync_get_db() as db:
+            db.query(Task).filter(Task.id == "task_zcg_e2e").delete()
+            db.query(Project).filter(Project.id == "proj_zcg_e2e").delete()
+            db.commit()
+
+    @pytest.mark.asyncio
+    async def test_mark_zero_output_skips_deleted_projects(self, client):
+        """helper 不应覆盖 soft-delete 的项目 (review fix 行为验证)"""
+        from backend.tasks.processing import _mark_zero_output_failed
+        from backend.core.database import sync_get_db
+        from backend.models.database import Project
+        from datetime import datetime
+
+        with sync_get_db() as db:
+            proj = Project(
+                id="proj_zcg_deleted",
+                name="已删除测试",
+                status="completed",
+                video_path="raw/input.mp4",
+                completed_at=datetime.utcnow(),
+                deleted_at=datetime.utcnow(),  # 已 soft-delete
+            )
+            db.add(proj)
+            db.commit()
+
+        _mark_zero_output_failed(
+            project_id="proj_zcg_deleted",
+            task_id=None,
+            reason="test",
+        )
+
+        # 断言: soft-delete 的项目状态保持 completed (不被 guard 覆盖)
+        with sync_get_db() as db:
+            proj = db.query(Project).filter(Project.id == "proj_zcg_deleted").first()
+            assert proj.status == "completed", \
+                "guard should NOT override soft-deleted project's status"
+            assert proj.deleted_at is not None
+
+        with sync_get_db() as db:
+            db.query(Project).filter(Project.id == "proj_zcg_deleted").delete()
+            db.commit()

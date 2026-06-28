@@ -36,6 +36,35 @@ def _update_task_progress(task_id: str, progress: int, current_step: str) -> Non
         logger.warning(f"进度更新失败 (progress={progress}, step={current_step}): {e}")
 
 
+def _mark_zero_output_failed(project_id: str, task_id: str, reason: str) -> None:
+    """0-clip guard (v2.1.23): 把 pipeline 跑完但 0 产物的项目改标 failed
+
+    设计：
+    - 检查项目状态必须是 completed 且未删除 (避免覆盖用户主动删除的项目)
+    - 检查 task 状态必须是 completed (避免覆盖正在运行的 task)
+    - 失败仅 warning，不抛异常 (主流程已经完成, 这里只是修正状态)
+    """
+    try:
+        from ..core.database import sync_get_db
+        from ..models.database import Project, Task
+
+        with sync_get_db() as db:
+            proj = db.query(Project).filter(Project.id == project_id).first()
+            # 加 deleted_at 检查 (v2.1.23 review fix): 用户中途删了的项目, 不应被 guard 覆盖
+            if proj and proj.status == "completed" and proj.deleted_at is None:
+                proj.status = "failed"
+                proj.completed_at = None  # 清掉误写的完成时间
+            if task_id:
+                task_row = db.query(Task).filter(Task.id == task_id).first()
+                if task_row and task_row.status == "completed":
+                    task_row.status = "failed"
+                    task_row.error_message = reason
+            db.commit()
+            logger.warning(f"0-clip guard: project {project_id} 跑完 6 步但 0 产物, 改标 failed")
+    except Exception as guard_err:
+        logger.warning(f"0-clip guard 写库失败: {guard_err}")
+
+
 @shared_task(bind=True)
 def process_video_pipeline(
     self,
@@ -337,7 +366,7 @@ def process_video_pipeline(
                         task_row.completed_at = datetime.utcnow()
                         task_row.progress = 100
 
-                db.commit()  # 先提交 clips/collections/project 状态
+                db.commit()  # 先提交 clips/collections/project 状态  # STEP10_DB_COMMIT_MARKER
             except Exception as db_error:
                 logger.error(f"数据库写入失败：{db_error}")
                 raise
@@ -371,23 +400,9 @@ def process_video_pipeline(
         except Exception as cleanup_error:
             logger.warning(f"清理临时文件失败（不影响主流程）：{cleanup_error}")
 
-        # 0-clip guard (v2.1.23): 视频太短/无切点时跑完 6 步但 0 产物, 不能标 completed
+        # 0-clip guard (v2.1.23): 视频太短/无切点时跑完 6 步但 0 产物, 不能标 completed  # ZERO_CLIP_GUARD_MARKER
         if len(titled_clips) == 0 and len(collections) == 0:
-            try:
-                with sync_get_db() as db:
-                    proj = db.query(Project).filter(Project.id == project_id).first()
-                    if proj and proj.status == "completed":
-                        proj.status = "failed"
-                        proj.completed_at = None  # 清掉误写的完成时间
-                    if task_id:
-                        task_row = db.query(Task).filter(Task.id == task_id).first()
-                        if task_row and task_row.status == "completed":
-                            task_row.status = "failed"
-                            task_row.error_message = "未能识别到任何切片片段 (视频过短 或 无有效切点)"
-                    db.commit()
-                    logger.warning(f"0-clip guard: project {project_id} 跑完 6 步但 0 产物, 改标 failed")
-            except Exception as guard_err:
-                logger.warning(f"0-clip guard 写库失败: {guard_err}")
+            _mark_zero_output_failed(project_id, task_id, "未能识别到任何切片片段 (视频过短 或 无有效切点)")
             return {
                 "success": False,
                 "project_id": project_id,
