@@ -332,14 +332,20 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   }
   const clipsPage = parseInt(searchParams.get('cp') || '1', 10)
   const collectionsPage = parseInt(searchParams.get('kp') || '1', 10)
+  // v2.1.49: setter 支持函数式 (跟 React setState 一样), 让 '上一页'/'下一页'
+  // 按钮可以传 updater 函数 (p => Math.max(1, p - 1)), 而不是只能传数字
+  // 之前 bug: setClipsPage((p) => Math.max(...)) → String((p) => ...) 写到 URL
+  // → cp 变 '(p) => Math.max(1, p - 1)' → parseInt → NaN → 空内容
   const setClipsPage = (p) => {
     const next = new URLSearchParams(searchParams)
-    next.set('cp', String(p))
+    const newPage = typeof p === 'function' ? p(clipsPage) : p
+    next.set('cp', String(newPage))
     setSearchParams(next, { replace: true })
   }
   const setCollectionsPage = (p) => {
     const next = new URLSearchParams(searchParams)
-    next.set('kp', String(p))
+    const newPage = typeof p === 'function' ? p(collectionsPage) : p
+    next.set('kp', String(newPage))
     setSearchParams(next, { replace: true })
   }
   // v2.1.26: 必须放在所有 useEffect 之前! (否则违反 hooks 顺序规则, 会触发整体 unmount)

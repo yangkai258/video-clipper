@@ -344,7 +344,8 @@ def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_con
     )
 
     # 限制大小（避免超 context）
-    MAX_CHARS = 25000
+    # v2.1.49: 25000 → 50000 让 LLM 看更多字幕 (1GB 阿甘 srt 104181 字符, 之前截到 25k LLM 跳过大半)
+    MAX_CHARS = 50000
     if len(srt_compact) > MAX_CHARS:
         logger.warning(f"SRT 紧凑格式 {len(srt_compact)} 字符超过 {MAX_CHARS}，按比例截取")
         # 等比例采样：每 N 条取一条
@@ -372,7 +373,9 @@ def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_con
 要求：
 1. 每个话题必须映射到字幕中具体的时间段（精确到秒，浮点数）
 2. 时间要贴合话题内容的实际切换点（说话人/主题变化处）
-3. 如果大纲中某个话题在字幕里找不到对应内容，跳过它（不要强行映射）
+3. 大部分话题都应该在字幕里能找到对应内容, 强制映射 (不要轻易跳过)
+   - 找不到完全匹配的, 就用话题大致出现的时间段 (即使主题词没出现, 但讲述背景在)
+   - 只有话题跟整段视频内容完全无关时才跳过
 4. 同一个时间段不能被多个话题覆盖
 5. 严格按以下 JSON 格式输出（只输出 JSON，不要其他内容）：
 
