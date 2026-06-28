@@ -333,6 +333,13 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
             # 保存相对路径
             clip["video_path"] = str(output_path.relative_to(output_path.parent.parent.parent))
 
+            # v2.1.29 fix: 写回 start/end/duration/title, processing.py 写库用
+            # 之前漏了, 导致 duration=0 / start=0 / end=0, 前端显示 00:00
+            clip["start"] = start
+            clip["end"] = end
+            clip["duration"] = duration
+            clip["title"] = safe_title
+
             # v2.1.26: ffprobe 抽 clip 宽高, 让前端区分横/竖屏 (避免竖屏裁切)
             try:
                 from .ffprobe_helper import get_video_dimensions
