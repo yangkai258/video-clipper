@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import axios from 'axios'
 import { ChunkedUploader, formatBytes, formatSpeed, formatTime } from './ChunkedUploader'
 import WatchFolders from './pages/WatchFolders'
 import StyleManager from './pages/StyleManager'
+import ProjectDetail from './pages/ProjectDetail'
 import ThemeToggle from './ThemeToggle'
 import './index.css'
 
@@ -252,6 +253,12 @@ function App() {
     pending: projects.filter(p => p.status === 'pending').length,
   }
 
+  // 包装 ProjectDetail 拿路由 params
+  function ProjectDetailInShell() {
+    const { id } = useParams()
+    return <ProjectDetail projectId={id} navigate={navigate} />
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -261,7 +268,7 @@ function App() {
         </div>
 
         <button
-          className={`nav-item ${location.pathname === '/' && !showTrash && !showWatchFolders ? 'active' : ''}`}
+          className={`nav-item ${(location.pathname === '/' || location.pathname.startsWith('/project/')) && !showTrash && !showWatchFolders ? 'active' : ''}`}
           onClick={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/') }}
         >
           <span className="nav-item-icon">▶</span>
@@ -304,14 +311,24 @@ function App() {
         <div className="topbar">
           <div className="topbar-left">
             <span className="breadcrumb">
-              <span>工作台</span>
-              <span className="breadcrumb-sep">/</span>
-              <span className="page-title">
-                {location.pathname === '/styles' ? '风格管理'
-                  : showWatchFolders ? '监控文件夹'
-                  : showTrash ? '回收站'
-                  : '切片项目'}
-              </span>
+              {location.pathname.startsWith('/project/') ? (
+                <>
+                  <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← 返回</button>
+                  <span className="breadcrumb-sep">/</span>
+                  <span className="page-title">项目详情</span>
+                </>
+              ) : (
+                <>
+                  <span>工作台</span>
+                  <span className="breadcrumb-sep">/</span>
+                  <span className="page-title">
+                    {location.pathname === '/styles' ? '风格管理'
+                      : showWatchFolders ? '监控文件夹'
+                      : showTrash ? '回收站'
+                      : '切片项目'}
+                  </span>
+                </>
+              )}
             </span>
           </div>
           <div className="topbar-right">
@@ -342,7 +359,10 @@ function App() {
         </div>
 
         <div className="content fade-in">
-          {location.pathname === '/styles' ? (
+          {/* 路径优先分发: 项目详情 / 风格管理 / 监控 / 回收站 / 主列表 */}
+          {location.pathname.startsWith('/project/') ? (
+            <ProjectDetailInShell />
+          ) : location.pathname === '/styles' ? (
             <StyleManager navigate={navigate} location={location} />
           ) : showWatchFolders ? (
             <WatchFolders />

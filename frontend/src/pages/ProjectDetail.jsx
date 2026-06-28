@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 
 const API_BASE = '/api/v1'
@@ -8,128 +8,89 @@ const statusLabel = {
   pending: '待处理',
   processing: '处理中',
   completed: '已完成',
-  failed: '失败'
+  failed: '失败',
+  deleted: '已删除',
 }
 
 function formatTime(seconds) {
-  if (seconds == null) return '--:--'
+  if (!seconds) return '00:00'
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 function formatDuration(seconds) {
-  // 123 → "2 分 3 秒"; 3725 → "1 小时 2 分"; 45 → "45 秒"
-  if (seconds == null) return '估算中...'
-  if (seconds < 60) return `${Math.floor(seconds)} 秒`
+  if (!seconds && seconds !== 0) return '—'
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   const s = Math.floor(seconds % 60)
-  if (h > 0) return `${h} 小时 ${m} 分`
-  if (s > 0 && m < 5) return `${m} 分 ${s} 秒`
-  return `${m} 分钟`
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 function formatTC(s) {
-  if (!s) return '--:--'
+  if (!s) return '00:00'
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
 function formatSize(bytes) {
-  if (!bytes) return '--'
+  if (!bytes) return '—'
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
 function formatDate(iso) {
-  if (!iso) return '--'
-  // 后端 to_iso_utc 已加 'Z', 前端不要再加, 否则 'Z'+'Z' = Invalid Date
+  if (!iso) return '—'
   const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
-  if (isNaN(d.getTime())) return '--'
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit'
+    timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   })
 }
 
-// ===== 错误信息友好化 =====
-function friendlyError(taskError, projectStatus) {
-  if (!taskError) return null
+function friendlyError(taskError) {
+  if (!taskError) return { title: '处理失败', hint: '请查看日志或重新处理' }
   const err = String(taskError).toLowerCase()
-
-  // 常见错误模式匹配 + 给"怎么修"
-  if (err.includes('moov atom') || err.includes('invalid data') || err.includes('exit status 183')) {
-    return {
-      title: '视频文件无法读取',
-      hint: 'ffmpeg 找不到 moov atom——文件可能上传时被截断、或格式不被支持。建议：1) 重新上传 2) 用 ffmpeg 重新转一次 3) 检查文件大小是否正确',
-    }
+  if (err.includes('ffmpeg') || err.includes('invalid data')) {
+    return { title: '视频格式不支持', hint: 'ffmpeg 解析失败，请确认视频文件完整且格式标准 (mp4/mov)' }
   }
-  if (err.includes('ffmpeg') && err.includes('exit status')) {
-    return {
-      title: 'ffmpeg 处理失败',
-      hint: 'ffmpeg 异常退出。可能是：1) 视频文件损坏 2) 磁盘空间满 3) 内存不足。建议：清理磁盘后重试',
-    }
+  if (err.includes('memory') || err.includes('out of memory')) {
+    return { title: '内存不足', hint: '视频可能过大，建议分段或降低分辨率' }
   }
-  if (err.includes('whisper') || err.includes('cuda') || err.includes('out of memory')) {
-    return {
-      title: 'Whisper 转录失败',
-      hint: '音频识别出错。可能是：1) 没有音频轨 2) 模型加载失败 3) 内存不足。建议：换个视频试试，或联系管理员',
-    }
+  if (err.includes('timeout')) {
+    return { title: '处理超时', hint: '请尝试较小的视频或重新处理' }
   }
-  if (err.includes('database is locked') || err.includes('sqlite')) {
-    return {
-      title: '数据库被锁',
-      hint: '多个 worker 同时写 SQLite 撞锁了。系统会自动重试，等 1-2 分钟刷新看',
-    }
+  if (err.includes('whisper')) {
+    return { title: '语音识别失败', hint: 'Whisper 加载或转录失败，请检查模型' }
   }
-  if (err.includes('timeout') || err.includes('time out')) {
-    return {
-      title: '处理超时',
-      hint: '单步处理超时。可能是视频太大。建议：1) 切成小段再传 2) 调大 target_duration 让切片更少',
-    }
-  }
-  return {
-    title: '处理失败',
-    hint: taskError.slice(0, 300),
-  }
+  return { title: '处理失败', hint: '请查看原始错误或重试' }
 }
 
-// ===== 桌面通知（封装：先请求权限） =====
-async function notify(title, body) {
+function notify(title, body) {
   if (!('Notification' in window)) return
-  if (Notification.permission === 'default') {
-    await Notification.requestPermission()
-  }
-  if (Notification.permission === 'granted') {
-    try {
-      new Notification(title, { body, icon: '/favicon.ico' })
-    } catch (e) { /* 静默 */ }
-  }
+  if (Notification.permission === 'granted') new Notification(title, { body })
 }
 
-function ProjectDetail() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const location = useLocation()
+export default function ProjectDetail({ projectId, navigate: navProp }) {
+  const navigate = navProp || useNavigate()
+  const id = projectId
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('clips')
-  const [customStylesCount, setCustomStylesCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 8
-  // 跟踪状态变化用于发通知
   const lastStatusRef = useRef(null)
-  const notifiedRef = useRef(new Set())  // 已通知过的 project id
+  const notifiedRef = useRef(new Set())
 
   useEffect(() => {
-    loadProject()
-    loadSidebarCounts()
+    if (id) {
+      loadProject()
+      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission()
+    }
   }, [id])
 
-  // 处理中：2 秒刷一次（看 task 进度）；其他状态 5 秒
   useEffect(() => {
     if (!project) return
     const isProcessing = project.status === 'processing' || project.task?.status === 'running'
@@ -137,26 +98,19 @@ function ProjectDetail() {
     return () => clearInterval(interval)
   }, [project?.status, project?.task?.status])
 
-  // 状态变化时发桌面通知
   useEffect(() => {
     if (!project) return
     const status = project.status
     const prev = lastStatusRef.current
     lastStatusRef.current = status
-
-    // 处理中 → 完成：通知
     if (prev === 'processing' && status === 'completed' && !notifiedRef.current.has(project.id + ':done')) {
       notifiedRef.current.add(project.id + ':done')
-      notify(
-        '✅ 切片完成',
-        `「${project.name}」处理完成，共 ${project.clips?.length || 0} 个片段`
-      )
+      notify('✅ 切片完成', `「${project.name}」处理完成，共 ${project.clips?.length || 0} 个片段`)
     }
-    // 处理中 → 失败：通知
     if (prev === 'processing' && status === 'failed' && !notifiedRef.current.has(project.id + ':fail')) {
       notifiedRef.current.add(project.id + ':fail')
-      const err = friendlyError(project.task?.error_message, status)
-      notify('❌ 切片失败', `「${project.name}」处理失败：${err?.title || '未知错误'}`)
+      const err = friendlyError(project.task?.error_message)
+      notify('❌ 切片失败', `「${project.name}」处理失败：${err.title}`)
     }
   }, [project?.status])
 
@@ -164,22 +118,11 @@ function ProjectDetail() {
     try {
       const res = await axios.get(`${API_BASE}/projects/${id}`)
       setProject(res.data.project)
-    } catch (error) {
-      console.error('加载项目失败:', error)
+    } catch (e) {
+      console.error('加载项目失败:', e)
     } finally {
       setLoading(false)
     }
-  }
-
-  const loadSidebarCounts = async () => {
-    try {
-      const [p, s] = await Promise.all([
-        axios.get(`${API_BASE}/projects/`),
-        axios.get(`${API_BASE}/styles`)
-      ])
-      // projects count not strictly needed but mirrors StyleManager pattern
-      setCustomStylesCount(s.data.length)
-    } catch (e) { /* silent */ }
   }
 
   const startProcessing = async () => {
@@ -192,7 +135,7 @@ function ProjectDetail() {
   }
 
   const deleteProject = async () => {
-    if (!confirm(`确定删除「${project.name}」？此操作不可恢复。`)) return
+    if (!confirm(`确定删除「${project?.name}」？此操作不可恢复。`)) return
     try {
       await axios.delete(`${API_BASE}/projects/${id}`)
       navigate('/')
@@ -203,44 +146,22 @@ function ProjectDetail() {
 
   if (loading) {
     return (
-      <div className="app-shell">
-        <aside className="sidebar">
-          <div className="sidebar-brand">
-            <div className="sidebar-brand-mark">VC</div>
-            <div className="sidebar-brand-name">视频切片工具</div>
-          </div>
-        </aside>
-        <main className="main">
-          <div className="topbar" />
-          <div className="content">
-            <div className="empty">
-              <div className="empty-title">加载中...</div>
-            </div>
-          </div>
-        </main>
+      <div className="empty">
+        <div className="empty-icon">⏳</div>
+        <div className="empty-title">加载中...</div>
       </div>
     )
   }
 
   if (!project) {
     return (
-      <div className="app-shell">
-        <aside className="sidebar">
-          <div className="sidebar-brand">
-            <div className="sidebar-brand-mark">VC</div>
-            <div className="sidebar-brand-name">视频切片工具</div>
-          </div>
-        </aside>
-        <main className="main">
-          <div className="topbar" />
-          <div className="content">
-            <div className="empty">
-              <div className="empty-icon">∅</div>
-              <div className="empty-title">项目不存在</div>
-              <div className="empty-hint">它可能已被删除</div>
-            </div>
-          </div>
-        </main>
+      <div className="empty">
+        <div className="empty-icon">∅</div>
+        <div className="empty-title">项目不存在</div>
+        <div className="empty-hint">它可能已被删除</div>
+        <button className="btn btn-primary" style={{ marginTop: 'var(--space-3)' }} onClick={() => navigate('/')}>
+          返回列表
+        </button>
       </div>
     )
   }
@@ -249,52 +170,35 @@ function ProjectDetail() {
   const collections = project.collections || []
   const totalPages = Math.max(1, Math.ceil(clips.length / itemsPerPage))
   const pageClips = clips.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-  const hasBoth = clips.length > 0 && collections.length > 0
   const showTabs = clips.length > 0 || collections.length > 0
+  const task = project.task
+  const cfg = project.processing_config || {}
+  const isProcessing = project.status === 'processing'
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="sidebar-brand-mark">VC</div>
-          <div className="sidebar-brand-name">视频切片工具</div>
-        </div>
-
-        <div className="sidebar-section-label">工作区</div>
-        <button className={`nav-item ${location.pathname === '/' ? 'active' : ''}`} onClick={() => navigate('/')}>
-          <span className="nav-item-icon">▶</span>
-          切片项目
-          <span className="nav-item-count">—</span>
-        </button>
-        <button className={`nav-item ${location.pathname === '/styles' ? 'active' : ''}`} onClick={() => navigate('/styles')}>
-          <span className="nav-item-icon">✎</span>
-          风格管理
-          <span className="nav-item-count">{customStylesCount}</span>
-        </button>
-
-        <div className="sidebar-bottom">
-          <div className="user-chip">
-            <div className="user-avatar">U</div>
-            <div>
-              <div className="user-name">工作台</div>
-              <div className="user-status">● 在线</div>
+    <div className="pd-layout">
+      {/* === 左: 主内容 === */}
+      <div className="pd-main">
+        {/* Header: 名称 + 状态 + 操作 */}
+        <div className="pd-header">
+          <div className="pd-header-left">
+            <div className="pd-title-row">
+              <h1 className="pd-title">{project.name}</h1>
+              <span className="status-pill" data-status={project.status}>{statusLabel[project.status] || project.status}</span>
+            </div>
+            <div className="pd-meta">
+              <span className="pd-meta-item">⏱ {formatTC(project.video_duration)}</span>
+              <span className="pd-meta-sep">·</span>
+              <span className="pd-meta-item">📁 {formatSize(project.video_size)}</span>
+              <span className="pd-meta-sep">·</span>
+              <span className="pd-meta-item">✂ {clips.length} 切片</span>
+              <span className="pd-meta-sep">·</span>
+              <span className="pd-meta-item">📦 {collections.length} 合集</span>
+              <span className="pd-meta-sep">·</span>
+              <span className="pd-meta-item">{cfg.with_subtitle !== false ? '📝 字幕开启' : '📝 字幕关闭'}</span>
             </div>
           </div>
-        </div>
-      </aside>
-
-      <main className="main">
-        <div className="topbar">
-          <div className="topbar-left">
-            <span className="breadcrumb">
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/')}>← 返回</button>
-              <span className="breadcrumb-sep">/</span>
-              <span className="page-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 480 }}>
-                {project.name}
-              </span>
-            </span>
-          </div>
-          <div className="topbar-right">
+          <div className="pd-header-right">
             {project.status === 'pending' && (
               <button className="btn btn-primary" onClick={startProcessing}>▶ 开始处理</button>
             )}
@@ -302,362 +206,198 @@ function ProjectDetail() {
           </div>
         </div>
 
-        <div className="content fade-in">
-          {/* === Project header card === */}
-          <div className="content-header">
-            <div>
-              <div className="content-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                <span>{project.name}</span>
-                <span className="status-pill" data-status={project.status}>{statusLabel[project.status] || project.status}</span>
-              </div>
-              <div className="content-subtitle">项目详情 · 共 {clips.length} 个切片 · {collections.length} 个合集</div>
-            </div>
+        {/* Tabs */}
+        {showTabs && (
+          <div className="tabs">
+            {clips.length > 0 && (
+              <button className={`tab ${activeTab === 'clips' ? 'active' : ''}`} onClick={() => { setActiveTab('clips'); setCurrentPage(1) }}>
+                切片 <span className="tab-count">{clips.length}</span>
+              </button>
+            )}
+            {collections.length > 0 && (
+              <button className={`tab ${activeTab === 'collections' ? 'active' : ''}`} onClick={() => { setActiveTab('collections'); setCurrentPage(1) }}>
+                合集 <span className="tab-count">{collections.length}</span>
+              </button>
+            )}
           </div>
+        )}
 
-          {/* === 实时进度（处理中显示） === */}
-          {project.status === 'processing' && project.task && (
-            <div style={{
-              padding: 'var(--space-4)',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--accent)',
-              borderRadius: 'var(--radius-md)',
-              marginBottom: 'var(--space-4)',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--accent)' }}>
-                  {project.task.current_step || '处理中...'}
-                </span>
-                <span style={{ fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                  {project.task.progress || 0}%
-                </span>
-              </div>
-              <div style={{
-                height: '8px', background: 'var(--bg-base)', borderRadius: '4px',
-                overflow: 'hidden',
-              }}>
-                <div style={{
-                  width: `${project.task.progress || 0}%`, height: '100%',
-                  background: 'var(--accent)',
-                  transition: 'width 0.3s ease-out',
-                }} />
-              </div>
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                fontSize: 'var(--text-xs)', color: 'var(--text-dim)',
-                marginTop: 'var(--space-3)', gap: 'var(--space-3)',
-              }}>
-                <span>
-                  {project.task.elapsed_seconds != null && (
-                    <>已用 <strong style={{ color: 'var(--text-secondary)' }}>{formatDuration(project.task.elapsed_seconds)}</strong></>
-                  )}
-                  {project.task.total_estimated_seconds != null && (
-                    <> · 预计 <strong style={{ color: 'var(--text-secondary)' }}>{formatDuration(project.task.total_estimated_seconds)}</strong></>
-                  )}
-                </span>
-                <span>
-                  {project.task.eta_seconds != null ? (
-                    <>剩余 <strong style={{ color: 'var(--accent)' }}>{formatDuration(project.task.eta_seconds)}</strong></>
-                  ) : (
-                    <em>估算中...</em>
-                  )}
-                </span>
-              </div>
+        {/* Clips grid */}
+        {activeTab === 'clips' && clips.length > 0 && (
+          <div>
+            <div className="pd-grid-header">
+              <span>显示 {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, clips.length)} / {clips.length} 个切片</span>
+              <span>第 {currentPage} / {totalPages} 页</span>
             </div>
-          )}
 
-          {/* === 错误卡片（友好提示） === */}
-          {project.status === 'failed' && project.task?.error_message && (() => {
-            const err = friendlyError(project.task.error_message, project.status)
-            return (
-              <div style={{
-                padding: 'var(--space-4)',
-                background: 'rgba(220, 38, 38, 0.05)',
-                border: '1px solid rgba(220, 38, 38, 0.3)',
-                borderRadius: 'var(--radius-md)',
-                marginBottom: 'var(--space-4)',
-              }}>
-                <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-                  <span style={{ fontSize: 'var(--text-base)' }}>❌</span>
-                  <div style={{ fontWeight: 600, color: 'var(--danger)' }}>{err?.title}</div>
-                </div>
-                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {err?.hint}
-                </div>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-dim)', marginTop: 'var(--space-3)', fontFamily: 'var(--text-mono)' }}>
-                  原始错误：{project.task.error_message.slice(0, 200)}
-                </div>
-                <button className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-3)' }} onClick={startProcessing}>
-                  🔄 重新处理
-                </button>
-              </div>
-            )
-          })()}
-
-          {/* === Stat row (Linear-style meta) === */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: 'var(--space-3)',
-            marginBottom: 'var(--space-6)'
-          }}>
-            {[
-              ['视频时长', formatTC(project.video_duration)],
-              ['文件大小', formatSize(project.video_size)],
-              ['切片数量', `${clips.length} 个`],
-              ['合集数量', `${collections.length} 个`],
-              ['创建时间', formatDate(project.created_at)],
-              ['完成时间', project.completed_at ? formatDate(project.completed_at) : '—'],
-            ].map(([label, value]) => (
-              <div key={label} style={{
-                padding: 'var(--space-4)',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-md)'
-              }}>
-                <div style={{
-                  fontFamily: 'var(--text-mono)',
-                  fontSize: 10,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.1em',
-                  color: 'var(--text-dim)',
-                  marginBottom: 'var(--space-2)'
-                }}>
-                  {label}
-                </div>
-                <div className="mono" style={{ fontSize: 'var(--text-md)', color: 'var(--text-bright)' }}>
-                  {value}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* === Tabs (clips / collections) === */}
-          {showTabs && (
-            <div className="tabs">
-              {clips.length > 0 && (
-                <button className={`tab ${activeTab === 'clips' ? 'active' : ''}`} onClick={() => { setActiveTab('clips'); setCurrentPage(1); }}>
-                  切片视频
-                  <span className="tab-count">{clips.length}</span>
-                </button>
-              )}
-              {collections.length > 0 && (
-                <button className={`tab ${activeTab === 'collections' ? 'active' : ''}`} onClick={() => { setActiveTab('collections'); setCurrentPage(1); }}>
-                  合集视频
-                  <span className="tab-count">{collections.length}</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* === Clips grid === */}
-          {activeTab === 'clips' && clips.length > 0 && (
-            <div>
-              {/* pagination header */}
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                marginBottom: 'var(--space-4)', color: 'var(--text-muted)', fontSize: 'var(--text-xs)'
-              }}>
-                <span className="mono">
-                  显示 {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, clips.length)} / {clips.length} 个切片
-                </span>
-                <span className="mono">第 {currentPage} / {totalPages} 页</span>
-              </div>
-
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-                gap: 'var(--space-4)'
-              }}>
-                {pageClips.map((clip, index) => (
-                  <div key={clip.id || index} style={{
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-4)',
-                    display: 'flex', flexDirection: 'column', gap: 'var(--space-3)'
-                  }}>
-                    <div style={{
-                      fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-bright)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                    }} title={clip.title}>
-                      {clip.title || `切片 ${index + 1}`}
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                      <span style={{
-                        fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)',
-                        background: 'var(--bg-base)', color: 'var(--text-muted)',
-                        padding: '2px var(--space-2)', borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border-subtle)'
-                      }}>
-                        ⏱ {formatTime(clip.start_time)} – {formatTime(clip.end_time)}
-                      </span>
-                      <span style={{
-                        fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)',
-                        background: 'var(--bg-base)', color: 'var(--text-muted)',
-                        padding: '2px var(--space-2)', borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border-subtle)'
-                      }}>
-                        {clip.duration?.toFixed(1)} 秒
-                      </span>
-                      <span style={{
-                        fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)',
-                        background: 'var(--accent-soft)', color: 'var(--accent)',
-                        padding: '2px var(--space-2)', borderRadius: 'var(--radius-sm)'
-                      }}>
-                        评分 {clip.score?.toFixed(2)}
-                      </span>
-                    </div>
-
-                    <video
-                      controls
-                      style={{
-                        width: '100%', maxHeight: 480, borderRadius: 'var(--radius-sm)',
-                        background: '#000', objectFit: 'contain', display: 'block'
-                      }}
-                      src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
-                    >
-                      {/* 只在没烧录字幕时显示 <track>，避免双层字幕叠加（烧录+track） */}
-                      {project.processing_config?.with_subtitle === false && (
-                        <track
-                          label="中文"
-                          kind="subtitles"
-                          srclang="zh"
-                          src={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
-                          default
-                        />
-                      )}
-                    </video>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--text-xs)' }}>
-                      <a
-                        href={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
-                        download={`${project.name}_字幕.srt`}
-                        style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}
-                      >
-                        ↓ 下载字幕
-                      </a>
-                      <span style={{ color: 'var(--text-dim)' }}>若字幕未显示，请在播放器中手动加载</span>
-                    </div>
+            <div className="pd-clip-grid">
+              {pageClips.map((clip, i) => (
+                <div key={clip.id || i} className="pd-clip-card">
+                  <div className="pd-clip-header">
+                    <div className="pd-clip-title" title={clip.title}>{clip.title || `切片 ${i + 1}`}</div>
+                    <div className="pd-clip-score">⭐ {clip.score?.toFixed(2) || '—'}</div>
                   </div>
-                ))}
-              </div>
-
-              {/* page buttons */}
-              {totalPages > 1 && (
-                <div style={{
-                  display: 'flex', justifyContent: 'center', gap: 'var(--space-2)',
-                  marginTop: 'var(--space-6)'
-                }}>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    style={{ opacity: currentPage === 1 ? 0.4 : 1 }}
-                  >
-                    ← 上一页
-                  </button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                    <button
-                      key={p}
-                      className={`btn btn-sm ${currentPage === p ? 'btn-primary' : 'btn-ghost'}`}
-                      onClick={() => setCurrentPage(p)}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    disabled={currentPage >= totalPages}
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    style={{ opacity: currentPage >= totalPages ? 0.4 : 1 }}
-                  >
-                    下一页 →
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* === Collections grid === */}
-          {activeTab === 'collections' && collections.length > 0 && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-              gap: 'var(--space-4)'
-            }}>
-              {collections.map((coll, index) => (
-                <div key={coll.id || index} style={{
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: 'var(--space-4)',
-                  display: 'flex', flexDirection: 'column', gap: 'var(--space-3)'
-                }}>
-                  <div style={{
-                    fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text-bright)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                  }} title={coll.title}>
-                    {coll.title || `合集 ${index + 1}`}
+                  <div className="pd-clip-meta">
+                    <span className="pd-chip">⏱ {formatTime(clip.start_time)} – {formatTime(clip.end_time)}</span>
+                    <span className="pd-chip">{clip.duration?.toFixed(1)} 秒</span>
                   </div>
-
-                  <span style={{
-                    fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)',
-                    background: 'var(--bg-base)', color: 'var(--text-muted)',
-                    padding: '2px var(--space-2)', borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-subtle)',
-                    alignSelf: 'flex-start'
-                  }}>
-                    📦 包含 {coll.clip_count} 个切片
-                  </span>
-
-                  {coll.video_path ? (
-                    <>
-                      <video
-                        controls
-                        style={{
-                          width: '100%', maxHeight: 480, borderRadius: 'var(--radius-sm)',
-                          background: '#000', objectFit: 'contain', display: 'block'
-                        }}
-                        src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(coll.video_path)}`}
+                  <video
+                    controls
+                    className="pd-video"
+                    src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(clip.video_path)}`}
+                  >
+                    {cfg.with_subtitle === false && (
+                      <track
+                        label="中文"
+                        kind="subtitles"
+                        srclang="zh"
+                        src={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
+                        default
                       />
-                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-dim)' }}>
-                        💡 合集视频暂不支持字幕
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{
-                      padding: 'var(--space-4)', textAlign: 'center',
-                      background: 'rgba(235, 87, 87, 0.08)',
-                      border: '1px solid rgba(235, 87, 87, 0.2)',
-                      borderRadius: 'var(--radius-sm)',
-                      color: 'var(--status-error)', fontSize: 'var(--text-sm)'
-                    }}>
-                      ⚠ 视频文件不存在（合集生成失败）
-                    </div>
-                  )}
+                    )}
+                  </video>
+                  <div className="pd-clip-footer">
+                    <a
+                      className="pd-link"
+                      href={`${API_BASE}/projects/${id}/files/${encodeURIComponent('metadata/input.srt')}`}
+                      download={`${project.name}_字幕.srt`}
+                    >
+                      ↓ 字幕
+                    </a>
+                  </div>
                 </div>
               ))}
             </div>
-          )}
 
-          {/* === Empty state === */}
-          {!showTabs && (
-            <div className="empty">
-              <div className="empty-icon">∅</div>
-              <div className="empty-title">暂无视频数据</div>
-              <div className="empty-hint">
-                {project.status === 'pending' && '项目就绪，点击右上角「▶ 开始处理」生成切片'}
-                {project.status === 'processing' && '处理中，请稍候...'}
-                {project.status === 'failed' && '处理失败，请检查日志或重新处理'}
-                {project.status === 'completed' && '处理完成，但未生成任何切片'}
+            {totalPages > 1 && (
+              <div className="pd-pagination">
+                <button className="btn btn-ghost btn-sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} style={{ opacity: currentPage === 1 ? 0.4 : 1 }}>← 上一页</button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                  <button key={p} className={`btn btn-sm ${currentPage === p ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setCurrentPage(p)}>{p}</button>
+                ))}
+                <button className="btn btn-ghost btn-sm" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} style={{ opacity: currentPage >= totalPages ? 0.4 : 1 }}>下一页 →</button>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Collections grid */}
+        {activeTab === 'collections' && collections.length > 0 && (
+          <div className="pd-clip-grid">
+            {collections.map((coll, i) => (
+              <div key={coll.id || i} className="pd-clip-card">
+                <div className="pd-clip-header">
+                  <div className="pd-clip-title" title={coll.title}>{coll.title || `合集 ${i + 1}`}</div>
+                  <div className="pd-clip-score">📦 {coll.clip_count} 片</div>
+                </div>
+                {coll.video_path ? (
+                  <video controls className="pd-video" src={`${API_BASE}/projects/${id}/files/${encodeURIComponent(coll.video_path)}`} />
+                ) : (
+                  <div className="pd-error">⚠ 视频文件不存在</div>
+                )}
+                <div className="pd-clip-footer"><span className="pd-meta-item">合集暂不支持字幕</span></div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Empty */}
+        {!showTabs && (
+          <div className="empty">
+            <div className="empty-icon">{isProcessing ? '⏳' : project.status === 'failed' ? '❌' : '∅'}</div>
+            <div className="empty-title">
+              {isProcessing ? '处理中，请稍候...'
+                : project.status === 'pending' ? '项目就绪'
+                : project.status === 'failed' ? '处理失败'
+                : '暂无视频数据'}
             </div>
-          )}
+            <div className="empty-hint">
+              {project.status === 'pending' && '点击右上角「▶ 开始处理」生成切片'}
+              {project.status === 'failed' && '请检查日志或重新处理'}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* === 右: 信息面板 (sticky) === */}
+      <aside className="pd-side">
+        {/* 处理中: 进度卡 */}
+        {isProcessing && task && (
+          <div className="pd-card pd-progress-card">
+            <div className="pd-card-label">处理进度</div>
+            <div className="pd-step">{task.current_step || '处理中...'}</div>
+            <div className="pd-progress">
+              <div className="pd-progress-bar">
+                <div className="pd-progress-fill" style={{ width: `${task.progress || 0}%` }} />
+              </div>
+              <span className="pd-progress-label">{task.progress || 0}%</span>
+            </div>
+            <div className="pd-timing">
+              {task.elapsed_seconds != null && (
+                <div><span>已用</span><strong>{formatDuration(task.elapsed_seconds)}</strong></div>
+              )}
+              {task.total_estimated_seconds != null && (
+                <div><span>预计</span><strong>{formatDuration(task.total_estimated_seconds)}</strong></div>
+              )}
+              {task.eta_seconds != null ? (
+                <div><span>剩余</span><strong className="pd-accent">{formatDuration(task.eta_seconds)}</strong></div>
+              ) : (
+                <div><em>估算中...</em></div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 失败: 错误卡 */}
+        {project.status === 'failed' && task?.error_message && (
+          <div className="pd-card pd-error-card">
+            <div className="pd-card-label">❌ {friendlyError(task.error_message).title}</div>
+            <div className="pd-error-hint">{friendlyError(task.error_message).hint}</div>
+            <details className="pd-error-detail">
+              <summary>原始错误</summary>
+              <code>{task.error_message.slice(0, 400)}</code>
+            </details>
+            <button className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-3)', width: '100%' }} onClick={startProcessing}>
+              🔄 重新处理
+            </button>
+          </div>
+        )}
+
+        {/* 元数据卡 */}
+        <div className="pd-card">
+          <div className="pd-card-label">元数据</div>
+          <dl className="pd-dl">
+            <dt>风格</dt><dd>{project.style_name || '默认'}</dd>
+            <dt>目标时长</dt><dd>{cfg.target_duration ? `${cfg.target_duration} 秒/片` : '—'}</dd>
+            <dt>最大切片</dt><dd>{cfg.max_clips ? `≤ ${cfg.max_clips} 片` : '—'}</dd>
+            <dt>字幕</dt><dd>{cfg.with_subtitle !== false ? '烧录到视频' : '不烧录'}</dd>
+            <dt>处理策略</dt><dd>{cfg.processing_mode || 'standard'}</dd>
+          </dl>
         </div>
-      </main>
+
+        {/* 时间卡 */}
+        <div className="pd-card">
+          <div className="pd-card-label">时间</div>
+          <dl className="pd-dl">
+            <dt>创建</dt><dd>{formatDate(project.created_at)}</dd>
+            <dt>开始</dt><dd>{formatDate(task?.started_at) || '—'}</dd>
+            <dt>完成</dt><dd>{formatDate(project.completed_at) || '—'}</dd>
+          </dl>
+        </div>
+
+        {/* 任务卡 */}
+        {task && (
+          <div className="pd-card">
+            <div className="pd-card-label">任务</div>
+            <dl className="pd-dl">
+              <dt>状态</dt><dd><span className="status-pill" data-status={task.status} style={{ fontSize: 10 }}>{statusLabel[task.status] || task.status}</span></dd>
+              <dt>当前步骤</dt><dd>{task.current_step || '—'}</dd>
+              <dt>进度</dt><dd>{task.progress || 0}%</dd>
+              {task.id && <><dt>ID</dt><dd className="mono" style={{ fontSize: 10 }}>{task.id.slice(0, 8)}</dd></>}
+            </dl>
+          </div>
+        )}
+      </aside>
     </div>
   )
 }
-
-export default ProjectDetail
