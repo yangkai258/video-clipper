@@ -58,6 +58,20 @@ async def get_project_thumbnail(project_id: str):
     return FileResponse(thumb_path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
+@app.get("/api/v1/clip-thumbs/{project_id}/{clip_name}.jpg")
+async def get_clip_thumbnail(project_id: str, clip_name: str):
+    """单片缩略图 (cut_clips 完成后用中段帧生成)
+    clip_name 不能含 / 或 ..
+    """
+    if "/" in project_id or ".." in project_id or "/" in clip_name or ".." in clip_name:
+        raise HTTPException(400, "invalid path")
+    data_dir = Path(settings.DATA_DIR) if hasattr(settings, "DATA_DIR") else Path("data")
+    thumb_path = data_dir / "projects" / project_id / "output" / "thumbnails" / "clips" / f"{clip_name}.jpg"
+    if not thumb_path.exists():
+        raise HTTPException(404, "clip thumbnail not generated")
+    return FileResponse(thumb_path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.get("/")
 async def root():
     """根路径"""

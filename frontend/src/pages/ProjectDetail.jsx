@@ -61,18 +61,19 @@ function notify(title, body) {
 // 懒加载视频卡: 默认只显示缩略图, 点 play 才挂载 video 标签
 function ClipCard({ clip, index, projectId, withSubtitle }) {
   const [playing, setPlaying] = useState(false)
+  const [errored, setErrored] = useState(false)
   const videoSrc = `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(clip.video_path)}`
   const srtSrc = `${API_BASE}/projects/${projectId}/files/${encodeURIComponent('metadata/input.srt')}`
+  // 用 clip 文件名派生缩略图 key
+  const clipStem = clip.video_path ? clip.video_path.split('/').pop().replace(/\.mp4$/i, '') : null
+  const thumbSrc = clipStem
+    ? `/api/v1/clip-thumbs/${projectId}/${encodeURIComponent(clipStem)}.jpg`
+    : `/api/v1/thumbnails/${projectId}.jpg`
   return (
     <div className="pda-clip">
       <div className="pda-clip-thumb">
         {playing ? (
-          <video
-            controls
-            autoPlay
-            className="pda-clip-video"
-            src={videoSrc}
-          >
+          <video controls autoPlay className="pda-clip-video" src={videoSrc}>
             {!withSubtitle && (
               <track label="中文" kind="subtitles" srclang="zh" src={srtSrc} default />
             )}
@@ -80,9 +81,12 @@ function ClipCard({ clip, index, projectId, withSubtitle }) {
         ) : (
           <button className="pda-clip-poster" onClick={() => setPlaying(true)} title="点击播放">
             <img
-              src={`/api/v1/thumbnails/${projectId}.jpg`}
+              src={thumbSrc}
               alt={clip.title || `片段 ${index + 1}`}
               loading="lazy"
+              onError={(e) => {
+                if (!errored) { setErrored(true); e.currentTarget.src = `/api/v1/thumbnails/${projectId}.jpg` }
+              }}
             />
             <div className="pda-clip-poster-overlay">
               <div className="pda-clip-play-btn">▶</div>
@@ -117,7 +121,11 @@ function CollectionCard({ coll, index, projectId }) {
           <video controls autoPlay className="pda-clip-video" src={videoSrc} />
         ) : (
           <button className="pda-clip-poster" onClick={() => setPlaying(true)} title="点击播放">
-            <img src={`/api/v1/thumbnails/${projectId}.jpg`} alt={coll.title || `合集 ${index + 1}`} loading="lazy" />
+            <img
+              src={`/api/v1/thumbnails/${projectId}.jpg`}
+              alt={coll.title || `合集 ${index + 1}`}
+              loading="lazy"
+            />
             <div className="pda-clip-poster-overlay">
               <div className="pda-clip-play-btn">▶</div>
               <div className="pda-clip-duration">📦 {coll.clip_count} 切片</div>

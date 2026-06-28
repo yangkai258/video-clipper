@@ -305,7 +305,25 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
             
             # 保存相对路径
             clip["video_path"] = str(output_path.relative_to(output_path.parent.parent.parent))
-            
+
+            # ✅ 给该片抽一张中段帧作缩略图 (clip 是独立小视频, 用 duration/2)
+            try:
+                clip_thumb_dir = output_dir.parent / "thumbnails" / "clips"
+                clip_thumb_dir.mkdir(parents=True, exist_ok=True)
+                # 用 clip 文件名 (含 mp4) 派生 jpg 名
+                clip_thumb = clip_thumb_dir / (output_path.stem + ".jpg")
+                # clip 是独立视频文件 (0..duration), 不能用原视频 start_time
+                mid_t = max(0.5, (clip.get("duration", 0) or 1) / 2)
+                subprocess.run([
+                    "ffmpeg", "-y", "-ss", str(mid_t),
+                    "-i", str(output_path),
+                    "-vframes", "1", "-q:v", "3",
+                    "-vf", "scale=480:-1",
+                    str(clip_thumb)
+                ], check=True, capture_output=True, timeout=15)
+            except Exception as e:
+                logger.warning(f"clip 缩略图抽帧失败 ({output_path.name}): {e}")
+
             # ✅ 修复：每 5 个切片或最后一个切片时更新进度（65% → 90%）
             if task_id and ((i + 1) % 5 == 0 or i == len(clips) - 1):
                 try:
@@ -314,7 +332,7 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
                     _update_task_progress(task_id, progress, f"切割中... ({i+1}/{len(clips)})")
                 except Exception as e:
                     logger.warning(f"进度更新失败：{e}")
-            
+
         except subprocess.TimeoutExpired:
             logger.error(f"切割切片 {i+1} 超时（300 秒），跳过")
         except Exception as e:
