@@ -693,6 +693,26 @@ class TestZeroClipGuard:
         assert guard_idx > commit_idx, "0-clip guard must run after db.commit()"
 
     @pytest.mark.asyncio
+    async def test_zero_clip_guard_runs_before_cleanup(self, client):
+        """guard 必须在 cleanup raw 之前! (v2.1.24 fix: 否则 raw 被删, 用户改风格重切就没文件了)
+
+        之前 guard 在 cleanup 之后, 0-clip 时 raw 已被删, 保留 raw 失败原因就是
+        用户希望 '改风格重切' 但 raw 没了。
+        """
+        from pathlib import Path
+        processing_path = Path(__file__).parent.parent / "backend" / "tasks" / "processing.py"
+        content = processing_path.read_text()
+
+        guard_idx = content.find("# ZERO_CLIP_GUARD_MARKER")
+        # 找 cleanup raw 的注释位置
+        cleanup_idx = content.find("=== 清理 raw 视频")
+        assert guard_idx > 0, "0-clip guard marker not found"
+        assert cleanup_idx > 0, "cleanup section not found"
+        # guard 必须在 cleanup 之前 (raw 还没删就 return)
+        assert guard_idx < cleanup_idx, \
+            "0-clip guard must run BEFORE cleanup (v2.1.24 fix: 用户改风格重切需要 raw 视频)"
+
+    @pytest.mark.asyncio
     async def test_zero_clip_guard_skips_deleted_projects(self, client):
         """guard 不应覆盖已 soft-delete 的项目 (review fix: 加 deleted_at 检查)"""
         from pathlib import Path
@@ -795,3 +815,89 @@ class TestZeroClipGuard:
         with sync_get_db() as db:
             db.query(Project).filter(Project.id == "proj_zcg_deleted").delete()
             db.commit()
+
+class TestScoreClipsContentTypes:
+    """v2.1.24: score_clips content_types 不再硬过滤 (改加分)"""
+
+    def test_content_types_does_not_filter(self):
+        """content_types 不应该硬过滤掉 title 不含分类名的 clip (会误杀)"""
+        from backend.services.llm_service import score_clips
+        from pathlib import Path
+        import tempfile
+
+        # 临时 metadata 目录
+        tmp = Path(tempfile.mkdtemp())
+        timeline = [
+            {"title": "商品链接引导", "start_time": 0, "end_time": 10, "subtopics": []},
+            {"title": "互动引导", "start_time": 31, "end_time": 38, "subtopics": []},
+        ]
+        strategy_config = {
+            "content_types": ["直播带货", "口播催单", "商品介绍", "互动金句", "下单引导"],
+            "rules": {"min_score": 0.55}
+        }
+
+        result = score_clips(timeline, tmp, strategy_config)
+        # v2.1.24 fix: 之前 content_types 字符串子串匹配, "商品链接引导" 不含 "商品介绍"
+        # → 0 通过. 修复后: content_types 改为加分而非过滤, 应该都通过 (基础分 0.8 > 0.55)
+        assert len(result) == 2, \
+            f"content_types should not filter, got {len(result)} clips (expected 2)"
+
+    def test_content_types_gives_bonus_when_matched(self):
+        """content_types 命中应该加分 (但不强制)"""
+        from backend.services.llm_service import score_clips
+        from pathlib import Path
+        import tempfile
+
+        tmp = Path(tempfile.mkdtemp())
+        timeline = [
+            {"title": "直播带货介绍", "start_time": 0, "end_time": 10, "subtopics": []},
+            {"title": "无关主题", "start_time": 11, "end_time": 20, "subtopics": []},
+        ]
+        strategy_config = {
+            "content_types": ["直播带货", "口播催单"],
+            "rules": {"min_score": 0.85}  # 高阈值, 只有匹配分类 + 基础分才能过
+        }
+
+        result = score_clips(timeline, tmp, strategy_config)
+        # "直播带货介绍" 含 "直播带货" → 加分 (0.8 + 0.1 = 0.9 >= 0.85 通过)
+        # "无关主题" 不含分类 → 基础分 0.8 < 0.85 淘汰
+        titles = [c["title"] for c in result]
+        assert "直播带货介绍" in titles
+        assert "无关主题" not in titles
+
+    def test_min_score_uses_0_to_1_scale(self):
+        """min_score 是 0-1 比例 (0.55 = 55%), 不是 0-100 整数"""
+        from backend.services.llm_service import score_clips
+        from pathlib import Path
+        import tempfile
+
+        tmp = Path(tempfile.mkdtemp())
+        timeline = [
+            {"title": "测试切片", "start_time": 0, "end_time": 10, "subtopics": []},
+        ]
+        # min_score=0.55 意味着 score >= 0.55 通过 (基础分 0.8 直接过)
+        strategy_config = {
+            "content_types": [],
+            "rules": {"min_score": 0.55}
+        }
+        result = score_clips(timeline, tmp, strategy_config)
+        assert len(result) == 1, "min_score=0.55 should pass base score 0.8"
+
+
+class TestCollectionsClipIds:
+    """v2.1.24: collections 写库用 clip_ids 字段而非遍历 clips 找 index"""
+
+    @pytest.mark.asyncio
+    async def test_collections_use_clip_ids_field_not_traverse_clips(self, client):
+        """processing.py 写库时应该用 coll_data['clip_ids'] 而不是遍历 clips 找 index"""
+        from pathlib import Path
+        processing_path = Path(__file__).parent.parent / "backend" / "tasks" / "processing.py"
+        content = processing_path.read_text()
+
+        # 找 Step 10 插入 collections 的部分
+        # 必须用 coll_data.get("clip_ids", []) 而不是遍历 clips
+        assert 'coll_data.get("clip_ids"' in content, \
+            "processing.py should use clip_ids field, not traverse clips to find index"
+        # 不应该有 KeyError 'index' 的写法
+        assert 'c["index"] for c in coll_data.get("clips"' not in content, \
+            "v2.1.24 fix: removed c['index'] traversal that caused KeyError"

@@ -337,8 +337,9 @@ def process_video_pipeline(
             
             # 插入 collections
                 for coll_data in collections:
-                    # 获取该合集的 clip IDs
-                    clip_ids = [c["index"] for c in coll_data.get("clips", [])]
+                    # v2.1.24 fix: 之前用 c["index"] 但 cluster_collections 输出的 clips 是完整 dict 没 index 字段
+                    # 改用 cluster_collections 已经正确生成的 clip_ids 字段 (title 列表)
+                    clip_ids = coll_data.get("clip_ids", [])
                     # title 兜底（cluster_collections 不写 index，用 len(collections)+1）
                     coll_title = coll_data.get("title") or f"合集 {len(collections)}"
                     # 移除 title 中可能的非法路径字符
@@ -371,6 +372,17 @@ def process_video_pipeline(
                 logger.error(f"数据库写入失败：{db_error}")
                 raise
 
+        # 0-clip guard (v2.1.23): 视频太短/无切点时跑完 6 步但 0 产物, 不能标 completed  # ZERO_CLIP_GUARD_MARKER
+        # 注意: 必须在 cleanup 之前! 否则 raw 视频被删, 用户改风格重切就没文件了 (v2.1.24 fix)
+        if len(titled_clips) == 0 and len(collections) == 0:
+            _mark_zero_output_failed(project_id, task_id, "未能识别到任何切片片段 (视频过短 或 无有效切点)")
+            return {
+                "success": False,
+                "project_id": project_id,
+                "reason": "no_clips_generated",
+                "message": "未能识别到任何切片片段 (视频过短 或 无有效切点)",
+            }
+
         # === 清理 raw 视频 + 临时文件（独立 try，不影响主流程已完成部分）===
         try:
             # 删 raw 视频（复用前面算的 project_dir 路径）
@@ -399,16 +411,6 @@ def process_video_pipeline(
                     f.unlink()
         except Exception as cleanup_error:
             logger.warning(f"清理临时文件失败（不影响主流程）：{cleanup_error}")
-
-        # 0-clip guard (v2.1.23): 视频太短/无切点时跑完 6 步但 0 产物, 不能标 completed  # ZERO_CLIP_GUARD_MARKER
-        if len(titled_clips) == 0 and len(collections) == 0:
-            _mark_zero_output_failed(project_id, task_id, "未能识别到任何切片片段 (视频过短 或 无有效切点)")
-            return {
-                "success": False,
-                "project_id": project_id,
-                "reason": "no_clips_generated",
-                "message": "未能识别到任何切片片段 (视频过短 或 无有效切点)",
-            }
 
         # 注: 不要把 video_size 清零! raw 删了, 但 video_size 仍记录原文件大小, UI 用来显示"1.2 GB"
         # 之前 v2.1.21 之前清零了, 导致用户看不到原视频多大, 误以为 0 byte

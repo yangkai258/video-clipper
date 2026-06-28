@@ -440,14 +440,19 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
             dropped_by_remove += 1
             continue
 
-        # 1.5) 内容分类过滤：title 不属于 content_types 任意一项就丢（只在配置了 content_types 时生效）
-        if content_types and not any(ct in title for ct in content_types):
-            dropped_by_type += 1
-            continue
+        # 1.5) 内容分类过滤 (v2.1.24 fix: 原字符串子串匹配有 bug)
+        # 原逻辑: title 必须包含 content_type 字符串, 但 LLM 生成的 title 是话题短语
+        # 例: outline="商品链接引导" 不含 "直播带货" 字眼 → 被错杀
+        # 改为: content_types 命中**加分**而非过滤, 让 score 自然筛选
 
         # 2) 基础分
         base_score = 0.8
         reasons = []
+
+        # 2.5) 内容分类命中：加分 (v2.1.24 fix: 从过滤改为加分)
+        if content_types and any(ct in title for ct in content_types):
+            base_score = min(base_score + 0.1, 1.0)
+            reasons.append(f"内容分类命中:{[ct for ct in content_types if ct in title]}")
 
         # 3) 保留关键词命中：加分
         if keep_keywords:
@@ -469,6 +474,9 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
                 "score": base_score,
                 "score_reason": f"{reason_str} (阈值:{min_score})"
             })
+        else:
+            # v2.1.24 debug: 记录被淘汰的 title + score + 阈值
+            logger.info(f"淘汰 title='{title}' score={base_score:.2f} 阈值={min_score:.2f} reasons={reasons}")
 
     scored_path = metadata_dir / "step3_scored.json"
     with open(scored_path, "w", encoding="utf-8") as f:

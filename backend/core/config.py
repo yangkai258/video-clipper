@@ -5,7 +5,11 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """应用配置"""
+    """应用配置
+
+    自动从 BASE_DIR/.env 读取环境变量 (v2.1.24 fix: 之前没指定 _env_file,
+    手动启动 uvicorn 时 MINIMAX_API_KEY 等 key 读不到, LLM 调用全失败)
+    """
     
     # 基础配置
     APP_NAME: str = "Video Clipper"
@@ -64,6 +68,8 @@ class Settings(BaseSettings):
         return f".{ext}" in self.ALLOWED_VIDEO_EXTENSIONS
     
     class Config:
+        env_file = str(Path(__file__).parent.parent.parent / ".env")
+        env_file_encoding = "utf-8"
         extra = "ignore"
 
 
