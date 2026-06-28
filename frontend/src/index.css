@@ -2250,7 +2250,15 @@ input[type="color"] {
   gap: 8px;
   pointer-events: none;
 }
+/* v2.1.48: play btn 单独居中 (脱离 overlay flex), 不受 duration 文字影响
+   之前 play 跟 duration 一起 flex 居中 → play 在中心 - 38px → 视觉偏上
+   现在 play absolute 居中缩略图中心, duration 单独 absolute bottom */
 .pda-clip-play-btn {
+  /* 覆盖 overlay flex, 单独 absolute 居中 */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -2264,8 +2272,18 @@ input[type="color"] {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   transition: transform 0.2s, background 0.2s;
 }
+/* duration 单独 absolute 底部 (跟 play 分离) */
+.pda-clip-duration {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  pointer-events: none;
+}
 .pda-clip-poster:hover .pda-clip-play-btn {
-  transform: scale(1.1);
+  /* v2.1.48: hover scale 时保留 translate(-50%, -50%) 否则 play 会跳回左上角 */
+  transform: translate(-50%, -50%) scale(1.1);
   background: white;
 }
 .pda-clip-duration {
@@ -2276,6 +2294,7 @@ input[type="color"] {
   padding: 3px 8px;
   border-radius: 4px;
   backdrop-filter: blur(4px);
+  /* v2.1.48: 不再 margin-bottom (由 absolute bottom 控) */
 }
 .pda-clip-video {
   width: 100%;
