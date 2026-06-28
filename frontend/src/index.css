@@ -128,6 +128,18 @@
   --accent-soft: rgba(234, 88, 12, 0.12);
   --accent-glow: rgba(234, 88, 12, 0.30);
 
+  /* v2.1.39: light mode primary/danger 实色, 跟 dark mode 同样高对比 */
+  /* primary: 暖橙实色, 比 cyan 在白底上更协调 */
+  --btn-primary-bg: rgba(234, 88, 12, 0.95);
+  --btn-primary-bg-hover: rgba(249, 115, 22, 0.98);
+  --btn-primary-border: rgba(234, 88, 12, 0.95);
+  --btn-primary-border-hover: rgba(249, 115, 22, 0.98);
+  /* danger: 深红实色 */
+  --btn-danger-bg: rgba(220, 38, 38, 0.95);
+  --btn-danger-bg-hover: rgba(239, 68, 68, 0.98);
+  --btn-danger-border: rgba(220, 38, 38, 0.95);
+  --btn-danger-border-hover: rgba(239, 68, 68, 0.98);
+
   /* Status (深色保持，浅色用更深的色调保证对比度) */
   --status-active: #16a34a;
   --status-pending: #ca8a04;
@@ -1021,26 +1033,30 @@ body {
   transition: width var(--transition-slow);
 }
 
-/* === Buttons (v2.1.33: 全工程统一毛玻璃风格) === */
-/* 锚点: Organic (半透明 + 圆角 + 质感光纹) + Linear 暗色 SaaS 主调 */
-/* Differentiator: 顶部柔光高光 (::before) + hover 时整体抬起 + 玻璃下层 light shift */
+/* === Buttons (v2.1.39: 专业 SaaS 颜色对比, 保留毛玻璃材质) === */
+/* 设计原则 (Linear/Notion/Figma 风格): */
+/*   Primary action: 实色 + 白字 (高对比 CTA, 一眼能点) */
+/*   Secondary/default: 中性实色 + 高亮字 (中对比) */
+/*   Tertiary/ghost: 透明 + hover 显 (低对比辅助) */
+/*   Destructive: 实色红 + 白字 (高对比警示) */
+/* 保留: backdrop-filter blur 玻璃材质, 顶部柔光高光, hover translateY */
 
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  height: 32px;  /* v2.1.36: 跟 topbar 其它控件统一 32px */
-  box-sizing: border-box;  /* v2.1.36: 跟 .search-input / ThemeToggle 一致, 防止 border 把 visual height 撑大 2px */
+  height: 32px;
+  box-sizing: border-box;
   padding: 0 14px;
-  border-radius: 12px;
+  border-radius: 10px;
   font-size: 13px;
-  line-height: 1;  /* 配合 height:32 垂直居中 */
+  line-height: 1;
   font-weight: 500;
   font-family: var(--text-sans);
   cursor: pointer;
-  border: 1px solid var(--btn-border, rgba(255, 255, 255, 0.08));
-  background: var(--btn-bg, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--btn-border, rgba(255, 255, 255, 0.1));
+  background: var(--btn-bg, rgba(255, 255, 255, 0.06));
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   backdrop-filter: blur(20px) saturate(180%);
   color: var(--btn-fg, var(--text-bright));
@@ -1059,20 +1075,17 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 40%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 40%);
   pointer-events: none;
   z-index: -1;
   transition: opacity 180ms ease;
 }
 
 .btn:hover {
-  background: var(--btn-bg-hover, rgba(255, 255, 255, 0.08));
-  border-color: var(--btn-border-hover, rgba(255, 255, 255, 0.16));
+  background: var(--btn-bg-hover, rgba(255, 255, 255, 0.1));
+  border-color: var(--btn-border-hover, rgba(255, 255, 255, 0.18));
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-.btn:hover::before {
-  opacity: 1.4;  /* 让高光更亮 */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .btn:active {
   transform: translateY(0);
@@ -1085,52 +1098,75 @@ body {
   transform: none;
 }
 
-/* 主按钮: cyan glass (青色调, 跟 user 偏好对齐, 不引入紫色) */
+/* === Primary: 实色 cyan + 白字 (高对比 CTA) === */
+/* v2.1.39: 引用 --btn-primary-* 变量, light mode 自动变暖橙 */
 .btn-primary {
-  --btn-bg: rgba(6, 182, 212, 0.16);
-  --btn-bg-hover: rgba(6, 182, 212, 0.26);
-  --btn-border: rgba(6, 182, 212, 0.4);
-  --btn-border-hover: rgba(6, 182, 212, 0.6);
-  --btn-fg: #67e8f9;
+  --btn-bg: var(--btn-primary-bg, rgba(8, 145, 178, 0.95));
+  --btn-bg-hover: var(--btn-primary-bg-hover, rgba(14, 165, 186, 0.98));
+  --btn-border: var(--btn-primary-border, rgba(8, 145, 178, 0.95));
+  --btn-border-hover: var(--btn-primary-border-hover, rgba(14, 165, 186, 0.98));
+  --btn-fg: #ffffff;
   font-weight: 600;
-  box-shadow: 0 4px 16px rgba(6, 182, 212, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 14px rgba(8, 145, 178, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .btn-primary::before {
-  background: linear-gradient(180deg, rgba(103, 232, 249, 0.18) 0%, transparent 50%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
 }
 .btn-primary:hover {
-  box-shadow: 0 6px 22px rgba(6, 182, 212, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow: 0 6px 20px rgba(8, 145, 178, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
-/* ghost 按钮: 更轻的 glass, 默认无背景只 hover 显示 */
+/* === Ghost: 透明, hover 才显 (低对比辅助) === */
 .btn-ghost {
   --btn-bg: transparent;
-  --btn-bg-hover: rgba(255, 255, 255, 0.06);
+  --btn-bg-hover: rgba(255, 255, 255, 0.08);
   --btn-border: transparent;
-  --btn-border-hover: rgba(255, 255, 255, 0.1);
+  --btn-border-hover: rgba(255, 255, 255, 0.12);
   --btn-fg: var(--text-default);
   height: 32px;
   padding: 0 12px;
   font-size: 12px;
 }
 .btn-ghost::before {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 40%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 40%);
   opacity: 0;
+}
+.btn-ghost:hover {
+  color: var(--text-bright);
 }
 .btn-ghost:hover::before {
   opacity: 1;
 }
 
-/* danger 按钮: 红色 glass */
+/* === Danger: 实色红 + 白字 (高对比警示) === */
 .btn-danger {
-  --btn-bg: rgba(239, 68, 68, 0.1);
-  --btn-bg-hover: rgba(239, 68, 68, 0.2);
-  --btn-border: rgba(239, 68, 68, 0.3);
-  --btn-border-hover: rgba(239, 68, 68, 0.5);
-  --btn-fg: #fca5a5;
+  --btn-bg: var(--btn-danger-bg, rgba(220, 38, 38, 0.95));
+  --btn-bg-hover: var(--btn-danger-bg-hover, rgba(239, 68, 68, 0.98));
+  --btn-border: var(--btn-danger-border, rgba(220, 38, 38, 0.95));
+  --btn-border-hover: var(--btn-danger-border-hover, rgba(239, 68, 68, 0.98));
+  --btn-fg: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .btn-danger::before {
-  background: linear-gradient(180deg, rgba(252, 165, 165, 0.14) 0%, transparent 50%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 50%);
+}
+.btn-danger:hover {
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+/* danger ghost 变体: 透明红 hover, 给次要危险操作 */
+.btn-ghost.btn-danger,
+.btn-danger.btn-ghost {
+  --btn-bg: transparent;
+  --btn-bg-hover: rgba(220, 38, 38, 0.15);
+  --btn-border: transparent;
+  --btn-border-hover: rgba(220, 38, 38, 0.3);
+  --btn-fg: #f87171;
+  box-shadow: none;
+}
+.btn-ghost.btn-danger::before,
+.btn-danger.btn-ghost::before {
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.12) 0%, transparent 50%);
 }
 
 .btn-icon {
@@ -1146,7 +1182,7 @@ body {
   height: 28px;
   padding: 0 10px;
   font-size: 12px;
-  border-radius: 10px;
+  border-radius: 9px;
 }
 
 /* === Empty state === */
