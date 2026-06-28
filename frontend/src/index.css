@@ -501,6 +501,238 @@ body {
   color: var(--accent);
 }
 
+/* === v2.1.10 Hero row (主操作 + metrics) === */
+.hero-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.hero-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  background: var(--bg-glass);
+  backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
+  -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
+  border: var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    var(--glass-highlight),
+    var(--shadow-glass);
+  /* 渐变高亮 — 暖橙 + 粉色调 */
+  background-image:
+    radial-gradient(80% 100% at 0% 50%, rgba(251, 146, 60, 0.15), transparent 60%),
+    var(--bg-glass);
+}
+.hero-card-icon {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 24px;
+  font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: var(--glass-highlight);
+}
+.hero-card-body { flex: 1; min-width: 0; }
+.hero-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: 4px;
+}
+.hero-card-sub {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.metric-card {
+  padding: var(--space-5) var(--space-5);
+  background: var(--bg-glass);
+  backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
+  -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
+  border: var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    var(--glass-highlight),
+    var(--shadow-glass);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.metric-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-family: var(--text-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.metric-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-bright);
+  font-family: var(--text-sans);
+  line-height: 1;
+}
+.metric-sub {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+
+/* === Reel grid (v2.1.10 卡片网格) === */
+.reel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.reel-card {
+  background: var(--bg-glass);
+  backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
+  -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(var(--saturate-strength));
+  border: var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    var(--glass-highlight),
+    var(--shadow-glass);
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.25s, box-shadow 0.25s, background 0.25s;
+}
+.reel-card:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    var(--glass-highlight),
+    0 16px 48px rgba(0, 0, 0, 0.16);
+}
+.reel-card-thumb {
+  position: relative;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, var(--accent-soft), transparent),
+    var(--bg-overlay);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+.reel-card-thumb-icon {
+  font-size: 36px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  font-weight: 200;
+}
+.reel-card-status {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 6px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(8px);
+  border-radius: 999px;
+  border: var(--glass-border);
+  font-size: 11px;
+}
+.reel-card-status .status-pill {
+  padding: 0;
+  font-size: 11px;
+  background: transparent !important;
+}
+.reel-card-progress {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--accent);
+  font-family: var(--text-mono);
+}
+.reel-card-progress-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-base);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.reel-card-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s;
+}
+.reel-card-progress-label { font-weight: 600; }
+.reel-card-body {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.reel-card-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reel-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.reel-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.reel-card-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.reel-card-stat-value {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.reel-card-stat-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.reel-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.reel-card-actions .btn {
+  flex: 1;
+  min-width: 0;
+}
+
 /* === Reel row (Linear-style compact) === */
 .reel-list {
   display: flex;
@@ -577,6 +809,11 @@ body {
   font-weight: 500;
   border: 1px solid var(--border-default);
   white-space: nowrap;
+}
+/* v2.1.10: meta 里只显示图标 (紧凑) */
+.reel-card-meta .subtitle-pill {
+  padding: 2px 6px;
+  font-size: 12px;
 }
 .subtitle-pill-icon { font-size: 11px; }
 .subtitle-pill-label { font-size: 11px; }

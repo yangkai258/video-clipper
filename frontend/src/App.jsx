@@ -387,12 +387,34 @@ function App() {
           ) : (
             // === 正常项目列表 ===
             <>
-              <div className="content-header">
-                <div>
-                  <div className="content-title">所有切片</div>
-                  <div className="content-subtitle">
-                    {projects.length} 个项目 · {uploading ? `上传中 ${uploadProgress}%` : '空闲'}
+              {/* v2.1.11: Hero 行 — 信息卡 + metric (按钮在 topbar) */}
+              <div className="hero-row">
+                <div className="hero-card">
+                  <div className="hero-card-icon">▶</div>
+                  <div className="hero-card-body">
+                    <div className="hero-card-title">
+                      {uploading ? `上传中 ${uploadProgress}%` : '视频切片 AI'}
+                    </div>
+                    <div className="hero-card-sub">
+                      {uploading
+                        ? `${formatBytes(uploadProgress.received)} / ${formatBytes(uploadProgress.total)}`
+                        : '点右上角 "+ 新建切片" 上传视频，AI 自动生成金句片段'}
+                    </div>
                   </div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">项目数</div>
+                  <div className="metric-value">{projects.length}</div>
+                  <div className="metric-sub">{counts.completed} 已完成</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">成功率</div>
+                  <div className="metric-value">
+                    {projects.length > 0
+                      ? Math.round((counts.completed / (counts.completed + counts.failed || 1)) * 100)
+                      : 0}%
+                  </div>
+                  <div className="metric-sub">{counts.failed} 失败</div>
                 </div>
               </div>
 
@@ -416,67 +438,69 @@ function App() {
               </div>
 
               {filteredProjects.length > 0 ? (
-                <div className="reel-list">
+                <div className="reel-grid">
                   {filteredProjects.map(p => (
                     <div
                       key={p.id}
-                      className="reel-row"
+                      className="reel-card"
                       data-status={p.status}
                       onClick={() => navigate(`/project/${p.id}`)}
                     >
-                      <div className="reel-status-dot" />
-                      <div className="reel-name">
-                        <span className="reel-name-text">{p.name}</span>
+                      <div className="reel-card-thumb">
+                        <div className="reel-card-status">
+                          <span className="reel-status-dot" data-status={p.status} />
+                          <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
+                        </div>
+                        <div className="reel-card-thumb-icon">
+                          {p.status === 'processing' ? '⏵' : p.status === 'completed' ? '✓' : p.status === 'failed' ? '!' : '○'}
+                        </div>
                         {p.status === 'processing' && (
-                          <span
-                            className="reel-progress-inline"
-                            title={p.current_step || `处理中 ${p.progress || 0}%`}
-                          >
-                            <span className="reel-progress-inline-bar">
-                              <span
-                                className="reel-progress-inline-fill"
-                                style={{ width: `${p.progress || 0}%` }}
-                              />
-                            </span>
-                            <span className="reel-progress-inline-label">{p.progress || 0}%</span>
-                          </span>
+                          <div className="reel-card-progress" title={p.current_step || `处理中 ${p.progress || 0}%`}>
+                            <div className="reel-card-progress-bar">
+                              <div className="reel-card-progress-fill" style={{ width: `${p.progress || 0}%` }} />
+                            </div>
+                            <span className="reel-card-progress-label">{p.progress || 0}%</span>
+                          </div>
                         )}
                       </div>
-                      <span
-                        className={`style-badge ${p.style_id === '_default' ? 'style-badge-default' : ''}`}
-                        title={
-                          p.target_duration || p.max_clips
-                            ? `${p.style_name || '默认'}` +
-                              (p.target_duration ? ` · ${p.target_duration}s/片` : '') +
-                              (p.max_clips ? ` · ≤${p.max_clips}片` : '')
-                            : undefined
-                        }
-                      >
-                        {p.style_name || '默认'}
-                        {(p.target_duration || p.max_clips) && (
-                          <span className="style-badge-meta">
-                            {p.target_duration && <> · {p.target_duration}s</>}
-                            {p.max_clips && <> · ≤{p.max_clips}</>}
+                      <div className="reel-card-body">
+                        <div className="reel-card-title">{p.name}</div>
+                        <div className="reel-card-meta">
+                          <span
+                            className={`style-badge ${p.style_id === '_default' ? 'style-badge-default' : ''}`}
+                            title={
+                              p.target_duration || p.max_clips
+                                ? `${p.style_name || '默认'} · ${p.target_duration || '?'}s/片 · ≤${p.max_clips || '?'}片`
+                                : undefined
+                            }
+                          >
+                            {p.style_name || '默认'}
                           </span>
-                        )}
-                      </span>
-                      <span
-                        className={`subtitle-pill ${p.has_subtitle ? 'subtitle-pill-on' : 'subtitle-pill-off'}`}
-                        title={p.has_subtitle ? '本项目已生成字幕' : '本项目未生成字幕'}
-                      >
-                        <span className="subtitle-pill-icon">📝</span>
-                        <span className="subtitle-pill-label">{p.has_subtitle ? '带字幕' : '无字幕'}</span>
-                      </span>
-                      <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
-                      <div className="reel-cell">{formatTC(p.video_duration)}</div>
-                      <div className="reel-cell">{p.clip_count || 0} 个切片</div>
-                      <div className="reel-cell">{formatDate(p.created_at)}</div>
-                      <div className="reel-actions" onClick={e => e.stopPropagation()}>
-                        {p.status === 'pending' && (
-                          <button className="btn btn-ghost btn-sm" onClick={() => startProcessing(p.id)}>▶ 处理</button>
-                        )}
-                        <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
-                        <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)}>✕</button>
+                          <span className={`subtitle-pill ${p.has_subtitle ? 'subtitle-pill-on' : 'subtitle-pill-off'}`}>
+                            <span className="subtitle-pill-icon">📝</span>
+                          </span>
+                        </div>
+                        <div className="reel-card-stats">
+                          <div className="reel-card-stat">
+                            <span className="reel-card-stat-value">{formatTC(p.video_duration)}</span>
+                            <span className="reel-card-stat-label">时长</span>
+                          </div>
+                          <div className="reel-card-stat">
+                            <span className="reel-card-stat-value">{p.clip_count || 0}</span>
+                            <span className="reel-card-stat-label">切片</span>
+                          </div>
+                          <div className="reel-card-stat">
+                            <span className="reel-card-stat-value">{formatDate(p.created_at)}</span>
+                            <span className="reel-card-stat-label">创建</span>
+                          </div>
+                        </div>
+                        <div className="reel-card-actions" onClick={e => e.stopPropagation()}>
+                          {p.status === 'pending' && (
+                            <button className="btn btn-primary btn-sm" onClick={() => startProcessing(p.id)}>▶ 处理</button>
+                          )}
+                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
+                          <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)}>✕</button>
+                        </div>
                       </div>
                     </div>
                   ))}
