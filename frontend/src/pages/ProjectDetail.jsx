@@ -312,13 +312,20 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   const id = projectId
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('clips')
   // v2.1.30: 详细报告 modal
   const [showReport, setShowReport] = useState(false)
   // 每个 tab 独立分页 (避免切到合集再切回切片被重置到第 1 页)
   // v2.1.27: page 用 URL search params 存 (绕过 React state 反复重置的 bug)
   // 即使 ProjectDetail 组件被反复 unmount/remount (Vite Fast Refresh / 路由变化), URL 还在
+  // v2.1.31: activeTab 同样存 URL (它之前也是 useState, 跟 clipsPage 一样被 unmount 吃掉)
   const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') || 'clips'
+  const setActiveTab = (t) => {
+    const next = new URLSearchParams(searchParams)
+    if (t === 'clips') next.delete('tab')  // 切片是默认, 不污染 URL
+    else next.set('tab', t)
+    setSearchParams(next, { replace: true })
+  }
   const clipsPage = parseInt(searchParams.get('cp') || '1', 10)
   const collectionsPage = parseInt(searchParams.get('kp') || '1', 10)
   const setClipsPage = (p) => {
