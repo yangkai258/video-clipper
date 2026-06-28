@@ -100,8 +100,12 @@ def extract_outline(srt_path: Path, metadata_dir: Path, strategy_config: dict = 
     # 提取纯文本
     text = _extract_text_from_srt(srt_content)
 
-    # 分块处理（每块约 30 分钟）
-    chunks = _chunk_text(text, max_chars=5000)
+    # 分块处理（每块 ~6000 字符，约 4-5 分钟字幕）
+    # v2.1.47: 改大 chunk + 删 prompt 内的 chunk[:4000] 截断
+    # 之前 max_chars=5000 + chunk[:4000] 实际只给 LLM 看前 4000 字符 (约 10 分钟)
+    # 1GB 阿甘正传 1699 段字幕 → LLM 只看前 10 分钟 → 只识别 1-2 个 topic
+    # 现在 max_chars=6000 + 完整传 chunk → LLM 看完整 chunk 约 5 分钟 × 30+ chunks
+    chunks = _chunk_text(text, max_chars=6000)
     logger.info(f"文本分为 {len(chunks)} 块")
 
     # 构建风格引导 prompt 片段
@@ -132,7 +136,7 @@ def extract_outline(srt_path: Path, metadata_dir: Path, strategy_config: dict = 
 ]
 
 字幕文本：
-{chunk[:4000]}
+{chunk}
 """
 
         try:
