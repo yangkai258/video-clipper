@@ -146,7 +146,9 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('clips')
-  const [currentPage, setCurrentPage] = useState(1)
+  // 每个 tab 独立分页 (避免切到合集再切回切片被重置到第 1 页)
+  const [clipsPage, setClipsPage] = useState(1)
+  const [collectionsPage, setCollectionsPage] = useState(1)
   const itemsPerPage = 8
   const lastStatusRef = useRef(null)
   const notifiedRef = useRef(new Set())
@@ -233,6 +235,9 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
 
   const clips = project.clips || []
   const collections = project.collections || []
+  // 当前 tab 的分页 (切片/合集各持一份, 切 tab 互不干扰)
+  const currentPage = activeTab === 'collections' ? collectionsPage : clipsPage
+  const setCurrentPage = activeTab === 'collections' ? setCollectionsPage : setClipsPage
   const totalPages = Math.max(1, Math.ceil(clips.length / itemsPerPage))
   const pageClips = clips.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
   const showTabs = clips.length > 0 || collections.length > 0
@@ -356,12 +361,12 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
             <>
               <div className="pda-tabs">
                 {clips.length > 0 && (
-                  <button className={`pda-tab ${activeTab === 'clips' ? 'active' : ''}`} onClick={() => { setActiveTab('clips'); setCurrentPage(1) }}>
+                  <button className={`pda-tab ${activeTab === 'clips' ? 'active' : ''}`} onClick={() => setActiveTab('clips')}>
                     切片 <span className="pda-tab-count">{clips.length}</span>
                   </button>
                 )}
                 {collections.length > 0 && (
-                  <button className={`pda-tab ${activeTab === 'collections' ? 'active' : ''}`} onClick={() => { setActiveTab('collections'); setCurrentPage(1) }}>
+                  <button className={`pda-tab ${activeTab === 'collections' ? 'active' : ''}`} onClick={() => setActiveTab('collections')}>
                     合集 <span className="pda-tab-count">{collections.length}</span>
                   </button>
                 )}
