@@ -7,11 +7,12 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 
-def _build_video_encoder_args(output_format: str) -> list:
+def _build_video_encoder_args(output_format: str, output_path: Path = None) -> list:
     """根据 output_format 生成 ffmpeg 编码参数 (v2.1.26)
 
     Args:
         output_format: "original" | "9:16-letterbox"
+        output_path: v2.1.44 输出文件路径 (fallback 路径必传, 不传 ffmpeg "At least one output file must be specified" 报错)
 
     Returns:
         list of ffmpeg args (不含 -i input)
@@ -28,15 +29,18 @@ def _build_video_encoder_args(output_format: str) -> list:
         "-movflags", "+faststart",
     ]
 
+    args = []
     if output_format == "9:16-letterbox":
         # v2.1.26: 横屏电影适配抖音, 上下加黑边变 9:16
         # 算法: scale=1080:-2 按宽缩放, pad=1080:1920:(ow-iw)/2:(oh-ih)/2 居中
         # 输出容器 1080x1920 (标准抖音竖屏)
         vf = "scale=1080:-2:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black"
-        return [
-            "-vf", vf,
-        ] + base
-    return base
+        args.extend(["-vf", vf])
+    args.extend(base)
+    # v2.1.44 fix: output_path 兜底, 不传的话 ffmpeg 会报 "At least one output file must be specified"
+    if output_path is not None:
+        args.append(str(output_path))
+    return args
 
 
 def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: Path, start: float, duration: float, subtitle_config: dict = None):
@@ -322,12 +326,14 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
                 except Exception as e:
                     logger.error(f"moviepy 烧录失败：{e}，回退到 FFmpeg 无字幕模式")
                     # 回退到 FFmpeg 硬件加速
-                    cmd.extend(_build_video_encoder_args(output_format))
+                    # v2.1.44 fix: 把 output_path 传给 _build_video_encoder_args, 之前漏掉导致 ffmpeg "At least one output file must be specified"
+                    cmd.extend(_build_video_encoder_args(output_format, output_path))
                     subprocess.run(cmd, check=True, capture_output=True, timeout=300)
             else:
                 # 无字幕：使用硬件加速
                 logger.info("无字幕，使用 h264_videotoolbox 硬件加速")
-                cmd.extend(_build_video_encoder_args(output_format))
+                # v2.1.44 fix: 传 output_path
+                cmd.extend(_build_video_encoder_args(output_format, output_path))
                 subprocess.run(cmd, check=True, capture_output=True, timeout=300)
             
             # 保存相对路径
