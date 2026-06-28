@@ -1915,10 +1915,11 @@ input[type="color"] {
 .pda-header {
   display: flex;
   gap: var(--space-5);
-  /* v2.1.45: align-items center 兼容宽屏/竖屏 cover 高度不同
-     - landscape/cinemascope: cover 119-123px, info 175-200px → cover 居中跟 info 文字组对齐
-     - portrait/square: cover 160-235px, info 175-200px → cover 长, info 居中, cover 也跟着居中 */
-  align-items: center;
+  /* v2.1.46: cover 跟 status pill 顶部对齐
+     - flex-start + 不设 align-self → cover 跟 info 都从 header 顶部开始
+     - 不管 cover 高 119 (cinemascope) 还是 234 (portrait), status pill 永远跟 cover 顶部齐
+     - info 容器在 portrait 长 cover 旁自然往下排, 视觉统一 */
+  align-items: flex-start;
 }
 .pda-cover {
   width: 220px;
