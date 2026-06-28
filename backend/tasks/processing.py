@@ -371,15 +371,8 @@ def process_video_pipeline(
         except Exception as cleanup_error:
             logger.warning(f"清理临时文件失败（不影响主流程）：{cleanup_error}")
 
-        # === 单独事务：更新 video_size = 0（独立事务，cleanup 失败也不影响）===
-        try:
-            with sync_get_db() as db:
-                project = db.query(Project).filter(Project.id == project_id).first()
-                if project:
-                    project.video_size = 0
-                    db.commit()
-        except Exception as e:
-            logger.warning(f"更新 video_size=0 失败（不影响主流程）：{e}")
+        # 注: 不要把 video_size 清零! raw 删了, 但 video_size 仍记录原文件大小, UI 用来显示"1.2 GB"
+        # 之前 v2.1.21 之前清零了, 导致用户看不到原视频多大, 误以为 0 byte
 
         logger.info(f"数据库写入完成：{len(titled_clips)} clips, {len(collections)} collections")
 
