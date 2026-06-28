@@ -1013,73 +1013,130 @@ body {
   transition: width var(--transition-slow);
 }
 
-/* === Buttons === */
+/* === Buttons (v2.1.33: 全工程统一毛玻璃风格) === */
+/* 锚点: Organic (半透明 + 圆角 + 质感光纹) + Linear 暗色 SaaS 主调 */
+/* Differentiator: 顶部柔光高光 (::before) + hover 时整体抬起 + 玻璃下层 light shift */
+
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  padding: 6px var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 14px;
+  font-size: 13px;
   font-weight: 500;
   font-family: var(--text-sans);
   cursor: pointer;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-default);
-  transition: all var(--transition-fast);
+  border: 1px solid var(--btn-border, rgba(255, 255, 255, 0.08));
+  background: var(--btn-bg, rgba(255, 255, 255, 0.04));
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  color: var(--btn-fg, var(--text-bright));
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              background 180ms ease,
+              border-color 180ms ease,
+              box-shadow 180ms ease;
   white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  user-select: none;
+}
+/* 顶部柔光高光 — 不同点 */
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 40%);
+  pointer-events: none;
+  z-index: -1;
+  transition: opacity 180ms ease;
 }
 
 .btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-bright);
+  background: var(--btn-bg-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--btn-border-hover, rgba(255, 255, 255, 0.16));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.btn:hover::before {
+  opacity: 1.4;  /* 让高光更亮 */
+}
+.btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition-duration: 80ms;
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
 }
 
+/* 主按钮: cyan glass (青色调, 跟 user 偏好对齐, 不引入紫色) */
 .btn-primary {
-  background: var(--accent);
-  color: var(--text-on-accent);
+  --btn-bg: rgba(6, 182, 212, 0.16);
+  --btn-bg-hover: rgba(6, 182, 212, 0.26);
+  --btn-border: rgba(6, 182, 212, 0.4);
+  --btn-border-hover: rgba(6, 182, 212, 0.6);
+  --btn-fg: #67e8f9;
   font-weight: 600;
-  padding: 7px var(--space-4);
+  box-shadow: 0 4px 16px rgba(6, 182, 212, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
-
+.btn-primary::before {
+  background: linear-gradient(180deg, rgba(103, 232, 249, 0.18) 0%, transparent 50%);
+}
 .btn-primary:hover {
-  background: var(--accent-hover);
-  color: var(--text-on-accent);
-  box-shadow: 0 0 0 4px var(--accent-glow);
+  box-shadow: 0 6px 22px rgba(6, 182, 212, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
+/* ghost 按钮: 更轻的 glass, 默认无背景只 hover 显示 */
 .btn-ghost {
-  padding: 4px var(--space-2);
-  color: var(--text-muted);
+  --btn-bg: transparent;
+  --btn-bg-hover: rgba(255, 255, 255, 0.06);
+  --btn-border: transparent;
+  --btn-border-hover: rgba(255, 255, 255, 0.1);
+  --btn-fg: var(--text-default);
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.btn-ghost::before {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 40%);
+  opacity: 0;
+}
+.btn-ghost:hover::before {
+  opacity: 1;
 }
 
-.btn-ghost:hover {
-  background: var(--bg-hover);
-  color: var(--text-bright);
-}
-
+/* danger 按钮: 红色 glass */
 .btn-danger {
-  color: var(--status-error);
+  --btn-bg: rgba(239, 68, 68, 0.1);
+  --btn-bg-hover: rgba(239, 68, 68, 0.2);
+  --btn-border: rgba(239, 68, 68, 0.3);
+  --btn-border-hover: rgba(239, 68, 68, 0.5);
+  --btn-fg: #fca5a5;
 }
-
-.btn-danger:hover {
-  background: rgba(235, 87, 87, 0.12);
-  color: var(--status-error);
+.btn-danger::before {
+  background: linear-gradient(180deg, rgba(252, 165, 165, 0.14) 0%, transparent 50%);
 }
 
 .btn-icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   display: grid;
   place-items: center;
+  border-radius: 10px;
 }
 
 .btn-sm {
-  padding: 4px var(--space-2);
-  font-size: var(--text-xs);
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 10px;
 }
 
 /* === Empty state === */
@@ -1655,19 +1712,6 @@ input[type="color"] {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-}
-.btn-sm {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 6px;
-}
-.btn-danger {
-  background: rgba(220, 80, 80, 0.1);
-  color: rgb(220, 80, 80);
-  border: 1px solid rgba(220, 80, 80, 0.2);
-}
-.btn-danger:hover {
-  background: rgba(220, 80, 80, 0.18);
 }
 
 /* === Modal === */
