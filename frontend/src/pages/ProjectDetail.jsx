@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 
 const API_BASE = '/api/v1'
@@ -167,8 +167,23 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('clips')
   // 每个 tab 独立分页 (避免切到合集再切回切片被重置到第 1 页)
-  const [clipsPage, setClipsPage] = useState(1)
-  const [collectionsPage, setCollectionsPage] = useState(1)
+  // v2.1.27: page 用 URL search params 存 (绕过 React state 反复重置的 bug)
+  // 即使 ProjectDetail 组件被反复 unmount/remount (Vite Fast Refresh / 路由变化), URL 还在
+  const [searchParams, setSearchParams] = useSearchParams()
+  const clipsPage = parseInt(searchParams.get('cp') || '1', 10)
+  const collectionsPage = parseInt(searchParams.get('kp') || '1', 10)
+  const setClipsPage = (p) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('cp', String(p))
+    setSearchParams(next, { replace: true })
+  }
+  const setCollectionsPage = (p) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('kp', String(p))
+    setSearchParams(next, { replace: true })
+  }
+  // v2.1.26: 必须放在所有 useEffect 之前! (否则违反 hooks 顺序规则, 会触发整体 unmount)
+  const [updatingFormat, setUpdatingFormat] = useState(false)
   const itemsPerPage = 8
   const lastStatusRef = useRef(null)
   const notifiedRef = useRef(new Set())
@@ -234,7 +249,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   }
 
   // v2.1.26: 改 output_format (后端更新 processing_config.output_format, 不重处理)
-  const [updatingFormat, setUpdatingFormat] = useState(false)
+  // useState 在 useEffect 之前已定义 (line 174, 顺序约束)
   const updateOutputFormat = async (format) => {
     if (!confirm(`改输出格式为 "${format}", 会影响下次处理。\n\n已有 clip 不会被重新编码,只有重新处理才会用新格式。要现在重处理吗?`)) {
       // 用户说不要, 只更新 config
