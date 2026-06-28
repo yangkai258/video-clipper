@@ -180,6 +180,13 @@ def calculate_progress(project: Project) -> dict:
                 "current_step": latest.current_step or "处理中...",
                 "estimated_remaining": "见 timing.eta_seconds",
             }
+        # task 存在但 progress=0, 还在排队 / 准备中
+        if latest and latest.status == "running":
+            return {
+                "progress": 0,
+                "current_step": "排队中, 等待 worker..." if not latest.started_at else "准备中...",
+                "estimated_remaining": "见 timing.eta_seconds",
+            }
 
     # Fallback: 根据已有数据估算 (老逻辑, 没 task 进度时用)
     clip_count = len(project.clips)
