@@ -1915,7 +1915,10 @@ input[type="color"] {
 .pda-header {
   display: flex;
   gap: var(--space-5);
-  align-items: flex-start;
+  /* v2.1.45: align-items center 兼容宽屏/竖屏 cover 高度不同
+     - landscape/cinemascope: cover 119-123px, info 175-200px → cover 居中跟 info 文字组对齐
+     - portrait/square: cover 160-235px, info 175-200px → cover 长, info 居中, cover 也跟着居中 */
+  align-items: center;
 }
 .pda-cover {
   width: 220px;
