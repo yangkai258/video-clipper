@@ -8,6 +8,27 @@ from typing import List, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
+def _normalize_min_score(value) -> float:
+    """把 min_score 归一化成 0-1 比例 (v2.1.25 fix 数据契约)
+
+    历史/不同来源可能给不同单位:
+    - 0.55 / 0.6 / 0.8 → 直接返回 (0-1 比例)
+    - 55 / 60 / 80 → 除以 100 (旧 migrations 或误写成 0-100 整数)
+    - None / 0 → 用默认 0.6
+    - 其他越界值 → clamp 到 [0, 1]
+    """
+    if value is None:
+        return 0.6
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.6
+    # 自动识别单位: > 1 视为 0-100 整数
+    if v > 1.0:
+        v = v / 100.0
+    return max(0.0, min(1.0, v))
+
+
 def _call_llm(prompt: str, model: Optional[str] = None) -> Optional[str]:
     """调用 MiniMax LLM（OpenAI 兼容接口），返回生成的文本内容
 
@@ -416,7 +437,7 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
     """
     strategy_config = strategy_config or {}
     # 与 local_processor._score_clip_local 的默认 0.6 保持一致
-    min_score = strategy_config.get("rules", {}).get("min_score", 0.6)
+    min_score = _normalize_min_score(strategy_config.get("rules", {}).get("min_score", 0.6))
 
     # 解析 keep_rules / remove_rules 关键词
     keep_keywords = _parse_rules_to_keywords(strategy_config.get("keep_rules", ""))

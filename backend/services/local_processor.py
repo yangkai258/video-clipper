@@ -5,6 +5,9 @@ import re
 from pathlib import Path
 from typing import List, Dict
 
+# 复用 llm_service 的 min_score 归一化 (v2.1.25 统一数据契约)
+from .llm_service import _normalize_min_score
+
 logger = logging.getLogger(__name__)
 
 
@@ -487,7 +490,7 @@ def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None,
         strategy_config: 策略配置（用于本地评分：keep_rules / remove_rules / target_duration 等）
     """
     config = strategy_config or {}
-    min_score = (config.get("rules") or {}).get("min_score", 0.6)  # 本地默认 0.6（比 AI 路径 0.7 略低，扣分项多）
+    min_score = _normalize_min_score((config.get("rules") or {}).get("min_score", 0.6))  # 本地默认 0.6（比 AI 路径 0.7 略低，扣分项多）
 
     titled = []
 

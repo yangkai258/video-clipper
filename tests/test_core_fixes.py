@@ -901,3 +901,66 @@ class TestCollectionsClipIds:
         # 不应该有 KeyError 'index' 的写法
         assert 'c["index"] for c in coll_data.get("clips"' not in content, \
             "v2.1.24 fix: removed c['index'] traversal that caused KeyError"
+
+
+class TestNormalizeMinScore:
+    """v2.1.25: min_score 数据契约规范化 — 0-1 比例 + 自动转换 0-100 整数"""
+
+    def test_already_normalized_passes_through(self):
+        """0-1 范围的值原样返回"""
+        from backend.services.llm_service import _normalize_min_score
+        assert _normalize_min_score(0.55) == 0.55
+        assert _normalize_min_score(0.6) == 0.6
+        assert _normalize_min_score(0.0) == 0.0
+        assert _normalize_min_score(1.0) == 1.0
+
+    def test_0_to_100_integer_auto_divided(self):
+        """1-100 整数自动除以 100 (历史 migrations / 用户误用)"""
+        from backend.services.llm_service import _normalize_min_score
+        assert _normalize_min_score(55) == 0.55
+        assert _normalize_min_score(80) == 0.80
+        assert _normalize_min_score(100) == 1.0
+        assert _normalize_min_score(70) == 0.70
+
+    def test_none_uses_default(self):
+        """None / 非法值用默认 0.6"""
+        from backend.services.llm_service import _normalize_min_score
+        assert _normalize_min_score(None) == 0.6
+        assert _normalize_min_score("abc") == 0.6
+
+    def test_out_of_range_clamps(self):
+        """越界值 clamp 到 [0, 1]"""
+        from backend.services.llm_service import _normalize_min_score
+        # 1.5 不是 0-1 也不是 0-100 (除以 100 后 0.015 < 0)
+        # 实际会被识别为 > 1 → 除以 100 → 0.015
+        # 但 1.5 < 1.0 不对, 实际上 v > 1.0 才除以 100
+        # 1.5 > 1.0 所以除以 100 = 0.015
+        assert _normalize_min_score(150) == 1.0  # > 100 clamp
+        assert _normalize_min_score(-0.5) == 0.0  # < 0 clamp
+
+    def test_string_numeric_supported(self):
+        """字符串数字也能转"""
+        from backend.services.llm_service import _normalize_min_score
+        assert _normalize_min_score("0.7") == 0.7
+        assert _normalize_min_score("55") == 0.55  # 字符串 '55' 转 float 后 > 1 → 除 100
+
+    def test_llm_service_uses_normalize(self):
+        """score_clips 必须用 _normalize_min_score"""
+        from pathlib import Path
+        llm_path = Path(__file__).parent.parent / "backend" / "services" / "llm_service.py"
+        content = llm_path.read_text()
+        score_fn_idx = content.find("def score_clips")
+        assert score_fn_idx > 0
+        score_fn_body = content[score_fn_idx:score_fn_idx + 2000]
+        assert "_normalize_min_score" in score_fn_body, \
+            "score_clips must use _normalize_min_score (v2.1.25 数据契约)"
+
+    def test_local_processor_uses_normalize(self):
+        """local_processor 必须用 _normalize_min_score"""
+        from pathlib import Path
+        lp_path = Path(__file__).parent.parent / "backend" / "services" / "local_processor.py"
+        content = lp_path.read_text()
+        assert "_normalize_min_score" in content, \
+            "local_processor must use _normalize_min_score (v2.1.25 数据契约)"
+        assert "from .llm_service import _normalize_min_score" in content, \
+            "local_processor must import from llm_service"
