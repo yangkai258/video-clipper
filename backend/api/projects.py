@@ -206,6 +206,9 @@ async def list_projects(
     db: AsyncSession = Depends(get_db)
 ):
     """获取项目列表（默认不显示已删除）"""
+    # 先清理卡死的 task (worker 被强杀后 task 永远卡 running, 影响 UI 体验)
+    await _cleanup_stuck_tasks(db)
+
     query = select(Project).options(
         selectinload(Project.clips),
         selectinload(Project.collections),
@@ -242,6 +245,37 @@ async def list_projects(
             for p in projects
         ]
     }
+
+
+async def _cleanup_stuck_tasks(db: AsyncSession) -> int:
+    """检测并清理卡死的 task (running 状态超过 30 分钟无进度更新)
+    防止 worker 被强杀后 task 永远卡在 running
+    """
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(minutes=30)
+    # 找所有 running 状态 task, 且 created_at 超过 30 分钟
+    result = await db.execute(
+        select(Task).where(
+            Task.status == "running",
+            Task.created_at < cutoff,
+        )
+    )
+    stuck_tasks = result.scalars().all()
+    cleaned = 0
+    for task in stuck_tasks:
+        task.status = "failed"
+        task.error_message = f"任务卡死超过 30 分钟, 疑似 worker 被强杀, 自动标记为失败 (请重新提交处理)"
+        task.completed_at = datetime.utcnow()
+        # 关联 project 也标 failed
+        result = await db.execute(select(Project).where(Project.id == task.project_id))
+        project = result.scalar_one_or_none()
+        if project and project.status == "processing":
+            project.status = "failed"
+        cleaned += 1
+    if cleaned > 0:
+        await db.commit()
+        logger.warning(f"清理 {cleaned} 个卡死 task (running 超过 30 分钟)")
+    return cleaned
 
 
 @router.get("/{project_id}/files/{file_path:path}")
