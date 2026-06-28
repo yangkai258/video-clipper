@@ -533,7 +533,9 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     """开始处理项目"""
     from celery import chain
     from ..tasks.processing import process_video_pipeline
-    
+    import logging
+    logger = logging.getLogger(__name__)
+
     # 获取项目
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
@@ -541,11 +543,35 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    if project.status not in ["pending", "failed"]:
+    # v2.1.42: 允许 pending/failed/processing 三种状态触发
+    # processing 表示用户主动重置 (卡死 / 想换风格) → 取消旧 task 后重启
+    if project.status not in ["pending", "failed", "processing"]:
         raise HTTPException(
             status_code=400,
             detail=f"项目状态不允许处理：{project.status}"
         )
+
+    # 如果是 processing, 先取消旧 task (revoke celery) + 把旧 task 标 cancelled
+    if project.status == "processing":
+        from ..core.celery_app import celery_app
+        # 找所有 running task
+        from sqlalchemy import select as sa_select
+        old_tasks = (await db.execute(
+            sa_select(Task).where(
+                Task.project_id == project_id,
+                Task.status.in_(["pending", "running"]),
+            )
+        )).scalars().all()
+        for old in old_tasks:
+            if old.celery_task_id:
+                try:
+                    celery_app.control.revoke(old.celery_task_id, terminate=False)
+                except Exception as ex:
+                    logger.warning(f"revoke {old.celery_task_id} 失败: {ex}")
+            old.status = "failed"
+            old.error_message = "用户主动重新处理, 旧任务已取消"
+            old.completed_at = datetime.utcnow()
+        logger.info(f"项目 {project_id} 重置: 取消 {len(old_tasks)} 个旧 task")
     
     # 检查视频文件是否存在
     video_path = settings.PROJECTS_DIR / project.video_path
