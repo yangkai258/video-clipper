@@ -59,6 +59,10 @@ def _call_llm(prompt: str, model: Optional[str] = None) -> Optional[str]:
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
+        # v2.1.50: 加 max_tokens 避免输出截断
+        # 之前没设 → MiniMax API 默认 4096 → LLM 想输出 30+ segment JSON 时被截
+        # step3 阿甘 1GB 给 40 个 outline → step2 映射时只输出 1 个 segment 就截断了
+        "max_tokens": 8000,
     }
 
     try:
