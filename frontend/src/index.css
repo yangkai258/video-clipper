@@ -681,6 +681,20 @@ body {
   transition: width 0.4s;
 }
 .reel-card-progress-label { font-weight: 600; }
+
+/* 处理中卡片底部 ETA 行: 已用 / 剩余 / 总预计 */
+.reel-card-timing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, rgba(255,255,255,0.55));
+  margin-top: -2px;
+}
+.reel-card-timing-elapsed { color: var(--text-bright, rgba(255,255,255,0.85)); font-weight: 500; }
+.reel-card-timing-eta { color: var(--accent-cyan, #06b6d4); }
+.reel-card-timing-total { color: var(--text-muted, rgba(255,255,255,0.45)); margin-left: auto; }
 .reel-card-body {
   padding: var(--space-4) var(--space-4) var(--space-3);
   display: flex;

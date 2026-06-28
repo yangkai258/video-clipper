@@ -8,6 +8,18 @@ import ProjectDetail from './pages/ProjectDetail'
 import ThemeToggle from './ThemeToggle'
 import './index.css'
 
+// 把秒数格式化成 "MM:SS" 或 "HH:MM:SS"
+// 例: 90 → "01:30", 3661 → "01:01:01"
+function formatDuration(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds || 0))
+  const hh = Math.floor(s / 3600)
+  const mm = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const pad = (n) => String(n).padStart(2, '0')
+  if (hh > 0) return `${hh}:${pad(mm)}:${pad(ss)}`
+  return `${pad(mm)}:${pad(ss)}`
+}
+
 function App() {
   const [projects, setProjects] = useState([])
   const [uploading, setUploading] = useState(false)
@@ -493,6 +505,23 @@ function App() {
                               <div className="reel-card-progress-fill" style={{ width: `${p.progress || 0}%` }} />
                             </div>
                             <span className="reel-card-progress-label">{p.progress || 0}%</span>
+                          </div>
+                        )}
+                        {p.status === 'processing' && p.timing && (
+                          <div className="reel-card-timing">
+                            <span className="reel-card-timing-elapsed" title="已用时间">
+                              ⏱ {formatDuration(p.timing.elapsed_seconds || 0)}
+                            </span>
+                            {p.timing.eta_seconds != null && p.timing.eta_seconds > 0 && (
+                              <span className="reel-card-timing-eta" title="预计剩余">
+                                · 剩 {formatDuration(p.timing.eta_seconds)}
+                              </span>
+                            )}
+                            {p.timing.total_estimated_seconds != null && p.timing.total_estimated_seconds > 0 && (
+                              <span className="reel-card-timing-total" title="预计总耗时">
+                                / {formatDuration(p.timing.total_estimated_seconds)}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
