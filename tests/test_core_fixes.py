@@ -964,3 +964,79 @@ class TestNormalizeMinScore:
             "local_processor must use _normalize_min_score (v2.1.25 数据契约)"
         assert "from .llm_service import _normalize_min_score" in content, \
             "local_processor must import from llm_service"
+
+
+class TestFfprobeHelper:
+    """v2.1.26: ffprobe helper - 提取视频宽高 + orientation 判断"""
+
+    def test_get_orientation_portrait(self):
+        from backend.services.ffprobe_helper import get_orientation
+        assert get_orientation(720, 1280) == "portrait"
+        assert get_orientation(540, 960) == "portrait"
+        assert get_orientation(360, 640) == "portrait"
+
+    def test_get_orientation_landscape(self):
+        from backend.services.ffprobe_helper import get_orientation
+        assert get_orientation(1280, 720) == "landscape"
+        assert get_orientation(1920, 1080) == "landscape"
+
+    def test_get_orientation_cinemascope(self):
+        """2.35:1 电影比例识别为宽银幕"""
+        from backend.services.ffprobe_helper import get_orientation
+        assert get_orientation(1694, 720) == "cinemascope"
+        assert get_orientation(2400, 1000) == "cinemascope"
+
+    def test_get_orientation_square(self):
+        from backend.services.ffprobe_helper import get_orientation
+        assert get_orientation(1080, 1080) == "square"
+
+    def test_get_orientation_default_landscape(self):
+        """None/0 默认横屏"""
+        from backend.services.ffprobe_helper import get_orientation
+        assert get_orientation(0, 0) == "landscape"
+        assert get_orientation(None, None) == "landscape"
+
+
+class TestVideoEncoderArgs:
+    """v2.1.26: output_format 控制 ffmpeg 编码参数"""
+
+    def test_original_format(self):
+        """original 返回基础硬件加速参数 (无 vf)"""
+        from backend.services.video_service import _build_video_encoder_args
+        args = _build_video_encoder_args("original")
+        assert "-vf" not in args
+        assert "h264_videotoolbox" in args
+
+    def test_letterbox_format_has_vf(self):
+        """letterbox 包含 scale+pad filter"""
+        from backend.services.video_service import _build_video_encoder_args
+        args = _build_video_encoder_args("9:16-letterbox")
+        vf_idx = args.index("-vf")
+        vf_value = args[vf_idx + 1]
+        # 应该有 scale 和 pad
+        assert "scale=1080" in vf_value
+        assert "pad=1080:1920" in vf_value
+        assert "color=black" in vf_value
+
+    def test_unknown_format_falls_back_to_original(self):
+        """未知 output_format 应回退 (在 cut_clips 里)"""
+        # cut_clips 会 warning + 用 original
+        # 这里直接验证 _build_video_encoder_args 不依赖 output_format 是否有效
+        from backend.services.video_service import _build_video_encoder_args
+        # 即使传奇怪的值, helper 返回基础参数 (因为 helper 不做校验, 校验在 cut_clips)
+        args = _build_video_encoder_args("garbage")
+        assert "-vf" not in args
+
+
+class TestVideoWidthHeightSchema:
+    """v2.1.26: Project/Clip 模型加 video_width/video_height / width/height 字段"""
+
+    def test_project_has_video_dimensions_columns(self):
+        from backend.models.database import Project
+        assert hasattr(Project, 'video_width')
+        assert hasattr(Project, 'video_height')
+
+    def test_clip_has_dimensions_columns(self):
+        from backend.models.database import Clip
+        assert hasattr(Clip, 'width')
+        assert hasattr(Clip, 'height')

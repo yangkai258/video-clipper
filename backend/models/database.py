@@ -21,6 +21,9 @@ class Project(Base):
     video_path = Column(String(512))
     video_duration = Column(Float, default=0.0)
     video_size = Column(Integer, default=0)
+    # 视频宽高 (v2.1.26: 让前端区分横/竖屏, 避免竖屏裁切)
+    video_width = Column(Integer, nullable=True)
+    video_height = Column(Integer, nullable=True)
     
     # 字幕文件
     subtitle_path = Column(String(512))
@@ -63,6 +66,10 @@ class Clip(Base):
     # 文件路径
     video_path = Column(String(512))
     thumbnail_path = Column(String(512))
+
+    # 视频宽高 (v2.1.26: 让前端区分横/竖屏, 避免竖屏裁切)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
     
     # 元数据
     clip_metadata = Column("metadata", JSON, default=dict)

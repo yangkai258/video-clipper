@@ -248,6 +248,9 @@ def process_video_pipeline(
         # 从 strategy_config 提取 with_subtitle 标志（默认 True 保持向后兼容）
         with_subtitle = strategy_config.get("with_subtitle", True) if strategy_config else True
         logger.info(f"字幕烧录：{'开启' if with_subtitle else '关闭（纯剪片子）'}")
+        # v2.1.26: output_format 控制编码方式 (横屏电影→9:16 letterbox 等)
+        output_format = strategy_config.get("output_format", "original") if strategy_config else "original"
+        logger.info(f"输出格式：{output_format}")
         cut_clips(
             titled_clips,
             input_video_path,
@@ -257,6 +260,7 @@ def process_video_pipeline(
             subtitle_config=subtitle_config,
             with_subtitle=with_subtitle,
             project_id=project_id,  # 切完第一片后抽帧做封面
+            output_format=output_format,
         )
         _update_task_progress(task_id, 92, "切割完成")
 
@@ -332,6 +336,9 @@ def process_video_pipeline(
                         duration=clip_data.get("duration", 0),
                         score=clip_data.get("score", 50),
                         video_path=clip_data.get("video_path", f"output/clips/{clip_data.get('index', 1)}_片段.mp4"),
+                        # v2.1.26: 存 clip 宽高, 让前端区分横/竖屏
+                        width=clip_data.get("width"),
+                        height=clip_data.get("height"),
                     )
                     db.add(clip)
             

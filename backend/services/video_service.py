@@ -7,6 +7,38 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 
+def _build_video_encoder_args(output_format: str) -> list:
+    """根据 output_format 生成 ffmpeg 编码参数 (v2.1.26)
+
+    Args:
+        output_format: "original" | "9:16-letterbox"
+
+    Returns:
+        list of ffmpeg args (不含 -i input)
+    """
+    # 基础编码参数 (硬件加速)
+    base = [
+        "-c:v", "h264_videotoolbox",
+        "-keyint_min", "60",
+        "-g", "60",
+        "-profile:v", "high",
+        "-level", "4.0",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+    ]
+
+    if output_format == "9:16-letterbox":
+        # v2.1.26: 横屏电影适配抖音, 上下加黑边变 9:16
+        # 算法: scale=1080:-2 按宽缩放, pad=1080:1920:(ow-iw)/2:(oh-ih)/2 居中
+        # 输出容器 1080x1920 (标准抖音竖屏)
+        vf = "scale=1080:-2:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black"
+        return [
+            "-vf", vf,
+        ] + base
+    return base
+
+
 def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: Path, start: float, duration: float, subtitle_config: dict = None):
     """使用 moviepy 烧录字幕（不依赖 FFmpeg libass）
     
@@ -221,7 +253,7 @@ def burn_subtitles_with_moviepy(input_video: Path, output_path: Path, srt_path: 
     logger.info(f"字幕烧录完成：{output_path}")
 
 
-def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt: Path = None, task_id: str = None, subtitle_config: dict = None, with_subtitle: bool = True, project_id: str = None):
+def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt: Path = None, task_id: str = None, subtitle_config: dict = None, with_subtitle: bool = True, project_id: str = None, output_format: str = "original"):
     """切割视频切片
 
     Args:
@@ -232,7 +264,22 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
         task_id: 可选的任务 ID，用于更新进度
         subtitle_config: 字幕配置 {font_size, txt_color, stroke_color, stroke_width, font, position}
         with_subtitle: 是否烧录字幕（False = 纯剪片子，不烧字幕，省时省力）
+        output_format: v2.1.26 输出格式
+            - "original" (默认): 保持原视频比例
+            - "9:16-letterbox": 横屏电影适配抖音, 上下加黑边变 9:16
+            - "9:16-smart-crop": 横屏电影智能裁剪到 9:16 (TODO, 占位)
     """
+    # 解析 output_format (兼容字符串/枚举)
+    if output_format not in ("original", "9:16-letterbox", "9:16-smart-crop"):
+        logger.warning(f"未知 output_format '{output_format}', 回退到 original")
+        output_format = "original"
+
+    # v2.1.26: 9:16-smart-crop 暂未实现, 用 letterbox 替代 + log 提示
+    if output_format == "9:16-smart-crop":
+        logger.warning("9:16-smart-crop 暂未实现, 用 9:16-letterbox 替代")
+        output_format = "9:16-letterbox"
+
+    logger.info(f"切割 {len(clips)} 个切片, output_format={output_format}")
     logger.info(f"开始切割 {len(clips)} 个切片")
 
     # 决定是否烧录字幕
@@ -275,36 +322,26 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
                 except Exception as e:
                     logger.error(f"moviepy 烧录失败：{e}，回退到 FFmpeg 无字幕模式")
                     # 回退到 FFmpeg 硬件加速
-                    cmd.extend([
-                        "-c:v", "h264_videotoolbox",
-                        "-keyint_min", "60",
-                        "-g", "60",
-                        "-profile:v", "high",
-                        "-level", "4.0",
-                        "-c:a", "aac",
-                        "-b:a", "128k",
-                        "-movflags", "+faststart",
-                        str(output_path)
-                    ])
+                    cmd.extend(_build_video_encoder_args(output_format))
                     subprocess.run(cmd, check=True, capture_output=True, timeout=300)
             else:
                 # 无字幕：使用硬件加速
                 logger.info("无字幕，使用 h264_videotoolbox 硬件加速")
-                cmd.extend([
-                    "-c:v", "h264_videotoolbox",
-                    "-keyint_min", "60",
-                    "-g", "60",
-                    "-profile:v", "high",
-                    "-level", "4.0",
-                    "-c:a", "aac",
-                    "-b:a", "128k",
-                    "-movflags", "+faststart",
-                    str(output_path)
-                ])
+                cmd.extend(_build_video_encoder_args(output_format))
                 subprocess.run(cmd, check=True, capture_output=True, timeout=300)
             
             # 保存相对路径
             clip["video_path"] = str(output_path.relative_to(output_path.parent.parent.parent))
+
+            # v2.1.26: ffprobe 抽 clip 宽高, 让前端区分横/竖屏 (避免竖屏裁切)
+            try:
+                from .ffprobe_helper import get_video_dimensions
+                dims = get_video_dimensions(output_path)
+                if dims:
+                    clip["width"] = dims[0]
+                    clip["height"] = dims[1]
+            except Exception as e:
+                logger.warning(f"clip 宽高 ffprobe 失败 ({output_path.name}): {e}")
 
             # ✅ 给该片抽一张中段帧作缩略图 (clip 是独立小视频, 用 duration/2)
             try:

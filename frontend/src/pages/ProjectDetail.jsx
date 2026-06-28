@@ -35,6 +35,24 @@ function formatDate(iso) {
   })
 }
 
+// v2.1.26: 根据宽高判断视频 orientation (portrait/landscape/cinemascope/square)
+function getOrientation(width, height) {
+  if (!width || !height) return 'landscape'  // 默认横屏
+  const ratio = width / height
+  if (ratio < 0.83) return 'portrait'         // < 5:6 算竖屏 (9:16 = 0.5625)
+  if (ratio >= 2.0) return 'cinemascope'      // >= 2:1 算宽银幕 (2.35:1)
+  if (ratio > 1.2) return 'landscape'
+  return 'square'
+}
+
+// 中文标签映射
+const orientationLabel = {
+  portrait: '竖屏',
+  landscape: '横屏',
+  cinemascope: '宽银幕',
+  square: '方形',
+}
+
 function friendlyError(taskError) {
   if (!taskError) return { title: '处理失败', hint: '请查看日志或重新处理' }
   const err = String(taskError).toLowerCase()
@@ -69,9 +87,11 @@ function ClipCard({ clip, index, projectId, withSubtitle }) {
   const thumbSrc = clipStem
     ? `/api/v1/clip-thumbs/${projectId}/${encodeURIComponent(clipStem)}.jpg`
     : `/api/v1/thumbnails/${projectId}.jpg`
+  // v2.1.26: 按 orientation 选容器
+  const orientation = getOrientation(clip.width, clip.height)
   return (
     <div className="pda-clip">
-      <div className="pda-clip-thumb">
+      <div className="pda-clip-thumb" data-orientation={orientation}>
         {playing ? (
           <video controls autoPlay className="pda-clip-video" src={videoSrc}>
             {!withSubtitle && (
@@ -213,6 +233,26 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
     }
   }
 
+  // v2.1.26: 改 output_format (后端更新 processing_config.output_format, 不重处理)
+  const [updatingFormat, setUpdatingFormat] = useState(false)
+  const updateOutputFormat = async (format) => {
+    if (!confirm(`改输出格式为 "${format}", 会影响下次处理。\n\n已有 clip 不会被重新编码,只有重新处理才会用新格式。要现在重处理吗?`)) {
+      // 用户说不要, 只更新 config
+      try {
+        setUpdatingFormat(true)
+        await axios.put(`${API_BASE}/projects/${id}/config`, {
+          ...project.processing_config,
+          output_format: format,
+        })
+        loadProject()
+      } catch (e) {
+        alert('更新失败：' + (e.response?.data?.detail || e.message))
+      } finally {
+        setUpdatingFormat(false)
+      }
+    }
+  }
+
   if (loading) {
     return (
       <div className="empty">
@@ -256,23 +296,28 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
     <div className="pda-layout">
       {/* === 顶部: 封面 + 标题 + actions === */}
       <div className="pda-header">
-        {project.status === 'completed' ? (
-          <div className="pda-cover">
-            <img
-              className="pda-cover-img"
-              src={`/api/v1/thumbnails/${id}.jpg`}
-              alt={project.name}
-              onError={(e) => { e.currentTarget.style.display = 'none' }}
-            />
-            <div className="pda-cover-play">▶</div>
-          </div>
-        ) : (
-          <div className="pda-cover pda-cover-placeholder">
-            <div className="pda-cover-icon">
-              {isProcessing ? '⏳' : project.status === 'failed' ? '❌' : '🎬'}
+        {(() => {
+          // v2.1.26: 按 orientation 选 cover class
+          const orientation = getOrientation(project.video_width, project.video_height)
+          const coverClass = `pda-cover pda-cover-${orientation}`
+          return project.status === 'completed' ? (
+            <div className={coverClass} title={`${orientationLabel[orientation] || ''} ${project.video_width || '?'}×${project.video_height || '?'}`}>
+              <img
+                className="pda-cover-img"
+                src={`/api/v1/thumbnails/${id}.jpg`}
+                alt={project.name}
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+              <div className="pda-cover-play">▶</div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className={`${coverClass} pda-cover-placeholder`} title={`${orientationLabel[orientation] || ''} ${project.video_width || '?'}×${project.video_height || '?'}`}>
+              <div className="pda-cover-icon">
+                {isProcessing ? '⏳' : project.status === 'failed' ? '❌' : '🎬'}
+              </div>
+            </div>
+          )
+        })()}
         <div className="pda-info">
           <div className="pda-info-top">
             <span className="status-pill" data-status={project.status}>{statusLabel[project.status] || project.status}</span>
@@ -428,6 +473,41 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
                   <div className="pda-setting-row"><span>最大切片</span><strong>{cfg.max_clips ? `≤ ${cfg.max_clips} 片` : '—'}</strong></div>
                   <div className="pda-setting-row"><span>字幕</span><strong>{cfg.with_subtitle !== false ? '烧录到视频' : '不烧录'}</strong></div>
                   <div className="pda-setting-row"><span>处理策略</span><strong>{cfg.processing_mode || 'standard'}</strong></div>
+                  {/* v2.1.26: 输出格式选项 (横屏电影 → 9:16 letterbox 等) */}
+                  <div className="pda-setting-row">
+                    <span>输出格式</span>
+                    <strong style={{ color: cfg.output_format && cfg.output_format !== 'original' ? '#06b6d4' : undefined }}>
+                      {cfg.output_format === '9:16-letterbox' ? '📱 9:16 上下黑边 (抖音适配)' : cfg.output_format === '9:16-smart-crop' ? '📱 9:16 智能裁剪 (TODO)' : '🎬 保持原比例'}
+                    </strong>
+                  </div>
+                  {project.video_width && project.video_height && (
+                    <div className="pda-setting-row">
+                      <span>视频尺寸</span>
+                      <strong>{project.video_width}×{project.video_height} ({orientationLabel[getOrientation(project.video_width, project.video_height)]})</strong>
+                    </div>
+                  )}
+                  <div className="pda-setting-row" style={{ marginTop: '12px' }}>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => updateOutputFormat('original')}
+                      disabled={updatingFormat || cfg.output_format === 'original'}
+                    >
+                      🎬 保持原比例
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => updateOutputFormat('9:16-letterbox')}
+                      disabled={updatingFormat || cfg.output_format === '9:16-letterbox'}
+                      style={{ marginLeft: '8px' }}
+                    >
+                      📱 转 9:16 (letterbox)
+                    </button>
+                  </div>
+                  {(cfg.output_format === '9:16-letterbox') && (
+                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      💡 横屏视频会被上下加黑边变成 9:16 (适合抖音);竖屏视频保持不变
+                    </div>
+                  )}
                 </div>
               )}
             </>

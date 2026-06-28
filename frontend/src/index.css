@@ -1836,6 +1836,11 @@ input[type="color"] {
   background:
     linear-gradient(135deg, #1a202c 0%, #2d3748 50%, #4a5568 100%);
 }
+/* v2.1.26: 横屏电影 / 竖屏直播容器自适应 */
+.pda-cover-portrait  { aspect-ratio: 9 / 16;   width: 132px; height: auto; }
+.pda-cover-landscape { aspect-ratio: 16 / 9;   width: 220px; height: auto; }
+.pda-cover-cinemascope { aspect-ratio: 2.35 / 1; width: 280px; height: auto; }
+.pda-cover-square    { aspect-ratio: 1 / 1;    width: 160px; height: auto; }
 .pda-cover-img {
   position: absolute;
   inset: 0;
@@ -2079,7 +2084,8 @@ input[type="color"] {
 /* 2 列 clip grid */
 .pda-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* v2.1.26: 改 auto-fill + minmax 让横屏/竖屏卡片自适应宽度 */
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 14px;
 }
 .pda-clip {
@@ -2102,6 +2108,15 @@ input[type="color"] {
   justify-content: center;
   overflow: hidden;
 }
+/* v2.1.26: clip 缩略图按 orientation 容器自适应
+   - 横屏电影 (cinemascope 2.35:1): 宽高比 ~220x94
+   - 普通横屏 (16:9): 220x124
+   - 竖屏 (9:16): 窄高 ~110x195 (像抖音)
+   - 方形: 180x180 */
+.pda-clip-thumb[data-orientation="portrait"]    { aspect-ratio: 9 / 16; height: auto; width: 110px; }
+.pda-clip-thumb[data-orientation="landscape"]   { aspect-ratio: 16 / 9; height: auto; width: 100%; max-width: 320px; }
+.pda-clip-thumb[data-orientation="cinemascope"] { aspect-ratio: 2.35 / 1; height: auto; width: 100%; max-width: 320px; }
+.pda-clip-thumb[data-orientation="square"]      { aspect-ratio: 1 / 1; height: auto; width: 180px; }
 .pda-clip-poster {
   width: 100%;
   height: 100%;

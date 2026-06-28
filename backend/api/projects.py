@@ -238,6 +238,9 @@ async def list_projects(
                 "status": p.status,
                 "video_duration": p.video_duration,
                 "video_size": p.video_size,  # v2.1.22 修: list 漏返 video_size 导致 UI 显示 None
+                # v2.1.26: 让主列表卡片也能区分横/竖屏 (虽然主列表卡片不直接用, 但 detail 页跳转后用)
+                "video_width": p.video_width,
+                "video_height": p.video_height,
                 "clip_count": len(p.clips),
                 "collection_count": len(p.collections),
                 "created_at": to_iso_utc(p.created_at),
@@ -348,6 +351,9 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
             "video_path": project.video_path,
             "video_duration": project.video_duration,
             "video_size": project.video_size,
+            # v2.1.26: 让前端区分横/竖屏
+            "video_width": project.video_width,
+            "video_height": project.video_height,
             "subtitle_path": project.subtitle_path,
             "processing_config": project.processing_config,
             **(await _resolve_style(project, db)),
@@ -372,6 +378,9 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
                     "duration": c.duration,
                     "score": c.score,
                     "video_path": c.video_path,
+                    # v2.1.26: 让前端区分横/竖屏
+                    "width": c.width,
+                    "height": c.height,
                 }
                 for c in project.clips
             ],

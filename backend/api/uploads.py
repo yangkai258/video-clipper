@@ -284,6 +284,9 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
 
     # 创建项目记录
     subtitle_style = await _get_last_subtitle_style(db)
+    # v2.1.26: ffprobe 提取宽高, 让前端能区分横/竖屏
+    from ..services.ffprobe_helper import get_video_dimensions
+    dims = get_video_dimensions(video_path)
     project = Project(
         id=project_id,
         name=meta["name"],
@@ -292,6 +295,8 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
         video_path=str(video_path.relative_to(settings.PROJECTS_DIR)),
         video_size=meta["total_size"],
         video_duration=video_duration,
+        video_width=dims[0] if dims else None,
+        video_height=dims[1] if dims else None,
         processing_config={"subtitle_style": subtitle_style} if subtitle_style else {},
     )
     db.add(project)
