@@ -323,7 +323,7 @@ def process_video_pipeline(
                     )
                     db.add(coll)
 
-            # 更新项目状态为 completed（在 cleanup 前更新，确保 raw 删除失败也不影响 status）
+            # 更新项目状态（在 cleanup 前更新，确保 raw 删除失败也不影响 status）
                 project = db.query(Project).filter(Project.id == project_id).first()
                 if project:
                     project.status = "completed"
@@ -370,6 +370,30 @@ def process_video_pipeline(
                     f.unlink()
         except Exception as cleanup_error:
             logger.warning(f"清理临时文件失败（不影响主流程）：{cleanup_error}")
+
+        # 0-clip guard (v2.1.23): 视频太短/无切点时跑完 6 步但 0 产物, 不能标 completed
+        if len(titled_clips) == 0 and len(collections) == 0:
+            try:
+                with sync_get_db() as db:
+                    proj = db.query(Project).filter(Project.id == project_id).first()
+                    if proj and proj.status == "completed":
+                        proj.status = "failed"
+                        proj.completed_at = None  # 清掉误写的完成时间
+                    if task_id:
+                        task_row = db.query(Task).filter(Task.id == task_id).first()
+                        if task_row and task_row.status == "completed":
+                            task_row.status = "failed"
+                            task_row.error_message = "未能识别到任何切片片段 (视频过短 或 无有效切点)"
+                    db.commit()
+                    logger.warning(f"0-clip guard: project {project_id} 跑完 6 步但 0 产物, 改标 failed")
+            except Exception as guard_err:
+                logger.warning(f"0-clip guard 写库失败: {guard_err}")
+            return {
+                "success": False,
+                "project_id": project_id,
+                "reason": "no_clips_generated",
+                "message": "未能识别到任何切片片段 (视频过短 或 无有效切点)",
+            }
 
         # 注: 不要把 video_size 清零! raw 删了, 但 video_size 仍记录原文件大小, UI 用来显示"1.2 GB"
         # 之前 v2.1.21 之前清零了, 导致用户看不到原视频多大, 误以为 0 byte

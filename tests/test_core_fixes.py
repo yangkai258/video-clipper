@@ -655,3 +655,40 @@ class TestEtaEstimation:
         assert _estimate_eta_seconds(100, 600) == 0
         # 跑了 800s, progress=100% → 负数 → clamp 0
         assert _estimate_eta_seconds(100, 800) == 0
+
+
+class TestZeroClipGuard:
+    """v2.1.23: 0-clip guard 防止 'completed 但 0 产物' 假成功"""
+
+    def test_pipeline_has_zero_clip_guard(self):
+        """processing.py 必须有 0-clip guard 逻辑"""
+        from pathlib import Path
+        processing_path = Path(__file__).parent.parent / "backend" / "tasks" / "processing.py"
+        content = processing_path.read_text()
+        # 检查 guard 关键字
+        assert "0-clip guard" in content
+        assert "no_clips_generated" in content
+        # 检查 guard 检查的是 clips+collections 长度
+        assert "len(titled_clips) == 0" in content
+        assert "len(collections) == 0" in content
+        # guard 必须把 status 改成 failed 而非 completed
+        guard_block = content[content.find("0-clip guard"):]
+        assert 'status = "failed"' in guard_block
+        # guard 必须有 error_message 提示
+        assert "未能识别到任何切片片段" in guard_block
+
+    @pytest.mark.asyncio
+    async def test_zero_clip_guard_runs_after_db_write(self, client):
+        """guard 必须在 db.commit() 之后运行 (这样才能覆盖 completed 写库)"""
+        from pathlib import Path
+        processing_path = Path(__file__).parent.parent / "backend" / "tasks" / "processing.py"
+        content = processing_path.read_text()
+
+        # 找到 0-clip guard 的位置
+        guard_idx = content.find("0-clip guard")
+        assert guard_idx > 0
+        # 找到 db.commit() (Step 10 那个) 的位置
+        commit_idx = content.find("先提交 clips/collections/project 状态")
+        assert commit_idx > 0
+        # guard 必须在 commit 之后
+        assert guard_idx > commit_idx, "0-clip guard must run after db.commit()"
