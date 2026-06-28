@@ -114,17 +114,16 @@ function StyleManager({ navigate: navProp, location: locProp }) {
 
   return (
     <>
-      <div className="topbar">
-        <div className="topbar-right">
-          <button className="btn btn-primary" onClick={openCreate}>+ 新建风格</button>
-        </div>
-      </div>
-
       <div className="content fade-in">
+        {/* v2.1.40: '新建风格' 按钮从内嵌 topbar 移到 content-header 右侧
+            之前 StyleManager 自己渲染了一个 topbar, 覆盖 App 的全局 topbar, 看着错位 */}
         <div className="content-header">
           <div>
             <div className="content-title">自定义风格</div>
             <div className="content-subtitle">{styles.length} 个 · AI 切片的编辑风格</div>
+          </div>
+          <div className="content-actions">
+            <button className="btn btn-primary" onClick={openCreate}>+ 新建风格</button>
           </div>
         </div>
 
