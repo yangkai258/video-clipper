@@ -32,6 +32,8 @@ function App() {
   const [presets, setPresets] = useState([])
   const [customStyles, setCustomStyles] = useState([])
   const [withSubtitle, setWithSubtitle] = useState(true)
+  // v2.1.28: 输出格式 (处理前确定, 切完不再改)
+  const [outputFormat, setOutputFormat] = useState('original')
   const [activeTab, setActiveTab] = useState('all')
   const [search, setSearch] = useState('')
   const [showTrash, setShowTrash] = useState(false)  // 回收站模式
@@ -153,6 +155,7 @@ function App() {
       const isCustom = strategy.id.startsWith('style_')
       await axios.put(`${API_BASE}/projects/${pendingProject.id}/config`, {
         with_subtitle: withSubtitle,
+        output_format: outputFormat,
         ...(isCustom && {
           style_id: strategy.id,
           strategy_name: strategy.name,
@@ -611,6 +614,34 @@ function App() {
                 <div
                   className={`toggle-switch ${withSubtitle ? 'on' : ''}`}
                   onClick={() => setWithSubtitle(!withSubtitle)}
+                />
+              </div>
+
+              {/* v2.1.28: 输出格式 — 处理前决定, 切完不再改 */}
+              <div className="toggle-row">
+                <div>
+                  <div className="toggle-info-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    📱 输出格式
+                    {outputFormat === '9:16-letterbox' && (
+                      <span style={{
+                        fontSize: 'var(--text-xs)', color: '#06b6d4',
+                        background: 'rgba(6,182,212,0.15)',
+                        padding: '1px var(--space-2)', borderRadius: '999px',
+                        fontWeight: 500
+                      }}>
+                        抖音适配
+                      </span>
+                    )}
+                  </div>
+                  <div className="toggle-info-hint">
+                    {outputFormat === 'original'
+                      ? '🎬 保持原比例 — 直播带货 / 竖屏短视频用'
+                      : '📱 转 9:16 上下黑边 — 横屏电影/解说用, 适合抖音上传'}
+                  </div>
+                </div>
+                <div
+                  className={`toggle-switch ${outputFormat === '9:16-letterbox' ? 'on' : ''}`}
+                  onClick={() => setOutputFormat(outputFormat === '9:16-letterbox' ? 'original' : '9:16-letterbox')}
                 />
               </div>
 

@@ -183,7 +183,6 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
     setSearchParams(next, { replace: true })
   }
   // v2.1.26: 必须放在所有 useEffect 之前! (否则违反 hooks 顺序规则, 会触发整体 unmount)
-  const [updatingFormat, setUpdatingFormat] = useState(false)
   const itemsPerPage = 8
   const lastStatusRef = useRef(null)
   const notifiedRef = useRef(new Set())
@@ -245,26 +244,6 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
       navigate('/')
     } catch (e) {
       alert('删除失败：' + e.message)
-    }
-  }
-
-  // v2.1.26: 改 output_format (后端更新 processing_config.output_format, 不重处理)
-  // useState 在 useEffect 之前已定义 (line 174, 顺序约束)
-  const updateOutputFormat = async (format) => {
-    if (!confirm(`改输出格式为 "${format}", 会影响下次处理。\n\n已有 clip 不会被重新编码,只有重新处理才会用新格式。要现在重处理吗?`)) {
-      // 用户说不要, 只更新 config
-      try {
-        setUpdatingFormat(true)
-        await axios.put(`${API_BASE}/projects/${id}/config`, {
-          ...project.processing_config,
-          output_format: format,
-        })
-        loadProject()
-      } catch (e) {
-        alert('更新失败：' + (e.response?.data?.detail || e.message))
-      } finally {
-        setUpdatingFormat(false)
-      }
     }
   }
 
@@ -488,39 +467,20 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
                   <div className="pda-setting-row"><span>最大切片</span><strong>{cfg.max_clips ? `≤ ${cfg.max_clips} 片` : '—'}</strong></div>
                   <div className="pda-setting-row"><span>字幕</span><strong>{cfg.with_subtitle !== false ? '烧录到视频' : '不烧录'}</strong></div>
                   <div className="pda-setting-row"><span>处理策略</span><strong>{cfg.processing_mode || 'standard'}</strong></div>
-                  {/* v2.1.26: 输出格式选项 (横屏电影 → 9:16 letterbox 等) */}
+                  {/* v2.1.28: 输出格式 — 处理前在上传策略 modal 选定, 切完不可改 */}
                   <div className="pda-setting-row">
                     <span>输出格式</span>
                     <strong style={{ color: cfg.output_format && cfg.output_format !== 'original' ? '#06b6d4' : undefined }}>
                       {cfg.output_format === '9:16-letterbox' ? '📱 9:16 上下黑边 (抖音适配)' : cfg.output_format === '9:16-smart-crop' ? '📱 9:16 智能裁剪 (TODO)' : '🎬 保持原比例'}
                     </strong>
                   </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted, rgba(255,255,255,0.45))', marginTop: '4px' }}>
+                    💡 输出格式在上传时确定, 切完不可改 (改的话需要重新上传)
+                  </div>
                   {project.video_width && project.video_height && (
                     <div className="pda-setting-row">
                       <span>视频尺寸</span>
                       <strong>{project.video_width}×{project.video_height} ({orientationLabel[getOrientation(project.video_width, project.video_height)]})</strong>
-                    </div>
-                  )}
-                  <div className="pda-setting-row" style={{ marginTop: '12px' }}>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => updateOutputFormat('original')}
-                      disabled={updatingFormat || cfg.output_format === 'original'}
-                    >
-                      🎬 保持原比例
-                    </button>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => updateOutputFormat('9:16-letterbox')}
-                      disabled={updatingFormat || cfg.output_format === '9:16-letterbox'}
-                      style={{ marginLeft: '8px' }}
-                    >
-                      📱 转 9:16 (letterbox)
-                    </button>
-                  </div>
-                  {(cfg.output_format === '9:16-letterbox') && (
-                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                      💡 横屏视频会被上下加黑边变成 9:16 (适合抖音);竖屏视频保持不变
                     </div>
                   )}
                 </div>

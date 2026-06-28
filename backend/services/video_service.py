@@ -396,6 +396,7 @@ def cut_clips(clips: List[Dict], input_video: Path, output_dir: Path, input_srt:
             logger.warning(f"项目封面生成失败（非阻塞）：{e}")
 
 
+
 def merge_collections(collections: List[Dict], clips_dir: Path, output_dir: Path, task_id: str = None):
     """合并合集
     
