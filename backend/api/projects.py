@@ -237,6 +237,7 @@ async def list_projects(
                 "description": p.description,
                 "status": p.status,
                 "video_duration": p.video_duration,
+                "video_size": p.video_size,  # v2.1.22 修: list 漏返 video_size 导致 UI 显示 None
                 "clip_count": len(p.clips),
                 "collection_count": len(p.collections),
                 "created_at": to_iso_utc(p.created_at),
