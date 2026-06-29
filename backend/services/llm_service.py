@@ -1,4 +1,4 @@
-"""LLM 服务 - 大纲提取、时间线创建等"""
+﻿"""LLM 服务 - 大纲提取、时间线创建等"""
 import json
 import logging
 import re
@@ -353,7 +353,9 @@ def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_con
     if len(srt_compact) > MAX_CHARS:
         logger.warning(f"SRT 紧凑格式 {len(srt_compact)} 字符超过 {MAX_CHARS}，按比例截取")
         # 等比例采样：每 N 条取一条
-        step = len(parsed_segments) * len(srt_compact) // MAX_CHARS // 2 + 1
+        # ponytail: 原公式多乘了 len(parsed_segments) -> 1.5GB SRT (~5000 段 / 150k 字符) 算出 step=7651, 几乎全跳过. 正确 stride = 整串字符 / 目标字符.
+        # 已知上限: 采样会丢时间轴连续性, 超大 SRT (>>1GB) 仍可能 LLM 截断 -> 真彻底解是 P2#8 改分块
+        step = len(srt_compact) // MAX_CHARS + 1
         sampled = parsed_segments[::step]
         srt_compact = "\n".join(
             f"[{seg['start']:.1f}-{seg['end']:.1f}] {seg['text']}"
