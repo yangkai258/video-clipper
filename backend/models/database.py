@@ -156,6 +156,8 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+    # ponytail: heartbeat for task_health watchdog (P0#2)
+    progress_changed_at = Column(DateTime, nullable=True)
     
     # 关系
     project = relationship("Project", back_populates="tasks")

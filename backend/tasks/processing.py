@@ -31,6 +31,8 @@ def _update_task_progress(task_id: str, progress: int, current_step: str) -> Non
             if task:
                 task.progress = max(0, min(100, progress))
                 task.current_step = current_step[:255]  # 列宽保护
+                # ponytail: heartbeat for task_health watchdog (replaces v2.1.18 hard 30min cutoff)
+                task.progress_changed_at = datetime.utcnow()
                 db.commit()
     except Exception as e:
         logger.warning(f"进度更新失败 (progress={progress}, step={current_step}): {e}")
