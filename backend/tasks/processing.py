@@ -582,6 +582,10 @@ def _mark_project_completed(project_id: str, task_id: str) -> None:
                 task_row.status = "completed"
                 task_row.completed_at = datetime.utcnow()
                 task_row.progress = PROGRESS_DICT["complete"]
+                # v2.2.1: 实际总耗时归集 (completed_at - started_at)
+                # 跟 estimated_total_at_start_seconds 一起, 后续做预估模型
+                if task_row.started_at:
+                    task_row.actual_total_seconds = (datetime.utcnow() - task_row.started_at).total_seconds()
 
         db.commit()
 

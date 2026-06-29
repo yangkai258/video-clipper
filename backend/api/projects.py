@@ -68,6 +68,9 @@ async def list_projects(
             task_fields = {
                 "progress": td.get("progress", 0),
                 "current_step": td.get("current_step"),
+                # v2.2.1: 预估/实际归集字段透出, 后续做更好预估模型
+                "estimated_total_at_start_seconds": td.get("estimated_total_at_start_seconds"),
+                "actual_total_seconds": td.get("actual_total_seconds"),
                 "timing": {
                     "elapsed_seconds": td.get("elapsed_seconds", 0),
                     "eta_seconds": td.get("eta_seconds"),
@@ -439,12 +442,19 @@ def _ensure_video_file_exists(video_path: Path) -> None:
 
 async def _create_processing_task(db: AsyncSession, project_id: str) -> Task:
     """创建视频处理任务的 Task 记录。"""
+    # v2.2.1: 启动时存 estimated_total, 后续数据归集得更好预估模型
+    # progress=0 时一次性算, 不被 progress 涨影响 (避免归集时被
+    # "中途被调过" 的 total_estimated_seconds 干扰)
+    project = await _load_project_basic(db, project_id)
+    estimated_total = _estimate_eta_seconds(project.video_duration if project else None)
+
     task = Task(
         id=str(uuid.uuid4()),
         project_id=project_id,
         task_type="video_processing",
         name="视频处理流水线",
         status="pending",
+        estimated_total_at_start_seconds=estimated_total,
     )
     db.add(task)
     await db.commit()
@@ -558,6 +568,11 @@ def _task_to_dict(task: Task, video_duration_seconds: float = None) -> dict:
         "error_message": task.error_message,
         "started_at": to_iso_utc(task.started_at),
         "completed_at": to_iso_utc(task.completed_at),
+        # v2.2.1: 预估 vs 实际归集 — estimated_total_at_start_seconds 是启动时
+        # 一次性算的 (不被 progress 涨影响), actual_total_seconds 是完成后
+        # (completed_at - started_at) 的真实秒数。后续做预估模型直接用这俩。
+        "estimated_total_at_start_seconds": task.estimated_total_at_start_seconds,
+        "actual_total_seconds": task.actual_total_seconds,
         **_build_timing_info(task, video_duration_seconds),
     }
 

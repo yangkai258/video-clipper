@@ -158,7 +158,13 @@ class Task(Base):
     completed_at = Column(DateTime, nullable=True)
     # 最近一次进度/心跳变化时间, task_health watchdog 用来判断真卡死
     progress_changed_at = Column(DateTime, nullable=True)
-    
+
+    # v2.2.1: 预估 vs 实际时长归集 (后续数据归集得更好预估模型)
+    # 启动时记的预估总时长 (progress=0 时, 用 _estimate_eta_seconds(video_duration) 算)
+    estimated_total_at_start_seconds = Column(Float, nullable=True)
+    # 跑完时记的实际总耗时 (completed_at - started_at)
+    actual_total_seconds = Column(Float, nullable=True)
+
     # 关系
     project = relationship("Project", back_populates="tasks")
 

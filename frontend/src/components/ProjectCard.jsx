@@ -73,6 +73,18 @@ export default function ProjectCard({ project, onStart, onDelete }) {
           <span className={`subtitle-pill ${hasSubtitle ? 'subtitle-pill-on' : 'subtitle-pill-off'}`}>
             <span className="subtitle-pill-icon"><Icon name="tag" size={10} /></span>
           </span>
+          {/* v2.2.1: completed task 显示 预估 vs 实际 (启动时一次性算的 vs 真实耗时),
+              后续数据归集得更好预估模型时, 这个对比给用户直观感受 */}
+          {p.status === 'completed' && (p.estimated_total_at_start_seconds || p.actual_total_seconds) && (
+            <span className="estimate-vs-actual" title={
+              `预估: ${formatDuration(p.estimated_total_at_start_seconds)}\n实际: ${formatDuration(p.actual_total_seconds)}`
+            }>
+              <Icon name="clock" size={10} />
+              {p.estimated_total_at_start_seconds ? formatDuration(p.estimated_total_at_start_seconds) : '?'}
+              {' → '}
+              <b>{formatDuration(p.actual_total_seconds)}</b>
+            </span>
+          )}
         </div>
         <div className="reel-card-stats">
           <div className="reel-card-stat">
