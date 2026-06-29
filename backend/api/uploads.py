@@ -24,7 +24,7 @@ from fastapi import Depends
 from ..core.config import settings
 from ..core.database import get_db
 from ..models.database import Project
-from .projects import _get_last_subtitle_style  # 复用：从用户偏好读字幕配置
+from ..services.subtitle_preferences import get_last_subtitle_style
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
             pass
 
     # create project record (v2.1.26: ffprobe width/height for orientation)
-    subtitle_style = await _get_last_subtitle_style(db)
+    subtitle_style = await get_last_subtitle_style(db)
     from ..services.ffprobe_helper import get_video_dimensions
     dims = get_video_dimensions(video_path)
     project = Project(
