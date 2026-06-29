@@ -7,27 +7,27 @@
   --text-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Display', system-ui, sans-serif;
   --text-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, ui-monospace, monospace;
 
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-7: 32px;
-  --space-8: 48px;
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.25rem;  /* 20px */
+  --space-6: 1.5rem;   /* 24px */
+  --space-7: 2rem;     /* 32px */
+  --space-8: 3rem;     /* 48px */
 
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 13px;
-  --text-md: 14px;
-  --text-lg: 16px;
-  --text-xl: 20px;
-  --text-2xl: 28px;
+  --text-xs: 0.6875rem;  /* 11px */
+  --text-sm: 0.75rem;    /* 12px */
+  --text-base: 0.8125rem; /* 13px */
+  --text-md: 0.875rem;   /* 14px */
+  --text-lg: 1rem;       /* 16px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.75rem;   /* 28px */
 
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
+  --radius-sm: 0.5rem;   /* 8px */
+  --radius-md: 0.875rem; /* 14px */
+  --radius-lg: 1.25rem;  /* 20px */
+  --radius-xl: 1.75rem;  /* 28px */
 
   /* v2.1.9 Glass 2.0: 通用玻璃面板 */
   --glass-bg-dark: rgba(19, 19, 22, 0.55);
@@ -36,14 +36,19 @@
   --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10);
   --glass-shadow-dark: 0 8px 32px rgba(0, 0, 0, 0.32);
   --glass-shadow-light: 0 8px 32px rgba(0, 0, 0, 0.08);
-  --radius-xl: 12px;
 
   --transition-fast: 0.1s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 
-  --sidebar-width: 240px;
-  --topbar-height: 52px;
+  --sidebar-width: 15rem;   /* 240px */
+  --topbar-height: 3.25rem; /* 52px */
+}
+
+
+/* ponytail: 4K 屏 (>= 2560px) 字号放大 1.2x, 4K 不再显得过小, 1080/2K 不受影响 */
+@media (min-width: 2560px) {
+  html { font-size: 1.2em; }
 }
 
 /* === 深色主题（默认） === */
@@ -666,7 +671,7 @@ body {
   gap: 6px;
   padding: 3px 8px 3px 6px;
   background: var(--bg-glass);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.25));
   border-radius: 999px;
   border: var(--glass-border);
   font-size: 11px;
@@ -799,8 +804,8 @@ body {
   font-size: var(--text-sm);
   /* 列表项轻毛玻璃 (v2.1.9 glass 2.0) */
   background: var(--bg-glass);
-  backdrop-filter: blur(12px) saturate(180%);
-  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.375)) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--blur-strength) * 0.375)) saturate(180%);
   margin: 0;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
@@ -1057,8 +1062,8 @@ body {
   cursor: pointer;
   border: 1px solid var(--btn-border, rgba(255, 255, 255, 0.1));
   background: var(--btn-bg, rgba(255, 255, 255, 0.06));
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--blur-strength) * 0.625)) saturate(180%);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.625)) saturate(180%);
   color: var(--btn-fg, var(--text-bright));
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
               background 180ms ease,
@@ -1214,8 +1219,8 @@ body {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.125));
+  -webkit-backdrop-filter: blur(calc(var(--blur-strength) * 0.125));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1627,8 +1632,8 @@ input[type="color"] {
 /* === Theme Toggle (顶栏亮暗切换按钮) === */
 .theme-toggle {
   background: var(--bg-glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.375));
+  -webkit-backdrop-filter: blur(calc(var(--blur-strength) * 0.375));
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 6px 10px;
@@ -1771,7 +1776,7 @@ input[type="color"] {
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.125));
 }
 .modal {
   background: var(--bg-elevated);
@@ -1996,8 +2001,8 @@ input[type="color"] {
 .pda-metric {
   padding: 14px 18px;
   background: var(--bg-overlay);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.625)) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--blur-strength) * 0.625)) saturate(180%);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -2030,8 +2035,8 @@ input[type="color"] {
 .pda-progress-card {
   padding: 18px 20px;
   background: linear-gradient(135deg, var(--accent-soft), transparent), var(--bg-overlay);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.625)) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--blur-strength) * 0.625)) saturate(180%);
   border: 1px solid var(--accent);
   border-radius: 14px;
   display: flex;
@@ -2297,7 +2302,7 @@ input[type="color"] {
   background: rgba(0, 0, 0, 0.5);
   padding: 3px 8px;
   border-radius: 4px;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.125));
   /* v2.1.48: 不再 margin-bottom (由 absolute bottom 控) */
 }
 .pda-clip-video {
@@ -2402,8 +2407,8 @@ input[type="color"] {
 /* 侧栏卡 */
 .pda-side-card {
   background: var(--bg-overlay);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(calc(var(--blur-strength) * 0.625)) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--blur-strength) * 0.625)) saturate(180%);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   padding: 16px 18px;
