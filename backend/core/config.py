@@ -5,7 +5,11 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """应用配置"""
+    """应用配置
+
+    自动从 BASE_DIR/.env 读取环境变量 (v2.1.24 fix: 之前没指定 _env_file,
+    手动启动 uvicorn 时 MINIMAX_API_KEY 等 key 读不到, LLM 调用全失败)
+    """
     
     # 基础配置
     APP_NAME: str = "Video Clipper"
@@ -28,9 +32,14 @@ class Settings(BaseSettings):
     # Celery Worker 队列配置
     CELERY_QUEUE_NAME: str = os.getenv("CELERY_QUEUE_NAME", "processing")
     
-    # AI 配置
+    # AI 配置 - MiniMax（主）
+    MINIMAX_API_KEY: str = os.getenv("MINIMAX_API_KEY", "")
+    MINIMAX_BASE_URL: str = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
+    MINIMAX_MODEL: str = os.getenv("MINIMAX_MODEL", "MiniMax-Text-01")
+
+    # AI 配置 - DashScope（保留兼容，备用）
     DASHSCOPE_API_KEY: str = os.getenv("DASHSCOPE_API_KEY", "")
-    MODEL_NAME: str = "qwen3.5-plus"
+    MODEL_NAME: str = os.getenv("LEGACY_MODEL_NAME", "qwen3.5-plus")  # 旧字段，保留兼容
     
     # 语音识别配置
     SPEECH_RECOGNITION_METHOD: str = "auto"
@@ -49,11 +58,18 @@ class Settings(BaseSettings):
     MAX_CLIP_DURATION: int = 600
     MIN_SCORE_THRESHOLD: float = 0.7
     
-    # 上传配置
-    MAX_UPLOAD_SIZE: int = 2 * 1024 * 1024 * 1024
-    ALLOWED_VIDEO_EXTENSIONS: list = ["mp4", "mov", "avi", "mkv", "flv", "webm"]
+    # 上传配置（extensions 标准化为小写不带点）
+    MAX_UPLOAD_SIZE: int = 5 * 1024 * 1024 * 1024  # 5GB
+    ALLOWED_VIDEO_EXTENSIONS: tuple = (".mp4", ".mov", ".avi", ".mkv", ".flv", ".webm", ".m4v")
+
+    def is_allowed_video_ext(self, ext: str) -> bool:
+        """判断扩展名是否允许（大小写不敏感，自动补点）"""
+        ext = ext.lower().lstrip(".")
+        return f".{ext}" in self.ALLOWED_VIDEO_EXTENSIONS
     
     class Config:
+        env_file = str(Path(__file__).parent.parent.parent / ".env")
+        env_file_encoding = "utf-8"
         extra = "ignore"
 
 

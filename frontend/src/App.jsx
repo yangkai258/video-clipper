@@ -1,23 +1,53 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import axios from 'axios'
+import { ChunkedUploader, formatBytes, formatSpeed, formatTime } from './ChunkedUploader'
+import WatchFolders from './pages/WatchFolders'
+import StyleManager from './pages/StyleManager'
+import ProjectDetail from './pages/ProjectDetail'
+import ThemeToggle from './ThemeToggle'
+import Icon from './Icon'
 import './index.css'
+
+// 把秒数格式化成 "MM:SS" 或 "HH:MM:SS"
+// 例: 90 → "01:30", 3661 → "01:01:01"
+function formatDuration(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds || 0))
+  const hh = Math.floor(s / 3600)
+  const mm = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const pad = (n) => String(n).padStart(2, '0')
+  if (hh > 0) return `${hh}:${pad(mm)}:${pad(ss)}`
+  return `${pad(mm)}:${pad(ss)}`
+}
 
 function App() {
   const [projects, setProjects] = useState([])
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadProgress, setUploadProgress] = useState({ received: 0, total: 0, speed: 0 })
+  const [uploadState, setUploadState] = useState('idle')  // idle | uploading | pausing | paused | resuming | finalizing | done | error
+  const [uploadError, setUploadError] = useState('')
+  const uploaderRef = useRef(null)
   const [showStrategyModal, setShowStrategyModal] = useState(false)
   const [pendingProject, setPendingProject] = useState(null)
   const [presets, setPresets] = useState([])
   const [customStyles, setCustomStyles] = useState([])
+  const [withSubtitle, setWithSubtitle] = useState(true)
+  // v2.1.28: 输出格式 (处理前确定, 切完不再改)
+  const [outputFormat, setOutputFormat] = useState('original')
+  const [activeTab, setActiveTab] = useState('all')
+  const [search, setSearch] = useState('')
+  const [showTrash, setShowTrash] = useState(false)  // 回收站模式
+  const [trashProjects, setTrashProjects] = useState([])
+  const [showWatchFolders, setShowWatchFolders] = useState(false)  // watch folder 视图
   const navigate = useNavigate()
+  const location = useLocation()
 
   const API_BASE = '/api/v1'
 
-  // 版本标识
+  // v2.1.51: VERSION_LABEL 读 vite 启动注入的 __APP_VERSION__, 不再写死 v1.0/v1.1-beta
   const isBeta = window.location.port === '3030'
-  const VERSION_LABEL = isBeta ? '🧪 测试版 v1.1-beta' : '✅ 正式版 v1.0'
+  const VERSION_LABEL = `${isBeta ? '测试版' : '正式版'} ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}`
   const VERSION_CLASS = isBeta ? 'version-beta' : 'version-release'
 
   // 加载项目列表
@@ -25,76 +55,115 @@ function App() {
     try {
       const res = await axios.get(`${API_BASE}/projects/`)
       setProjects(res.data.projects)
-    } catch (error) {
-      console.error('加载项目失败:', error)
+    } catch (e) {
+      console.error('加载项目失败:', e)
     }
   }
 
-  // 加载预设策略和自定义风格
+  const loadTrash = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/projects/?include_deleted=true`)
+      setTrashProjects((res.data.projects || []).filter(p => p.deleted_at))
+    } catch (e) {
+      console.error('加载回收站失败:', e)
+    }
+  }
+
   const loadStrategies = async () => {
     try {
-      const [presetsRes, stylesRes] = await Promise.all([
+      const [p, s] = await Promise.all([
         axios.get(`${API_BASE}/strategies/presets`),
         axios.get(`${API_BASE}/styles`)
       ])
-      setPresets(presetsRes.data.strategies)
-      setCustomStyles(stylesRes.data)
-    } catch (error) {
-      console.error('加载策略失败:', error)
-    }
+      setPresets(p.data.strategies)
+      setCustomStyles(s.data)
+    } catch (e) { console.error(e) }
   }
 
   useEffect(() => {
     loadProjects()
     loadStrategies()
+    const id = setInterval(loadProjects, 5000)
+    return () => clearInterval(id)
   }, [])
 
-  // 处理文件上传
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
+    // 重置 input，下次选同一个文件能触发 change
+    e.target.value = ''
 
-    const name = prompt('请输入项目名称:', file.name.split('.')[0])
+    const name = prompt('项目名称：', file.name.replace(/\.[^/.]+$/, ''))
     if (!name) return
-
     setUploading(true)
-    setUploadProgress(0)
+    setUploadError('')
+    setUploadProgress({ received: 0, total: file.size, speed: 0 })
+    setUploadState('uploading')
 
-    const formData = new FormData()
-    formData.append('name', name)
-    formData.append('video', file)
+    const uploader = new ChunkedUploader({
+      file: new File([file], filename_safe(name) + ext_of(file.name), { type: file.type }),
+      onProgress: (p) => setUploadProgress(p),
+      onState: (s, extra) => {
+        setUploadState(s)
+        if (s === 'error') setUploadError(extra?.error || '未知错误')
+      },
+      onDone: (data) => {
+        setUploading(false)
+        setUploadState('done')
+        setPendingProject({ id: data.project_id, name })
+        setShowStrategyModal(true)
+        loadProjects()
+      },
+      onError: (err) => {
+        // 错误时不要隐藏进度条——让用户看到错误信息
+        setUploadState('error')
+        setUploadError(err.message)
+      },
+    })
+    uploaderRef.current = uploader
+    uploader.start()
+  }
 
-    try {
-      const res = await axios.post(`${API_BASE}/projects/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-          setUploadProgress(percent)
-        },
-      })
-
-      const projectId = res.data.project_id
-      setPendingProject({ id: projectId, name })
-      setShowStrategyModal(true)  // 上传成功后显示策略选择
-      
-      setUploading(false)
-      loadProjects()
-    } catch (error) {
-      alert(`上传失败：${error.response?.data?.detail || error.message}`)
-      setUploading(false)
+  const handlePause = () => {
+    if (uploaderRef.current && uploadState === 'uploading') {
+      uploaderRef.current.pause()
+      setUploadState('paused')
     }
   }
 
-  // 选择策略并开始处理
+  const handleResume = () => {
+    if (uploaderRef.current && uploadState === 'paused') {
+      setUploadState('resuming')
+      uploaderRef.current.resume()
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!uploaderRef.current) return
+    if (!confirm('确定取消上传吗？已传的分片会丢失。')) return
+    await uploaderRef.current.cancel()
+    setUploading(false)
+    setUploadState('idle')
+    setUploadProgress({ received: 0, total: 0, speed: 0 })
+  }
+
+  function filename_safe(s) {
+    return s.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80) || 'untitled'
+  }
+  function ext_of(name) {
+    const i = name.lastIndexOf('.')
+    return i > 0 ? name.slice(i) : ''
+  }
+
   const selectStrategy = async (strategy) => {
     if (!pendingProject) return
-
     setShowStrategyModal(false)
-    
-    // 如果是自定义风格，先更新项目配置
-    if (strategy.id.startsWith('style_')) {
-      try {
-        await axios.put(`${API_BASE}/projects/${pendingProject.id}/config`, {
+    try {
+      const isCustom = strategy.id.startsWith('style_')
+      await axios.put(`${API_BASE}/projects/${pendingProject.id}/config`, {
+        with_subtitle: withSubtitle,
+        output_format: outputFormat,
+        ...(isCustom && {
           style_id: strategy.id,
           strategy_name: strategy.name,
           target_duration: strategy.target_duration,
@@ -104,303 +173,655 @@ function App() {
           content_guidelines: strategy.content_guidelines,
           keep_rules: strategy.keep_rules,
           remove_rules: strategy.remove_rules,
-          style_positioning: strategy.style_positioning
+          style_positioning: strategy.style_positioning,
+          subtitle_style: strategy.subtitle_config || null,
         })
-      } catch (error) {
-        console.error('更新配置失败:', error)
-      }
-    }
+      })
+    } catch (e) { console.error('配置失败：', e) }
 
-    // 开始处理
     try {
-      const processRes = await axios.post(`${API_BASE}/projects/${pendingProject.id}/process`)
-      alert(`✅ 处理已开始！\n策略：${strategy.name}\n任务 ID: ${processRes.data.task_id}`)
-    } catch (error) {
-      alert(`⚠️ 处理启动失败：${error.response?.data?.detail || error.message}`)
+      await axios.post(`${API_BASE}/projects/${pendingProject.id}/process`)
+      loadProjects()
+    } catch (e) {
+      alert(`处理失败：${e.response?.data?.detail || e.message}`)
     }
-    
     setPendingProject(null)
   }
 
-  // 开始处理（项目列表）
-  const startProcessing = async (projectId) => {
-    if (!confirm('确定要开始处理这个项目吗？')) return
-
+  const startProcessing = async (id) => {
     try {
-      const res = await axios.post(`${API_BASE}/projects/${projectId}/process`)
-      alert(`处理已开始！\n任务 ID: ${res.data.task_id}`)
+      await axios.post(`${API_BASE}/projects/${id}/process`)
       loadProjects()
-    } catch (error) {
-      alert(`处理失败：${error.response?.data?.detail || error.message}`)
+    } catch (e) {
+      alert(`启动失败：${e.response?.data?.detail || e.message}`)
     }
   }
 
-  // 删除项目
-  const deleteProject = async (projectId, projectName) => {
-    if (!confirm(`确定要删除项目 "${projectName}" 吗？此操作不可恢复。`)) return
-
+  const deleteProject = async (id, name, permanent = false) => {
+    const msg = permanent
+      ? `确定永久删除「${name}」？此操作不可恢复！`
+      : `确定删除「${name}」？会移到回收站，30 天内可恢复。`
+    if (!confirm(msg)) return
     try {
-      await axios.delete(`${API_BASE}/projects/${projectId}`)
-      alert('项目已删除')
+      await axios.delete(`${API_BASE}/projects/${id}${permanent ? '?permanent=true' : ''}`)
       loadProjects()
-    } catch (error) {
-      alert(`删除失败：${error.message}`)
+    } catch (e) {
+      const detail = e.response?.data?.detail || e.message
+      if (e.response?.status === 409) {
+        // processing 中 → 提示用户
+        if (confirm(`${detail}\n\n是否强制永久删除（会撤销 celery task）？`)) {
+          return deleteProject(id, name, true)
+        }
+      } else {
+        alert(`删除失败：${detail}`)
+      }
     }
   }
 
-  // 获取状态标签样式
-  const getStatusClass = (status) => {
-    switch (status) {
-      case 'completed': return 'status-completed'
-      case 'processing': return 'status-processing'
-      case 'failed': return 'status-error'
-      default: return 'status-pending'
-    }
+  const restoreProject = async (id) => {
+    try {
+      await axios.post(`${API_BASE}/projects/${id}/restore`)
+      loadProjects()
+    } catch (e) { alert(`恢复失败：${e.response?.data?.detail || e.message}`) }
   }
 
-  // 获取状态文案
-  const getStatusText = (status, currentStep) => {
-    switch (status) {
-      case 'completed': return '✅ 已完成'
-      case 'processing': return `⏳ ${currentStep || '处理中'}`
-      case 'failed': return '❌ 失败'
-      default: return '⏸️ 待处理'
-    }
+  const purgeTrash = async () => {
+    if (!confirm('永久删除 30 天前的回收站项目？此操作不可恢复。')) return
+    try {
+      const res = await axios.post(`${API_BASE}/projects/trash/cleanup?older_than_days=30`)
+      alert(`已清理 ${res.data.cleaned_count} 个项目`)
+      loadProjects()
+    } catch (e) { alert(`清理失败：${e.message}`) }
+  }
+
+  // v2.1.41: 立即清空所有回收站 (不只是 30 天前)
+  const purgeAllTrash = async () => {
+    if (!confirm(`永久删除回收站里全部 ${trashProjects.length} 个项目？此操作不可恢复！`)) return
+    try {
+      const res = await axios.post(`${API_BASE}/projects/trash/purge-all`)
+      alert(`已清理 ${res.data.cleaned_count} 个项目`)
+      loadTrash()
+    } catch (e) { alert(`清理失败：${e.message}`) }
+  }
+
+  const formatTC = (s) => {
+    if (!s) return '00:00'
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  }
+
+  const formatDate = (iso) => {
+    if (!iso) return '—'
+    // 后端 to_iso_utc 已加 'Z', 前端不要再加, 否则 'Z'+'Z' = Invalid Date
+    const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
+    if (isNaN(d.getTime())) return '—'
+    return d.toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+    })
+  }
+
+  const statusLabel = {
+    pending: '待处理',
+    processing: '处理中',
+    completed: '已完成',
+    failed: '失败'
+  }
+
+  const filteredProjects = projects.filter(p => {
+    if (activeTab === 'all') return true
+    if (activeTab === 'processing') return p.status === 'processing'
+    if (activeTab === 'completed') return p.status === 'completed'
+    if (activeTab === 'failed') return p.status === 'failed'
+    if (activeTab === 'pending') return p.status === 'pending'
+    return true
+  }).filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()))
+
+  const counts = {
+    all: projects.length,
+    processing: projects.filter(p => p.status === 'processing').length,
+    completed: projects.filter(p => p.status === 'completed').length,
+    failed: projects.filter(p => p.status === 'failed').length,
+    pending: projects.filter(p => p.status === 'pending').length,
   }
 
   return (
-    <div className="container fade-in">
-      {/* 版本标识 */}
-      <div className={`version-badge ${VERSION_CLASS}`}>{VERSION_LABEL}</div>
-      
-      {/* 页面标题 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>🎬 Video Clipper - 智能视频切片</h1>
-        <button className="btn btn-secondary" onClick={() => navigate('/styles')} style={{ fontSize: 'var(--text-sm)', padding: '8px 16px' }}>
-          ✂️ 风格管理
-        </button>
-      </div>
-      
-      {/* 上传区域 */}
-      <div className="upload-zone">
-        <h3>上传视频</h3>
-        <p style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
-          支持 MP4、MOV、AVI、MKV 等格式
-        </p>
-        <input 
-          type="file" 
-          accept="video/*" 
-          onChange={handleUpload}
-          disabled={uploading}
-          style={{ marginTop: '16px' }}
-        />
-        {uploading && (
-          <div className="progress-container">
-            <div className="progress-bar">
-              <div className="progress-fill" style={{ width: `${uploadProgress}%` }}></div>
-            </div>
-            <div className="progress-text">上传中：{uploadProgress}%</div>
-          </div>
-        )}
-      </div>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-mark">VC</div>
+          <div className="sidebar-brand-name">视频切片工具</div>
+        </div>
 
-      {/* 项目列表 */}
-      <h2>项目列表 ({projects.length})</h2>
-      
-      {projects.length > 0 ? (
-        <div className="project-grid">
-          {projects.map(project => (
-            <div key={project.id} className="card fade-in">
-              {/* 卡片头部 */}
-              <div className="project-card-header">
-                <h3 className="project-title">{project.name}</h3>
-                <span className={`status-badge ${getStatusClass(project.status)}`}>
-                  {getStatusText(project.status, project.current_step)}
-                </span>
-              </div>
-              
-              {/* 进度条 */}
-              {project.status === 'processing' && (
-                <div className="progress-container">
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${project.progress || 0}%` }}></div>
+        <button
+          className={`nav-item ${(location.pathname === '/' || location.pathname.startsWith('/project/')) && !showTrash && !showWatchFolders ? 'active' : ''}`}
+          onClick={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/') }}
+        >
+          <span className="nav-item-icon"><Icon name="list" /></span>
+          切片项目
+        </button>
+        <button
+          className={`nav-item ${showTrash ? 'active' : ''}`}
+          onClick={() => { navigate('/'); setShowTrash(true); setShowWatchFolders(false); loadTrash() }}
+        >
+          <span className="nav-item-icon"><Icon name="trash" /></span>
+          回收站
+        </button>
+        <button
+          className={`nav-item ${location.pathname === '/styles' && !showTrash && !showWatchFolders ? 'active' : ''}`}
+          onClick={() => { navigate('/styles'); setShowTrash(false); setShowWatchFolders(false) }}
+        >
+          <span className="nav-item-icon"><Icon name="edit" /></span>
+          风格管理
+        </button>
+        <button
+          className={`nav-item ${showWatchFolders ? 'active' : ''}`}
+          onClick={() => { navigate('/'); setShowWatchFolders(true); setShowTrash(false) }}
+        >
+          <span className="nav-item-icon"><Icon name="folder" /></span>
+          监控文件夹
+        </button>
+
+        <div className="sidebar-bottom">
+          <div className="user-chip">
+            <div className="user-avatar">U</div>
+            <div>
+              <div className="user-name">工作台</div>
+              <div className="user-status">● 在线</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main className="main">
+        <div className="topbar">
+          <div className="topbar-left">
+            <span className="breadcrumb">
+              {location.pathname.startsWith('/project/') ? (
+                <>
+                  <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}><Icon name="chevronLeft" size={11} style={{ verticalAlign: '-1px', marginRight: 2 }} />返回</button>
+                  <span className="breadcrumb-sep">/</span>
+                  <span className="page-title">项目详情</span>
+                </>
+              ) : (
+                <>
+                  <span>工作台</span>
+                  <span className="breadcrumb-sep">/</span>
+                  <span className="page-title">
+                    {location.pathname === '/styles' ? '风格管理'
+                      : showWatchFolders ? '监控文件夹'
+                      : showTrash ? '回收站'
+                      : '切片项目'}
+                  </span>
+                </>
+              )}
+            </span>
+          </div>
+          <div className="topbar-right">
+            <input
+              className="search-input"
+              type="text"
+              placeholder="搜索项目..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <ThemeToggle />
+            <label className="btn btn-primary upload-compact">
+              {/* v2.1.35: SVG 替换 unicode ⏵, 玻璃按钮上的 emoji 看着糙 */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span>新建切片</span>
+              <input type="file" accept="video/*" onChange={handleUpload} disabled={uploading} />
+            </label>
+            {uploading && (
+              <UploadProgressBar
+                state={uploadState}
+                progress={uploadProgress}
+                error={uploadError}
+                onPause={handlePause}
+                onResume={handleResume}
+                onCancel={handleCancel}
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="content fade-in">
+          {/* 路径优先分发: 项目详情 / 风格管理 / 监控 / 回收站 / 主列表 */}
+          {location.pathname.startsWith('/project/') ? (
+            <ProjectDetailInShell />
+          ) : location.pathname === '/styles' ? (
+            <StyleManager navigate={navigate} location={location} />
+          ) : showWatchFolders ? (
+            <WatchFolders />
+          ) : showTrash ? (
+            // === 回收站视图 ===
+            <>
+              <div className="content-header">
+                <div>
+                  <div className="content-title">回收站</div>
+                  <div className="content-subtitle">
+                    {trashProjects.length} 个已删除项目 · 30 天后自动清理
                   </div>
-                  <div className="progress-text">
-                    {project.progress || 0}% · {project.estimated_remaining || '剩余时间未知'}
+                </div>
+                <div className="content-actions">
+                  <button className="btn btn-ghost btn-sm btn-danger" onClick={purgeAllTrash} disabled={trashProjects.length === 0}>
+                    清空回收站
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={purgeTrash}>
+                    清理 30 天前的
+                  </button>
+                </div>
+              </div>
+              {trashProjects.length > 0 ? (
+                <div className="reel-list">
+                  {trashProjects.map(p => (
+                    <div key={p.id} className="reel-row" data-status="deleted" style={{ opacity: 0.7 }}>
+                      <div className="reel-status-dot" />
+                      <div className="reel-name">{p.name}</div>
+                      <span className="status-pill" data-status="deleted">已删除</span>
+                      <div className="reel-cell">{formatTC(p.video_duration)}</div>
+                      <div className="reel-cell">{p.clip_count || 0} 个切片</div>
+                      <div className="reel-cell" style={{ fontSize: 'var(--text-xs)' }}>
+                        {p.deleted_at ? formatDate(p.deleted_at) : '—'}
+                      </div>
+                      <div className="reel-actions" onClick={e => e.stopPropagation()}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => restoreProject(p.id)}>↻ 恢复</button>
+                        <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name, true)}>永久删</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty">
+                  <div className="empty-icon"><Icon name="trash" size={32} /></div>
+                  <div className="empty-title">回收站是空的</div>
+                  <div className="empty-hint">删除的项目会在这里，30 天内可恢复</div>
+                </div>
+              )}
+            </>
+          ) : (
+            // === 正常项目列表 ===
+            <>
+              {/* v2.1.11: Hero 行 — 信息卡 + metric (按钮在 topbar) */}
+              <div className="hero-row">
+                <div className="hero-card">
+                  <div className="hero-card-icon"><Icon name="film" size={20} /></div>
+                  <div className="hero-card-body">
+                    <div className="hero-card-title">
+                      {uploading ? `上传中 ${uploadProgress}%` : '视频切片 AI'}
+                    </div>
+                    <div className="hero-card-sub">
+                      {uploading
+                        ? `${formatBytes(uploadProgress.received)} / ${formatBytes(uploadProgress.total)}`
+                        : '点右上角 "+ 新建切片" 上传视频，AI 自动生成金句片段'}
+                    </div>
+                  </div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">项目数</div>
+                  <div className="metric-value">{projects.length}</div>
+                  <div className="metric-sub">{counts.completed} 已完成</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">成功率</div>
+                  <div className="metric-value">
+                    {projects.length > 0
+                      ? Math.round((counts.completed / (counts.completed + counts.failed || 1)) * 100)
+                      : 0}%
+                  </div>
+                  <div className="metric-sub">{counts.failed} 失败</div>
+                </div>
+              </div>
+
+              <div className="tabs">
+                {[
+                  ['all', '全部'],
+                  ['processing', '处理中'],
+                  ['completed', '已完成'],
+                  ['pending', '待处理'],
+                  ['failed', '失败'],
+                ].map(([k, label]) => (
+                  <button
+                    key={k}
+                    className={`tab ${activeTab === k ? 'active' : ''}`}
+                    onClick={() => setActiveTab(k)}
+                  >
+                    {label}
+                    <span className="tab-count">{counts[k]}</span>
+                  </button>
+                ))}
+              </div>
+
+              {filteredProjects.length > 0 ? (
+                <div className="reel-grid">
+                  {filteredProjects.map(p => (
+                    <div
+                      key={p.id}
+                      className="reel-card"
+                      data-status={p.status}
+                      onClick={() => navigate(`/project/${p.id}`)}
+                    >
+                      <div className="reel-card-thumb">
+                        <div className="reel-card-status">
+                          <span className="reel-status-dot" data-status={p.status} />
+                          <span className="status-pill" data-status={p.status}>{statusLabel[p.status] || p.status}</span>
+                        </div>
+                        {/* 封面图: 已完成项目尝试加载第一片抽帧, 失败 fallback 图标 */}
+                        {p.status === 'completed' ? (
+                          <img
+                            className="reel-card-thumb-img"
+                            src={`/api/v1/thumbnails/${p.id}.jpg`}
+                            alt={p.name}
+                            loading="lazy"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling.style.display = 'flex' }}
+                          />
+                        ) : null}
+                        {/* v2.1.43: 删 reel-card-thumb-icon 播放三角 (completed 时本就被缩略图覆盖, 其他状态意义不大) */}
+                        {p.status === 'processing' && (
+                          <div className="reel-card-progress" title={p.current_step || `处理中 ${p.progress || 0}%`}>
+                            <div className="reel-card-progress-bar">
+                              <div className="reel-card-progress-fill" style={{ width: `${p.progress || 0}%` }} />
+                            </div>
+                            <span className="reel-card-progress-label">{p.progress || 0}%</span>
+                          </div>
+                        )}
+                        {p.status === 'processing' && p.timing && (
+                          <div className="reel-card-timing">
+                            <span className="reel-card-timing-elapsed" title="已用时间">
+                              <Icon name="clock" size={11} style={{ verticalAlign: '-2px', marginRight: 2 }} /> {formatDuration(p.timing.elapsed_seconds || 0)}
+                            </span>
+                            {p.timing.eta_seconds != null && p.timing.eta_seconds > 0 && (
+                              <span className="reel-card-timing-eta" title="预计剩余">
+                                · 剩 {formatDuration(p.timing.eta_seconds)}
+                              </span>
+                            )}
+                            {p.timing.total_estimated_seconds != null && p.timing.total_estimated_seconds > 0 && (
+                              <span className="reel-card-timing-total" title="预计总耗时">
+                                / {formatDuration(p.timing.total_estimated_seconds)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="reel-card-body">
+                        <div className="reel-card-title">{p.name}</div>
+                        <div className="reel-card-meta">
+                          <span
+                            className={`style-badge ${p.style_id === '_default' ? 'style-badge-default' : ''}`}
+                            title={
+                              p.target_duration || p.max_clips
+                                ? `${p.style_name || '默认'} · ${p.target_duration || '?'}s/片 · ≤${p.max_clips || '?'}片`
+                                : undefined
+                            }
+                          >
+                            {p.style_name || '默认'}
+                          </span>
+                          <span className={`subtitle-pill ${p.has_subtitle ? 'subtitle-pill-on' : 'subtitle-pill-off'}`}>
+                            <span className="subtitle-pill-icon"><Icon name="tag" size={10} /></span>
+                          </span>
+                        </div>
+                        <div className="reel-card-stats">
+                          <div className="reel-card-stat">
+                            <span className="reel-card-stat-value">{formatTC(p.video_duration)}</span>
+                            <span className="reel-card-stat-label">时长</span>
+                          </div>
+                          <div className="reel-card-stat">
+                            <span className="reel-card-stat-value">{p.clip_count || 0}</span>
+                            <span className="reel-card-stat-label">切片</span>
+                          </div>
+                          <div className="reel-card-stat">
+                            <span className="reel-card-stat-value">{formatDate(p.created_at)}</span>
+                            <span className="reel-card-stat-label">创建</span>
+                          </div>
+                        </div>
+                        <div className="reel-card-actions" onClick={e => e.stopPropagation()}>
+                          {p.status === 'pending' && (
+                            <button className="btn btn-primary btn-sm" onClick={() => startProcessing(p.id)}>处理</button>
+                          )}
+                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
+                          <button className="btn btn-ghost btn-sm btn-danger" onClick={() => deleteProject(p.id, p.name)} title="删除"><Icon name="x" size={12} /></button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty">
+                  <div className="empty-icon">∅</div>
+                  <div className="empty-title">还没有切片项目</div>
+                  <div className="empty-hint">
+                    点击右上角 <b style={{ color: 'var(--accent)' }}><Icon name="plus" size={11} style={{ verticalAlign: '-2px', marginRight: 2 }} />新建切片</b> 上传第一个视频
                   </div>
                 </div>
               )}
-              
-              {/* 项目信息 */}
-              <div className="project-info">
-                <span>📹 {project.clip_count || 0} 个切片</span>
-                <span>📁 {project.collection_count || 0} 个合集</span>
-              </div>
-              
-              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                创建时间：{new Date(project.created_at + 'Z').toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
-              </div>
-              
-              {/* 操作按钮 */}
-              <div className="project-actions">
-                {project.status === 'pending' && (
-                  <button className="btn btn-primary btn-sm" onClick={() => startProcessing(project.id)}>
-                    ▶️ 开始处理
-                  </button>
-                )}
-                <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/project/${project.id}`)}>
-                  📁 查看详情
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => deleteProject(project.id, project.name)}>
-                  🗑️ 删除
-                </button>
-              </div>
-            </div>
-          ))}
+            </>
+          )}
         </div>
-      ) : (
-        <div className="card" style={{ textAlign: 'center', padding: '48px' }}>
-          <p style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-lg)' }}>
-            暂无项目，上传第一个视频开始吧！
-          </p>
-        </div>
-      )}
+      </main>
 
-      {/* 策略选择弹窗 */}
       {showStrategyModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          overflow: 'auto'
-        }}>
-          <div className="card" style={{
-            maxWidth: '1000px',
-            width: '90%',
-            maxHeight: '90vh',
-            overflow: 'auto',
-            margin: '20px'
-          }}>
-            <h2 style={{ marginBottom: '8px' }}>📦 选择切片策略</h2>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '24px' }}>
-              选择一个适合你内容的切片方式，处理开始后将根据此策略自动生成切片
-            </p>
-
-            {/* 预设策略 */}
-            <h3 style={{ marginBottom: '16px' }}>🎯 预设策略</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-              {presets.map(preset => (
-                <button
-                  key={preset.id}
-                  onClick={() => selectStrategy(preset)}
-                  style={{
-                    textAlign: 'left',
-                    padding: '16px',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--bg-primary)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.borderColor = 'var(--color-primary)'
-                    e.target.style.transform = 'translateY(-2px)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.borderColor = 'var(--border-color)'
-                    e.target.style.transform = 'translateY(0)'
-                  }}
-                >
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>{preset.name.split(' ')[0]}</div>
-                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>{preset.name.split(' ').slice(1).join(' ')}</div>
-                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                    {preset.description}
-                  </div>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-                    ⏱️ {preset.target_duration}秒/切片 · 📹 最多{preset.max_clips}个
-                  </div>
-                </button>
-              ))}
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">
+                <div className="modal-title-icon" />
+                选择处理策略
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setShowStrategyModal(false); setPendingProject(null) }} title="关闭"><Icon name="x" size={12} /></button>
             </div>
 
-            {/* 自定义风格 */}
-            {customStyles.length > 0 && (
-              <>
-                <h3 style={{ marginBottom: '16px' }}>📋 我的风格 ({customStyles.length})</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                  {customStyles.map(style => (
-                    <button
-                      key={style.id}
-                      onClick={() => selectStrategy(style)}
-                      style={{
-                        textAlign: 'left',
-                        padding: '16px',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        backgroundColor: 'var(--bg-primary)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.target.style.borderColor = 'var(--color-primary)'
-                        e.target.style.transform = 'translateY(-2px)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.target.style.borderColor = 'var(--border-color)'
-                        e.target.style.transform = 'translateY(0)'
-                      }}
-                    >
-                      <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: 'var(--text-lg)' }}>
-                        {style.name}
-                      </div>
-                      {style.description && (
-                        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                          {style.description}
-                        </div>
-                      )}
-                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
-                        ⏱️ {style.target_duration}秒/切片 · 📹 最多{style.max_clips}个
-                      </div>
-                      {style.content_guidelines && (
-                        <div style={{ 
-                          fontSize: 'var(--text-xs)', 
-                          color: 'var(--text-secondary)', 
-                          padding: '6px', 
-                          backgroundColor: 'rgba(59, 130, 246, 0.05)', 
-                          borderRadius: '4px',
-                          marginTop: '8px'
-                        }}>
-                          📌 {style.content_guidelines.substring(0, 50)}{style.content_guidelines.length > 50 ? '...' : ''}
-                        </div>
-                      )}
-                    </button>
-                  ))}
+            <div className="modal-body">
+              <div className="toggle-row">
+                <div>
+                  <div className="toggle-info-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    烧录字幕到视频
+                    <span style={{
+                      fontSize: 'var(--text-xs)', color: 'var(--accent)',
+                      background: 'var(--accent-soft)',
+                      padding: '1px var(--space-2)', borderRadius: '999px',
+                      fontWeight: 500
+                    }}>
+                      推荐开启
+                    </span>
+                  </div>
+                  <div className="toggle-info-hint">关 = 纯剪（更快）· 开 = 带字幕（更慢，但传播力更强）</div>
                 </div>
-              </>
-            )}
+                <div
+                  className={`toggle-switch ${withSubtitle ? 'on' : ''}`}
+                  onClick={() => setWithSubtitle(!withSubtitle)}
+                />
+              </div>
 
-            {/* 取消按钮 */}
-            <div style={{ marginTop: '24px', textAlign: 'center' }}>
-              <button 
-                className="btn btn-secondary"
-                onClick={() => {
-                  setShowStrategyModal(false)
-                  setPendingProject(null)
-                }}
-              >
-                取消
-              </button>
+              {/* v2.1.28: 输出格式 — 处理前决定, 切完不再改 */}
+              <div className="toggle-row">
+                <div>
+                  <div className="toggle-info-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    <Icon name="monitor" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />输出格式
+                    {outputFormat === '9:16-letterbox' && (
+                      <span style={{
+                        fontSize: 'var(--text-xs)', color: '#06b6d4',
+                        background: 'rgba(6,182,212,0.15)',
+                        padding: '1px var(--space-2)', borderRadius: '999px',
+                        fontWeight: 500
+                      }}>
+                        抖音适配
+                      </span>
+                    )}
+                  </div>
+                  <div className="toggle-info-hint">
+                    {outputFormat === 'original'
+                      ? <><Icon name="film" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />保持原比例 — 直播带货 / 竖屏短视频用</>
+                      : <><Icon name="monitor" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />转 9:16 上下黑边 — 横屏电影/解说用, 适合抖音上传</>}
+                  </div>
+                </div>
+                <div
+                  className={`toggle-switch ${outputFormat === '9:16-letterbox' ? 'on' : ''}`}
+                  onClick={() => setOutputFormat(outputFormat === '9:16-letterbox' ? 'original' : '9:16-letterbox')}
+                />
+              </div>
+
+              <div style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim)', fontFamily: 'var(--text-mono)', marginBottom: 'var(--space-3)' }}>
+                预设策略
+              </div>
+              <div className="strategy-grid">
+                {presets.map((p, i) => (
+                  <button key={p.id} className="strategy-item" onClick={() => selectStrategy(p)}>
+                    <div className="strategy-icon">{p.name.split(' ')[0]}</div>
+                    <div className="strategy-body">
+                      <div className="strategy-name">{p.name.split(' ').slice(1).join(' ') || p.name}</div>
+                      <div className="strategy-desc">{p.description}</div>
+                      <div className="strategy-meta">
+                        <span>时长 <b>{p.target_duration}s</b></span>
+                        <span>最多 <b>{p.max_clips}</b></span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {customStyles.length > 0 && (
+                <>
+                  <div style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim)', fontFamily: 'var(--text-mono)', margin: 'var(--space-5) 0 var(--space-3)' }}>
+                    自定义风格
+                  </div>
+                  <div className="strategy-grid">
+                    {customStyles.map(s => (
+                      <button key={s.id} className="strategy-item" onClick={() => selectStrategy(s)}>
+                        <div className="strategy-icon"><Icon name="edit" size={14} /></div>
+                        <div className="strategy-body">
+                          <div className="strategy-name">{s.name}</div>
+                          {s.description && <div className="strategy-desc">{s.description}</div>}
+                          <div className="strategy-meta">
+                            <span>时长 <b>{s.target_duration}s</b></span>
+                            <span>最多 <b>{s.max_clips}</b></span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => { setShowStrategyModal(false); setPendingProject(null) }}>取消</button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// v2.1.32: ProjectDetailInShell 提到模块顶层 (不再嵌在 App 内部)
+// 原因: 嵌在 App 内部时, 每次 App re-render 它都是新的 function reference,
+//       React unmount + remount 整个 ProjectDetail → 每 5s 一次 '加载中...' 闪烁
+// 注: useNavigate() 必须在 router context 内, 模块顶层函数能正常用因为它在 <Routes> 内部被渲染
+function ProjectDetailInShell() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  return <ProjectDetail projectId={id} navigate={navigate} />
+}
+
+function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel }) {
+  const { received, total, speed } = progress
+  const pct = total > 0 ? Math.min(100, (received / total) * 100) : 0
+  const remain = speed > 0 ? (total - received) / speed : null
+
+  const stateLabel = {
+    uploading: '上传中',
+    resuming: '恢复中',
+    pausing: '暂停中',
+    paused: '已暂停',
+    retrying: '重试中',
+    finalizing: '合并中',
+    done: '完成',
+    error: '出错',
+  }[state] || state
+
+  return (
+    <div className="upload-progress" style={{
+      position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+      width: '420px', background: 'var(--bg-elevated)',
+      border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+      padding: 'var(--space-4)', boxShadow: 'var(--shadow-md)',
+      zIndex: 100
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+        <span style={{
+          fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)',
+          color: state === 'error' ? 'var(--danger)' : 'var(--accent)',
+          fontWeight: 600
+        }}>{stateLabel}</span>
+        <span style={{ fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-dim)' }}>
+          {formatBytes(received)} / {formatBytes(total)}
+        </span>
+      </div>
+
+      {/* 进度条 */}
+      <div style={{
+        height: '8px', background: 'var(--bg-base)', borderRadius: '4px',
+        overflow: 'hidden', marginBottom: 'var(--space-2)'
+      }}>
+        <div style={{
+          width: `${pct}%`, height: '100%',
+          background: state === 'error' ? 'var(--danger)' : 'var(--accent)',
+          transition: 'width 0.2s ease-out'
+        }} />
+      </div>
+
+      {/* 数字行 */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontFamily: 'var(--text-mono)', fontSize: 'var(--text-xs)',
+        color: 'var(--text-muted)', marginBottom: 'var(--space-3)'
+      }}>
+        <span>{pct.toFixed(1)}%</span>
+        <span>{formatSpeed(speed)}</span>
+        <span>剩余 {formatTime(remain)}</span>
+      </div>
+
+      {/* 网络慢提示（速度 < 200 KB/s 且已传 > 1MB） */}
+      {received > 1024 * 1024 && speed > 0 && speed < 200 * 1024 && (
+        <div style={{
+          padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)',
+          background: 'rgba(234, 179, 8, 0.1)', color: '#b45309',
+          borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)',
+          border: '1px solid rgba(234, 179, 8, 0.3)'
+        }}>
+          <Icon name="warning" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />网络较慢（{formatSpeed(speed)}）。建议：本地用 ffmpeg 转 720p 再传，文件小 3-5 倍
+        </div>
+      )}
+
+      {error && (
+        <div style={{
+          padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)',
+          background: 'var(--danger-soft)', color: 'var(--danger)',
+          borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)'
+        }}>
+          {error}
+        </div>
+      )}
+
+      {/* 控制按钮 */}
+      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        {state === 'uploading' && (
+          <button className="btn btn-ghost btn-sm" onClick={onPause} style={{ flex: 1 }}>暂停</button>
+        )}
+        {state === 'paused' && (
+          <button className="btn btn-primary btn-sm" onClick={onResume} style={{ flex: 1 }}>继续</button>
+        )}
+        {(state === 'uploading' || state === 'paused' || state === 'error') && (
+          <button className="btn btn-ghost btn-sm btn-danger" onClick={onCancel} style={{ flex: 1 }}>取消</button>
+        )}
+        {state === 'finalizing' && (
+          <span style={{ flex: 1, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+            正在合并分片并创建项目…
+          </span>
+        )}
+      </div>
     </div>
   )
 }

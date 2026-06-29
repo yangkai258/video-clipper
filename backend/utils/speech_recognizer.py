@@ -56,7 +56,7 @@ class SpeechRecognizer:
         video_path: Path,
         output_path: Path,
         method: SpeechRecognitionMethod = SpeechRecognitionMethod.FASTER_WHISPER,
-        model: str = "tiny",
+        model: str = "base",
         language: str = "zh"
     ) -> Path:
         """生成字幕"""
@@ -95,7 +95,7 @@ class SpeechRecognizer:
         self,
         video_path: Path,
         output_path: Path,
-        model: str = "tiny",
+        model: str = "base",
         language: str = "zh"
     ) -> Path:
         """使用 mlx-whisper 生成字幕（Apple Silicon 优化，3-5 倍加速）"""
@@ -118,13 +118,19 @@ class SpeechRecognizer:
         logger.info("开始转录...")
         
         # mlx-whisper transcribe 函数
-        result = transcribe(
-            str(audio_path),
-            path_or_hf_repo=f"mlx-community/whisper-1-{model}",  # 使用 mlx 优化版本
-            language=language if language != "auto" else None,
-            task="transcribe",
-            vad_filter=True
-        )
+        # 引导模型输出简体中文（默认偏繁体，模型训练集偏向港台语料）
+        _INITIAL_PROMPT = "以下是普通话的日常对话，请使用简体中文（不写繁体字）。"
+        _kwargs = {
+            "path_or_hf_repo": f"mlx-community/whisper-1-{model}",
+            "language": language if language != "auto" else None,
+            "task": "transcribe",
+            "vad_filter": True,
+        }
+        # mlx-whisper 旧版本可能不识别 initial_prompt，试探着传
+        try:
+            result = transcribe(str(audio_path), initial_prompt=_INITIAL_PROMPT, **_kwargs)
+        except TypeError:
+            result = transcribe(str(audio_path), **_kwargs)
         
         # 写入 SRT
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -146,7 +152,7 @@ class SpeechRecognizer:
         self,
         video_path: Path,
         output_path: Path,
-        model: str = "tiny",
+        model: str = "base",
         language: str = "zh"
     ) -> Path:
         """使用 faster-whisper 生成字幕"""
@@ -179,7 +185,9 @@ class SpeechRecognizer:
         segments, info = whisper_model.transcribe(
             str(audio_path),
             language=language if language != "auto" else None,
-            vad_filter=True
+            vad_filter=True,
+            # 引导模型输出简体中文（默认是繁体，模型训练集偏港台语料）
+            initial_prompt="以下是普通话的日常对话，请使用简体中文（不写繁体字）。",
         )
         
         logger.info(f"检测到语言：{info.language}")

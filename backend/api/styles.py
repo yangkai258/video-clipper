@@ -1,21 +1,20 @@
 """切片策略管理 API"""
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
 import uuid
-import json
-import sqlite3
-import os
+from datetime import datetime
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..core.database import get_db, to_iso_utc
+from ..models.database import Style
 
 router = APIRouter()
+logger = None  # 如需 logging.getLogger(__name__) 在下面加
 
-# 动态获取数据库路径（支持环境变量覆盖）
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_FILENAME = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/video_clipper.db").split("/")[-1].replace(".db", ".db")
-DATABASE_PATH = os.path.join(BASE_DIR, "data", DB_FILENAME)
-
-# 预设切片策略
+# 预设切片策略（只读，写死在代码里）
 PRESET_STRATEGIES = [
     {
         "id": "preset_golden_quotes",
@@ -34,13 +33,13 @@ PRESET_STRATEGIES = [
         "id": "preset_complete_segments",
         "name": "📖 完整片段",
         "description": "保持内容完整性，每个切片讲述一个完整观点，适合中长视频",
-        "target_duration": 120,
+        "target_duration": 600,
         "max_clips": 15,
         "content_types": ["完整观点", "案例分析", "讲解"],
         "rules": {
             "min_score": 0.6,
             "prefer_continuity": True,
-            "min_segment_duration": 60
+            "min_segment_duration": 300
         }
     },
     {
@@ -71,9 +70,23 @@ PRESET_STRATEGIES = [
 ]
 
 
-def get_db():
-    """获取数据库连接"""
-    return sqlite3.connect(DATABASE_PATH)
+def _style_to_dict(s: Style) -> dict:
+    return {
+        "id": s.id,
+        "name": s.name,
+        "description": s.description or "",
+        "target_duration": s.target_duration,
+        "max_clips": s.max_clips,
+        "content_types": s.content_types or [],
+        "rules": s.rules or {},
+        "content_guidelines": s.content_guidelines or "",
+        "keep_rules": s.keep_rules or "",
+        "remove_rules": s.remove_rules or "",
+        "style_positioning": s.style_positioning or "",
+        "subtitle_config": s.subtitle_config,
+        "created_at": to_iso_utc(s.created_at),
+        "updated_at": to_iso_utc(s.updated_at),
+    }
 
 
 class StyleCreate(BaseModel):
@@ -134,209 +147,84 @@ async def list_preset_strategies():
 
 
 @router.get("/styles", response_model=List[StyleResponse])
-async def list_styles():
-    """获取所有切片风格"""
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM styles ORDER BY created_at DESC")
-        rows = cursor.fetchall()
-        
-        styles = []
-        for row in rows:
-            styles.append({
-                "id": row[0],
-                "name": row[1],
-                "description": row[2] or "",
-                "target_duration": row[3],
-                "max_clips": row[4],
-                "content_types": json.loads(row[5] or '[]'),
-                "rules": json.loads(row[6] or '{}'),
-                "created_at": row[7],
-                "updated_at": row[8],
-                "content_guidelines": row[9] or "",
-                "keep_rules": row[10] or "",
-                "remove_rules": row[11] or "",
-                "style_positioning": row[12] or "",
-                "subtitle_config": json.loads(row[13]) if row[13] else None
-            })
-        
-        return styles
-    finally:
-        db.close()
+async def list_styles(db: AsyncSession = Depends(get_db)):
+    """获取所有切片风格（ORM，走当前 db session）"""
+    result = await db.execute(select(Style).order_by(Style.created_at.desc()))
+    styles = result.scalars().all()
+    return [_style_to_dict(s) for s in styles]
 
 
 @router.get("/styles/{style_id}", response_model=StyleResponse)
-async def get_style(style_id: str):
+async def get_style(style_id: str, db: AsyncSession = Depends(get_db)):
     """获取单个风格详情"""
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM styles WHERE id = ?", (style_id,))
-        row = cursor.fetchone()
-        
-        if not row:
-            raise HTTPException(status_code=404, detail="风格不存在")
-        
-        return {
-            "id": row[0],
-            "name": row[1],
-            "description": row[2] or "",
-            "target_duration": row[3],
-            "max_clips": row[4],
-            "content_types": json.loads(row[5] or '[]'),
-            "rules": json.loads(row[6] or '{}'),
-            "created_at": row[7],
-            "updated_at": row[8],
-            "content_guidelines": row[9] or "",
-            "keep_rules": row[10] or "",
-            "remove_rules": row[11] or "",
-            "style_positioning": row[12] or "",
-            "subtitle_config": json.loads(row[13]) if row[13] else None
-        }
-    finally:
-        db.close()
+    result = await db.execute(select(Style).where(Style.id == style_id))
+    s = result.scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="风格不存在")
+    return _style_to_dict(s)
 
 
 @router.post("/styles", response_model=StyleResponse)
-async def create_style(style: StyleCreate):
+async def create_style(style: StyleCreate, db: AsyncSession = Depends(get_db)):
     """创建新风格"""
-    db = get_db()
-    try:
-        style_id = f"style_{uuid.uuid4().hex[:8]}"
-        now = datetime.now().isoformat()
-        
-        cursor = db.cursor()
-        cursor.execute("""
-        INSERT INTO styles (id, name, description, target_duration, max_clips, content_types, rules, created_at, updated_at, content_guidelines, keep_rules, remove_rules, style_positioning, subtitle_config)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            style_id,
-            style.name,
-            style.description,
-            style.target_duration,
-            style.max_clips,
-            json.dumps(style.content_types, ensure_ascii=False),
-            json.dumps(style.rules, ensure_ascii=False),
-            now,
-            now,
-            style.content_guidelines or "",
-            style.keep_rules or "",
-            style.remove_rules or "",
-            style.style_positioning or "",
-            json.dumps(style.subtitle_config, ensure_ascii=False) if style.subtitle_config else None
-        ))
-        db.commit()
-        
-        return {
-            "id": style_id,
-            "name": style.name,
-            "description": style.description,
-            "target_duration": style.target_duration,
-            "max_clips": style.max_clips,
-            "content_types": style.content_types,
-            "rules": style.rules,
-            "created_at": now,
-            "updated_at": now,
-            "content_guidelines": style.content_guidelines or "",
-            "keep_rules": style.keep_rules or "",
-            "remove_rules": style.remove_rules or "",
-            "style_positioning": style.style_positioning or "",
-            "subtitle_config": style.subtitle_config
-        }
-    finally:
-        db.close()
+    style_id = f"style_{uuid.uuid4().hex[:8]}"
+
+    s = Style(
+        id=style_id,
+        name=style.name,
+        description=style.description or "",
+        target_duration=style.target_duration,
+        max_clips=style.max_clips,
+        content_types=style.content_types or [],
+        rules=style.rules or {},
+        content_guidelines=style.content_guidelines or "",
+        keep_rules=style.keep_rules or "",
+        remove_rules=style.remove_rules or "",
+        style_positioning=style.style_positioning or "",
+        subtitle_config=style.subtitle_config,
+    )
+    db.add(s)
+    await db.commit()
+    await db.refresh(s)
+
+    # 同步字幕配置到用户偏好
+    if style.subtitle_config:
+        from .projects import _sync_subtitle_style_to_preferences
+        await _sync_subtitle_style_to_preferences(db, style.subtitle_config)
+
+    return _style_to_dict(s)
 
 
 @router.put("/styles/{style_id}", response_model=StyleResponse)
-async def update_style(style_id: str, style: StyleUpdate):
-    """更新风格"""
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM styles WHERE id = ?", (style_id,))
-        row = cursor.fetchone()
-        
-        if not row:
-            raise HTTPException(status_code=404, detail="风格不存在")
-        
-        updates = []
-        values = []
-        
-        if style.name is not None:
-            updates.append("name = ?")
-            values.append(style.name)
-        if style.description is not None:
-            updates.append("description = ?")
-            values.append(style.description)
-        if style.target_duration is not None:
-            updates.append("target_duration = ?")
-            values.append(style.target_duration)
-        if style.max_clips is not None:
-            updates.append("max_clips = ?")
-            values.append(style.max_clips)
-        if style.content_types is not None:
-            updates.append("content_types = ?")
-            values.append(json.dumps(style.content_types, ensure_ascii=False))
-        if style.rules is not None:
-            updates.append("rules = ?")
-            values.append(json.dumps(style.rules, ensure_ascii=False))
-        if style.content_guidelines is not None:
-            updates.append("content_guidelines = ?")
-            values.append(style.content_guidelines)
-        if style.keep_rules is not None:
-            updates.append("keep_rules = ?")
-            values.append(style.keep_rules)
-        if style.remove_rules is not None:
-            updates.append("remove_rules = ?")
-            values.append(style.remove_rules)
-        if style.style_positioning is not None:
-            updates.append("style_positioning = ?")
-            values.append(style.style_positioning)
-        if style.subtitle_config is not None:
-            updates.append("subtitle_config = ?")
-            values.append(json.dumps(style.subtitle_config, ensure_ascii=False) if style.subtitle_config else None)
-        
-        if updates:
-            updates.append("updated_at = ?")
-            values.append(datetime.now().isoformat())
-            values.append(style_id)
-            
-            cursor.execute(f"UPDATE styles SET {', '.join(updates)} WHERE id = ?", values)
-            db.commit()
-        
-        cursor.execute("SELECT * FROM styles WHERE id = ?", (style_id,))
-        row = cursor.fetchone()
-        
-        return {
-            "id": row[0],
-            "name": row[1],
-            "description": row[2] or "",
-            "target_duration": row[3],
-            "max_clips": row[4],
-            "content_types": json.loads(row[5] or '[]'),
-            "rules": json.loads(row[6] or '{}'),
-            "created_at": row[7],
-            "updated_at": row[8],
-            "content_guidelines": row[9] or "",
-            "keep_rules": row[10] or "",
-            "remove_rules": row[11] or "",
-            "style_positioning": row[12] or "",
-            "subtitle_config": json.loads(row[13]) if row[13] else None
-        }
-    finally:
-        db.close()
+async def update_style(style_id: str, style: StyleUpdate, db: AsyncSession = Depends(get_db)):
+    """更新风格（ORM）"""
+    result = await db.execute(select(Style).where(Style.id == style_id))
+    s = result.scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="风格不存在")
+
+    updates = style.dict(exclude_unset=True)
+    for k, v in updates.items():
+        setattr(s, k, v)
+    s.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(s)
+
+    # 同步字幕配置到用户偏好（自动复用）
+    if style.subtitle_config is not None:
+        from .projects import _sync_subtitle_style_to_preferences
+        await _sync_subtitle_style_to_preferences(db, style.subtitle_config)
+
+    return _style_to_dict(s)
 
 
 @router.delete("/styles/{style_id}")
-async def delete_style(style_id: str):
+async def delete_style(style_id: str, db: AsyncSession = Depends(get_db)):
     """删除风格"""
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("DELETE FROM styles WHERE id = ?", (style_id,))
-        db.commit()
-        
-        return {"message": "风格已删除"}
-    finally:
-        db.close()
+    result = await db.execute(select(Style).where(Style.id == style_id))
+    s = result.scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="风格不存在")
+    await db.delete(s)
+    await db.commit()
+    return {"message": "风格已删除"}

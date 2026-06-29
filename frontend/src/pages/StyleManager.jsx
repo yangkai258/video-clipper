@@ -1,62 +1,53 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
+import Icon from '../Icon'
 
 const API_BASE = '/api/v1'
 
-function StyleManager() {
+const defaultStyle = {
+  name: '',
+  description: '',
+  target_duration: 60,
+  max_clips: 20,
+  content_types: [],
+  rules: { min_score: 0.7, priority_keywords: [] },
+  content_guidelines: '',
+  keep_rules: '',
+  remove_rules: '',
+  style_positioning: '',
+  subtitle_config: {
+    font_size: 28,
+    txt_color: 'white',
+    stroke_color: 'black',
+    stroke_width: 2,
+    font: '/System/Library/Fonts/STHeiti Medium.ttc',
+    position: 0.78
+  }
+}
+
+function StyleManager({ navigate: navProp, location: locProp }) {
   const [styles, setStyles] = useState([])
   const [presets, setPresets] = useState([])
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingStyle, setEditingStyle] = useState(null)
-  const navigate = useNavigate()
+  const [showModal, setShowModal] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [form, setForm] = useState(defaultStyle)
+  const [tab, setTab] = useState('basic')
+  const navigate = navProp || useNavigate()
+  const location = locProp || useLocation()
 
-  // 新建风格的默认值
-  const defaultStyle = {
-    name: '',
-    description: '',
-    target_duration: 60,
-    max_clips: 20,
-    content_types: [],
-    rules: {
-      min_score: 0.7,
-      priority_keywords: []
-    },
-    content_guidelines: '',
-    keep_rules: '',
-    remove_rules: '',
-    style_positioning: '',
-    // 字幕配置默认值
-    subtitle_config: {
-      font_size: 22,
-      txt_color: 'white',
-      stroke_color: 'white',
-      stroke_width: 1,
-      font: 'Arial',
-      position: 0.33
-    }
-  }
-
-  const [formData, setFormData] = useState(defaultStyle)
-
-  // 加载风格列表
   const loadStyles = async () => {
     try {
       const res = await axios.get(`${API_BASE}/styles`)
       setStyles(res.data)
-    } catch (error) {
-      console.error('加载风格列表失败:', error)
-    }
+    } catch (e) { console.error(e) }
   }
 
-  // 加载预设策略
   const loadPresets = async () => {
     try {
       const res = await axios.get(`${API_BASE}/strategies/presets`)
       setPresets(res.data.strategies)
-    } catch (error) {
-      console.error('加载预设策略失败:', error)
-    }
+    } catch (e) { console.error(e) }
   }
 
   useEffect(() => {
@@ -64,546 +55,386 @@ function StyleManager() {
     loadPresets()
   }, [])
 
-  // 打开创建弹窗
-  const handleCreate = () => {
-    setEditingStyle(null)
-    setFormData(defaultStyle)
-    setShowCreateModal(true)
+  const openCreate = () => {
+    setEditing(null)
+    setForm(defaultStyle)
+    setTab('basic')
+    setShowModal(true)
   }
 
-  // 打开编辑弹窗
-  const handleEdit = (style) => {
-    setEditingStyle(style)
-    setFormData({
+  const openEdit = (style) => {
+    setEditing(style)
+    setForm({
       ...style,
       content_types: style.content_types || [],
       rules: style.rules || { min_score: 0.7, priority_keywords: [] },
       subtitle_config: style.subtitle_config || defaultStyle.subtitle_config
     })
-    setShowCreateModal(true)
+    setTab('basic')
+    setShowModal(true)
   }
 
-  // 保存风格（创建或更新）
-  const handleSave = async () => {
+  const save = async () => {
     try {
-      if (editingStyle) {
-        await axios.put(`${API_BASE}/styles/${editingStyle.id}`, formData)
-        alert('✅ 风格已更新')
+      if (editing) {
+        await axios.put(`${API_BASE}/styles/${editing.id}`, form)
       } else {
-        await axios.post(`${API_BASE}/styles`, formData)
-        alert('✅ 风格已创建')
+        await axios.post(`${API_BASE}/styles`, form)
       }
-      setShowCreateModal(false)
+      setShowModal(false)
       loadStyles()
-    } catch (error) {
-      alert(`保存失败：${error.response?.data?.detail || error.message}`)
+    } catch (e) {
+      alert(`保存失败：${e.response?.data?.detail || e.message}`)
     }
   }
 
-  // 删除风格
-  const handleDelete = async (styleId, styleName) => {
-    if (!confirm(`确定要删除风格 "${styleName}" 吗？此操作不可恢复。`)) return
-
+  const remove = async (id, name) => {
+    if (!confirm(`确定删除「${name}」？`)) return
     try {
-      await axios.delete(`${API_BASE}/styles/${styleId}`)
-      alert('风格已删除')
+      await axios.delete(`${API_BASE}/styles/${id}`)
       loadStyles()
-    } catch (error) {
-      alert(`删除失败：${error.message}`)
-    }
+    } catch (e) { alert(`删除失败：${e.message}`) }
   }
 
-  // 应用预设策略
   const applyPreset = (preset) => {
-    setFormData({
-      ...formData,
+    setForm({
+      ...form,
       name: preset.name.split(' ').slice(1).join(' '),
       description: preset.description,
       target_duration: preset.target_duration,
       max_clips: preset.max_clips,
       content_types: preset.content_types,
       rules: preset.rules,
-      subtitle_config: defaultStyle.subtitle_config  // 预设风格使用默认字幕配置
+      subtitle_config: defaultStyle.subtitle_config
     })
   }
 
-  // 更新表单字段
-  const updateField = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
-
-  const updateRule = (key, value) => {
-    setFormData(prev => ({
-      ...prev,
-      rules: { ...prev.rules, [key]: value }
-    }))
-  }
+  const update = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+  const updateRule = (k, v) => setForm(prev => ({ ...prev, rules: { ...prev.rules, [k]: v } }))
+  const updateSub = (k, v) => setForm(prev => ({ ...prev, subtitle_config: { ...prev.subtitle_config, [k]: v } }))
 
   return (
-    <div className="container fade-in">
-      {/* 页面头部 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1>✂️ 切片风格管理</h1>
-        <button className="btn btn-primary" onClick={handleCreate}>
-          ➕ 创建新风格
-        </button>
+    <>
+      <div className="content fade-in">
+        {/* v2.1.40: '新建风格' 按钮从内嵌 topbar 移到 content-header 右侧
+            之前 StyleManager 自己渲染了一个 topbar, 覆盖 App 的全局 topbar, 看着错位 */}
+        <div className="content-header">
+          <div>
+            <div className="content-title">自定义风格</div>
+            <div className="content-subtitle">{styles.length} 个 · AI 切片的编辑风格</div>
+          </div>
+          <div className="content-actions">
+            <button className="btn btn-primary" onClick={openCreate}>+ 新建风格</button>
+          </div>
+        </div>
+
+          {presets.length > 0 && (
+            <>
+              <div style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim)', fontFamily: 'var(--text-mono)', marginBottom: 'var(--space-3)' }}>
+                从预设快速开始
+              </div>
+              <div className="style-list" style={{ marginBottom: 'var(--space-6)' }}>
+                {presets.map(p => (
+                  <div key={p.id} className="style-item">
+                    <div className="style-item-icon">{p.name.split(' ')[0]}</div>
+                    <div className="style-item-body">
+                      <div className="style-item-name">{p.name.split(' ').slice(1).join(' ') || p.name}</div>
+                      <div className="style-item-desc">{p.description}</div>
+                    </div>
+                    <div className="style-item-meta">
+                      <span>时长 <b style={{ color: 'var(--text-default)' }}>{p.target_duration}s</b></span>
+                      <span>最多 <b style={{ color: 'var(--text-default)' }}>{p.max_clips}</b></span>
+                    </div>
+                    <div className="style-item-actions">
+                      <button className="btn btn-ghost btn-sm" onClick={() => { applyPreset(p); openCreate(); }}>使用</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-dim)', fontFamily: 'var(--text-mono)', marginBottom: 'var(--space-3)' }}>
+            我的风格 / {styles.length}
+          </div>
+
+          {styles.length > 0 ? (
+            <div className="style-list">
+              {styles.map(s => (
+                <div key={s.id} className="style-item">
+                  <div className="style-item-icon"><Icon name="edit" size={14} /></div>
+                  <div className="style-item-body">
+                    <div className="style-item-name">{s.name}</div>
+                    {s.description && <div className="style-item-desc">{s.description}</div>}
+                    {s.style_positioning && (
+                      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--accent)', marginTop: 'var(--space-1)' }}>
+                        {s.style_positioning}
+                      </div>
+                    )}
+                  </div>
+                  <div className="style-item-meta">
+                    <span>时长 <b style={{ color: 'var(--text-default)' }}>{s.target_duration}s</b></span>
+                    <span>最多 <b style={{ color: 'var(--text-default)' }}>{s.max_clips}</b></span>
+                  </div>
+                  <div className="style-item-actions">
+                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(s)}>编辑</button>
+                    <button className="btn btn-ghost btn-sm btn-danger" onClick={() => remove(s.id, s.name)} title="删除"><Icon name="x" size={12} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty">
+              <div className="empty-icon">∅</div>
+              <div className="empty-title">还没有自定义风格</div>
+              <div className="empty-hint">创建一个，或从上方选个预设</div>
+            </div>
+          )}
       </div>
 
-      {/* 预设策略快捷入口 */}
-      <div className="card" style={{ marginBottom: '24px' }}>
-        <h2>📦 预设策略（快捷应用）</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '16px' }}>
-          {presets.map(preset => (
-            <button
-              key={preset.id}
-              className="btn btn-secondary"
-              onClick={() => applyPreset(preset)}
-              style={{ textAlign: 'left', padding: '12px' }}
-            >
-              <div style={{ fontSize: '20px', marginBottom: '4px' }}>{preset.name.split(' ')[0]}</div>
-              <div style={{ fontSize: 'var(--text-sm)' }}>{preset.name.split(' ').slice(1).join(' ')}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 风格列表 */}
-      <h2>📋 我的风格 ({styles.length})</h2>
-      
-      {styles.length > 0 ? (
-        <div className="project-grid">
-          {styles.map(style => (
-            <div key={style.id} className="card fade-in">
-              <div className="project-card-header">
-                <h3 className="project-title">{style.name}</h3>
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">
+                <div className="modal-title-icon" />
+                {editing ? `编辑 · ${editing.name}` : '新建风格'}
               </div>
-              
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: '8px' }}>
-                {style.description}
-              </p>
-              
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px', fontSize: 'var(--text-sm)' }}>
-                <span>⏱️ {style.target_duration}秒/切片</span>
-                <span>📹 最多{style.max_clips}个</span>
-              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)} title="关闭"><Icon name="x" size={12} /></button>
+            </div>
 
-              {/* 内容识别规则 */}
-              {style.content_guidelines && (
-                <div style={{ marginTop: '12px', padding: '8px', backgroundColor: 'rgba(59, 130, 246, 0.05)', borderRadius: '4px' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>📌 内容识别</div>
-                  <div style={{ fontSize: 'var(--text-sm)' }}>{style.content_guidelines}</div>
-                </div>
+            <div className="tabs" style={{ paddingLeft: 'var(--space-6)' }}>
+              {[['basic', '基础设置'], ['voice', '识别规则'], ['position', '风格定位'], ['subtitle', '字幕配置']].map(([k, label]) => (
+                <button key={k} className={`tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{label}</button>
+              ))}
+            </div>
+
+            <div className="modal-body">
+              {tab === 'basic' && (
+                <>
+                  <div className="form-group">
+                    <label>风格名称 *</label>
+                    <input type="text" value={form.name} onChange={e => update('name', e.target.value)} placeholder="如：邹总直播切片" />
+                  </div>
+                  <div className="form-group">
+                    <label>描述</label>
+                    <textarea value={form.description} onChange={e => update('description', e.target.value)} rows={2} placeholder="这个风格做什么..." />
+                  </div>
+                  <div className="form-row">
+                    <div>
+                      <label>目标时长（秒/切片）</label>
+                      <input className="mono" type="number" value={form.target_duration} onChange={e => update('target_duration', parseInt(e.target.value) || 60)} />
+                    </div>
+                    <div>
+                      <label>最大切片数</label>
+                      <input className="mono" type="number" value={form.max_clips} onChange={e => update('max_clips', parseInt(e.target.value) || 20)} />
+                    </div>
+                  </div>
+                </>
               )}
 
-              {/* 保留/删除规则 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px' }}>
-                {style.keep_rules && (
-                  <div style={{ padding: '8px', backgroundColor: 'rgba(34, 197, 94, 0.05)', borderRadius: '4px' }}>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>✅ 保留</div>
-                    <div style={{ fontSize: 'var(--text-sm)' }}>{style.keep_rules}</div>
+              {tab === 'voice' && (
+                <>
+                  <div className="form-group">
+                    <label>内容识别规则</label>
+                    <textarea value={form.content_guidelines} onChange={e => update('content_guidelines', e.target.value)} rows={3} placeholder="要识别哪些内容类型，如经济时事/创业故事..." />
                   </div>
-                )}
-                {style.remove_rules && (
-                  <div style={{ padding: '8px', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderRadius: '4px' }}>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>❌ 删除</div>
-                    <div style={{ fontSize: 'var(--text-sm)' }}>{style.remove_rules}</div>
+                  <div className="form-row">
+                    <div>
+                      <label>保留规则（正面信号）</label>
+                      <textarea value={form.keep_rules} onChange={e => update('keep_rules', e.target.value)} rows={5} placeholder="要保留的模式..." />
+                    </div>
+                    <div>
+                      <label>删除规则（负面信号）</label>
+                      <textarea value={form.remove_rules} onChange={e => update('remove_rules', e.target.value)} rows={5} placeholder="要丢弃的模式..." />
+                    </div>
                   </div>
-                )}
-              </div>
-
-              {/* 风格定位 */}
-              {style.style_positioning && (
-                <div style={{ marginTop: '12px', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  🎯 {style.style_positioning}
-                </div>
+                </>
               )}
 
-              {/* 字幕配置 */}
-              {style.subtitle_config && (
-                <div style={{ marginTop: '12px', padding: '8px', backgroundColor: 'rgba(168, 85, 247, 0.05)', borderRadius: '4px' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: '4px' }}>🎬 字幕配置</div>
-                  <div style={{ fontSize: 'var(--text-sm)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                    <span>📏 {style.subtitle_config.font_size}px</span>
-                    <span>🎨 {style.subtitle_config.txt_color}/{style.subtitle_config.stroke_color}</span>
-                    <span>📍 {Math.round(style.subtitle_config.position * 100)}% 高度</span>
+              {tab === 'position' && (
+                <>
+                  <div className="form-group">
+                    <label>风格定位</label>
+                    <textarea value={form.style_positioning} onChange={e => update('style_positioning', e.target.value)} rows={3} placeholder="沉稳、务实、有阅历、敢说真话的企业家..." />
                   </div>
-                </div>
+                  <div className="form-row">
+                    <div>
+                      <label>最低评分（0-1）</label>
+                      <input className="mono" type="number" step="0.05" min="0" max="1" value={form.rules.min_score} onChange={e => updateRule('min_score', parseFloat(e.target.value) || 0.7)} />
+                    </div>
+                    <div>
+                      <label>优先关键词（逗号分隔）</label>
+                      <input className="mono" type="text" value={form.rules.priority_keywords?.join(', ') || ''} onChange={e => updateRule('priority_keywords', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} placeholder="我觉得, 关键是, 最重要" />
+                    </div>
+                  </div>
+                </>
               )}
-              
-              {/* 操作按钮 */}
-              <div className="project-actions" style={{ marginTop: '16px' }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => handleEdit(style)}>
-                  ✏️ 编辑
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(style.id, style.name)}>
-                  🗑️ 删除
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="card" style={{ textAlign: 'center', padding: '48px' }}>
-          <p style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-lg)' }}>
-            暂无自定义风格，创建一个吧！
-          </p>
-        </div>
-      )}
 
-      {/* 创建/编辑弹窗 */}
-      {showCreateModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          overflow: 'auto'
-        }}>
-          <div className="card" style={{
-            maxWidth: '900px',
-            width: '90%',
-            maxHeight: '90vh',
-            overflow: 'auto',
-            margin: '20px'
-          }}>
-            <h2 style={{ marginBottom: '24px' }}>
-              {editingStyle ? '✏️ 编辑风格' : '➕ 创建新风格'}
-            </h2>
-
-            {/* 基础设置 */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3>基础设置</h3>
-              <div style={{ display: 'grid', gap: '12px', marginTop: '12px' }}>
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>风格名称 *</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={formData.name}
-                    onChange={(e) => updateField('name', e.target.value)}
-                    placeholder="如：邹总直播切片"
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>描述</label>
-                  <textarea
-                    className="form-control"
-                    value={formData.description}
-                    onChange={(e) => updateField('description', e.target.value)}
-                    placeholder="风格描述..."
-                    rows={2}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>目标时长（秒/切片）</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={formData.target_duration}
-                      onChange={(e) => updateField('target_duration', parseInt(e.target.value) || 60)}
-                      style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                    />
+              {tab === 'subtitle' && (
+                <>
+                  <div className="form-row">
+                    <div>
+                      <label>字体大小（像素）</label>
+                      <input className="mono" type="number" value={form.subtitle_config?.font_size || 28} onChange={e => updateSub('font_size', parseInt(e.target.value) || 28)} />
+                    </div>
+                    <div>
+                      <label>文字颜色</label>
+                      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                        <input type="color" value={form.subtitle_config?.txt_color || '#ffffff'} onChange={e => updateSub('txt_color', e.target.value)} />
+                        <input type="text" value={form.subtitle_config?.txt_color || '#ffffff'} onChange={e => updateSub('txt_color', e.target.value)} />
+                      </div>
+                    </div>
+                    <div>
+                      <label>描边颜色</label>
+                      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                        <input type="color" value={form.subtitle_config?.stroke_color || '#000000'} onChange={e => updateSub('stroke_color', e.target.value)} />
+                        <input type="text" value={form.subtitle_config?.stroke_color || '#000000'} onChange={e => updateSub('stroke_color', e.target.value)} />
+                      </div>
+                    </div>
+                    <div>
+                      <label>描边宽度</label>
+                      <input className="mono" type="number" step="0.5" min="0" max="5" value={form.subtitle_config?.stroke_width || 2} onChange={e => updateSub('stroke_width', parseFloat(e.target.value) || 2)} />
+                    </div>
+                    <div>
+                      <label>字体</label>
+                      <select value={form.subtitle_config?.font || '/System/Library/Fonts/STHeiti Medium.ttc'} onChange={e => updateSub('font', e.target.value)}>
+                        <option value="/System/Library/Fonts/STHeiti Medium.ttc">华文黑体（STHeiti，macOS 默认）</option>
+                        <option value="/System/Library/Fonts/PingFang.ttc">苹方（PingFang）</option>
+                        <option value="/System/Library/Fonts/Hiragino Sans GB.ttc">冬青黑体（Hiragino）</option>
+                        <option value="/Library/Fonts/Songti.ttc">宋体（Songti）</option>
+                        <option value="Arial">Arial（缺中文字符）</option>
+                        <option value="PingFang SC">苹方 SC（系统名）</option>
+                        <option value="Noto Sans SC">思源黑体（Noto Sans SC）</option>
+                        <option value="Microsoft YaHei">微软雅黑（Windows）</option>
+                        <option value="SimHei">黑体（SimHei）</option>
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>最大切片数</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={formData.max_clips}
-                      onChange={(e) => updateField('max_clips', parseInt(e.target.value) || 20)}
-                      style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                    />
+
+                  {/* === 字幕位置：滑块 + 快捷 + 9:16 预览 === */}
+                  <div style={{ marginTop: 'var(--space-4)' }}>
+                    <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+                      <span>字幕位置（视频高度）</span>
+                      <span className="mono" style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                        {Math.round((form.subtitle_config?.position || 0.78) * 100)}%
+                      </span>
+                    </label>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 'var(--space-5)', alignItems: 'stretch' }}>
+                      {/* 左侧：滑块 + 快捷按钮 */}
+                      <div>
+                        <input
+                          type="range"
+                          min="5" max="95" step="1"
+                          value={Math.round((form.subtitle_config?.position || 0.78) * 100)}
+                          onChange={e => updateSub('position', parseInt(e.target.value) / 100)}
+                          style={{
+                            width: '100%', accentColor: 'var(--accent)',
+                            background: 'var(--bg-base)', height: '4px', borderRadius: '2px',
+                            cursor: 'pointer'
+                          }}
+                        />
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between',
+                          fontFamily: 'var(--text-mono)', fontSize: 10,
+                          color: 'var(--text-dim)', marginTop: 'var(--space-1)'
+                        }}>
+                          <span>0% 顶部</span>
+                          <span>50% 居中</span>
+                          <span>100% 底部</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                          {[
+                            { label: '顶部', pos: 0.10, hint: '封面感，适合标题' },
+                            { label: '居中', pos: 0.50, hint: '对白场景' },
+                            { label: '底部', pos: 0.85, hint: '口播字幕位' },
+                          ].map(p => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              className={`btn btn-sm ${Math.abs((form.subtitle_config?.position || 0.78) - p.pos) < 0.03 ? 'btn-primary' : 'btn-ghost'}`}
+                              onClick={() => updateSub('position', p.pos)}
+                              title={p.hint}
+                              style={{ flex: 1 }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 右侧：9:16 预览框 */}
+                      <div style={{
+                        position: 'relative',
+                        width: '90px', height: '160px',
+                        background: 'var(--bg-base)',
+                        border: '1px solid var(--border-default)',
+                        borderRadius: 'var(--radius-md)',
+                        overflow: 'hidden',
+                        flexShrink: 0
+                      }}>
+                        {/* 9:16 grid 标线 */}
+                        <div style={{
+                          position: 'absolute', left: 0, right: 0,
+                          top: '33%', height: '1px', background: 'var(--border-subtle)'
+                        }} />
+                        <div style={{
+                          position: 'absolute', left: 0, right: 0,
+                          top: '66%', height: '1px', background: 'var(--border-subtle)'
+                        }} />
+                        {/* 字幕占位 */}
+                        <div style={{
+                          position: 'absolute', left: 0, right: 0,
+                          top: `${(form.subtitle_config?.position || 0.78) * 100}%`,
+                          transform: 'translateY(-50%)',
+                          textAlign: 'center', padding: '0 4px',
+                          color: form.subtitle_config?.txt_color || '#fff',
+                          textShadow: `0 0 ${form.subtitle_config?.stroke_width || 2}px ${form.subtitle_config?.stroke_color || '#000'}`,
+                          fontSize: 8,
+                          fontFamily: 'var(--text-sans)',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          pointerEvents: 'none'
+                        }}>
+                          示例字幕
+                        </div>
+                        <div style={{
+                          position: 'absolute', bottom: 2, left: 0, right: 0,
+                          textAlign: 'center',
+                          fontFamily: 'var(--text-mono)', fontSize: 8,
+                          color: 'var(--text-dim)'
+                        }}>
+                          9:16
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 内容识别规则 */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3>📌 内容识别规则</h3>
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                描述需要识别的内容类型，如"经济时事/创业故事/连麦互动"
-              </p>
-              <textarea
-                className="form-control"
-                value={formData.content_guidelines}
-                onChange={(e) => updateField('content_guidelines', e.target.value)}
-                placeholder="1. 经济实事/宏观解读&#10;2. 邹总亲身经历/创业故事&#10;3. 连麦互动 + 行业分析"
-                rows={4}
-                style={{ width: '100%', marginTop: '12px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-              />
-            </div>
-
-            {/* 保留/删除规则 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-              <div>
-                <h3>✅ 保留规则</h3>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  需要保留的内容类型
-                </p>
-                <textarea
-                  className="form-control"
-                  value={formData.keep_rules}
-                  onChange={(e) => updateField('keep_rules', e.target.value)}
-                  placeholder="1. 保留完整逻辑&#10;2. 保留金句、总结&#10;3. 保留核心回答"
-                  rows={6}
-                  style={{ width: '100%', marginTop: '12px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                />
-              </div>
-              <div>
-                <h3>❌ 删除规则</h3>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  需要删除的内容类型
-                </p>
-                <textarea
-                  className="form-control"
-                  value={formData.remove_rules}
-                  onChange={(e) => updateField('remove_rules', e.target.value)}
-                  placeholder="1. 删除长时间沉默&#10;2. 删除重复啰嗦&#10;3. 删除无关闲聊"
-                  rows={6}
-                  style={{ width: '100%', marginTop: '12px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                />
-              </div>
-            </div>
-
-            {/* 风格定位 */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3>🎯 风格定位</h3>
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                描述人设和风格，如"沉稳、务实、有阅历的企业家"
-              </p>
-              <textarea
-                className="form-control"
-                value={formData.style_positioning}
-                onChange={(e) => updateField('style_positioning', e.target.value)}
-                placeholder="沉稳、务实、有阅历、懂商业、敢说真话的企业家"
-                rows={2}
-                style={{ width: '100%', marginTop: '12px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-              />
-            </div>
-
-            {/* 字幕配置 */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3>🎬 字幕配置</h3>
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                配置字幕样式，适用于该风格的所有视频
-              </p>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '12px' }}>
-                {/* 字体大小 */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>字体大小 (px)</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={formData.subtitle_config?.font_size || 22}
-                    onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, font_size: parseInt(e.target.value) || 22 })}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  />
-                </div>
-
-                {/* 垂直位置 */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>垂直位置 (视频高度的 %)</label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="100"
-                    className="form-control"
-                    value={Math.round((formData.subtitle_config?.position || 0.33) * 100)}
-                    onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, position: (parseInt(e.target.value) || 33) / 100 })}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  />
-                </div>
-
-                {/* 文字颜色 */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>文字颜色</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                    <input
-                      type="color"
-                      value={formData.subtitle_config?.txt_color || '#ffffff'}
-                      onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, txt_color: e.target.value })}
-                      style={{ width: '40px', height: '36px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    />
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={formData.subtitle_config?.txt_color || '#ffffff'}
-                      onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, txt_color: e.target.value })}
-                      style={{ flex: 1, padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                    />
+                  <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
+                    {[
+                      { label: '默认', config: { font_size: 28, txt_color: 'white', stroke_color: 'black', stroke_width: 2, font: '/System/Library/Fonts/STHeiti Medium.ttc', position: 0.78 } },
+                      { label: '综艺风', config: { font_size: 32, txt_color: 'yellow', stroke_color: 'black', stroke_width: 2.5, font: '/System/Library/Fonts/STHeiti Medium.ttc', position: 0.78 } },
+                      { label: '纪录片', config: { font_size: 24, txt_color: 'white', stroke_color: 'black', stroke_width: 2, font: '/System/Library/Fonts/PingFang.ttc', position: 0.82 } },
+                    ].map(p => (
+                      <button key={p.label} className="btn btn-sm" onClick={() => setForm(prev => ({ ...prev, subtitle_config: p.config }))}>
+                        {p.label}
+                      </button>
+                    ))}
                   </div>
-                </div>
-
-                {/* 描边颜色 */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>描边颜色</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                    <input
-                      type="color"
-                      value={formData.subtitle_config?.stroke_color || '#ffffff'}
-                      onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, stroke_color: e.target.value })}
-                      style={{ width: '40px', height: '36px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    />
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={formData.subtitle_config?.stroke_color || '#ffffff'}
-                      onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, stroke_color: e.target.value })}
-                      style={{ flex: 1, padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                    />
-                  </div>
-                </div>
-
-                {/* 描边宽度 */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>描边宽度</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="5"
-                    className="form-control"
-                    value={formData.subtitle_config?.stroke_width || 1}
-                    onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, stroke_width: parseFloat(e.target.value) || 1 })}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  />
-                </div>
-
-                {/* 字体选择 */}
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>字体</label>
-                  <select
-                    className="form-control"
-                    value={formData.subtitle_config?.font || 'Arial'}
-                    onChange={(e) => updateField('subtitle_config', { ...formData.subtitle_config, font: e.target.value })}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  >
-                    <option value="Arial">Arial (默认)</option>
-                    <option value="PingFang SC">PingFang SC (苹果方)</option>
-                    <option value="Noto Sans SC">Noto Sans SC (思源黑体)</option>
-                    <option value="Microsoft YaHei">Microsoft YaHei (微软雅黑)</option>
-                    <option value="SimHei">SimHei (黑体)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* 预设快捷按钮 */}
-              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => updateField('subtitle_config', {
-                    font_size: 22,
-                    txt_color: 'white',
-                    stroke_color: 'white',
-                    stroke_width: 1,
-                    font: 'Arial',
-                    position: 0.33
-                  })}
-                  style={{ fontSize: 'var(--text-xs)', padding: '4px 8px' }}
-                >
-                  📋 默认（白字白边 33%）
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => updateField('subtitle_config', {
-                    font_size: 24,
-                    txt_color: 'yellow',
-                    stroke_color: 'black',
-                    stroke_width: 2,
-                    font: 'Arial',
-                    position: 0.35
-                  })}
-                  style={{ fontSize: 'var(--text-xs)', padding: '4px 8px' }}
-                >
-                  🎬 综艺风（黄字黑边）
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => updateField('subtitle_config', {
-                    font_size: 20,
-                    txt_color: 'white',
-                    stroke_color: 'black',
-                    stroke_width: 1.5,
-                    font: 'PingFang SC',
-                    position: 0.30
-                  })}
-                  style={{ fontSize: 'var(--text-xs)', padding: '4px 8px' }}
-                >
-                  📺 纪录片风（白字黑边）
-                </button>
-              </div>
+                </>
+              )}
             </div>
 
-            {/* 高级规则 */}
-            <div style={{ marginBottom: '24px' }}>
-              <h3>⚙️ 高级规则</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>最低评分阈值 (0-1)</label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    max="1"
-                    className="form-control"
-                    value={formData.rules.min_score}
-                    onChange={(e) => updateRule('min_score', parseFloat(e.target.value) || 0.7)}
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>优先关键词（逗号分隔）</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={formData.rules.priority_keywords?.join(', ') || ''}
-                    onChange={(e) => updateRule('priority_keywords', e.target.value.split(',').map(k => k.trim()).filter(k => k))}
-                    placeholder="我觉得，我认为，关键是"
-                    style={{ width: '100%', marginTop: '4px', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 操作按钮 */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setShowCreateModal(false)}
-              >
-                取消
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={handleSave}
-                disabled={!formData.name}
-              >
-                {editingStyle ? '保存修改' : '创建风格'}
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowModal(false)}>取消</button>
+              <button className="btn btn-primary" onClick={save} disabled={!form.name}>
+                {editing ? '保存修改' : '创建风格'}
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* 返回主页按钮 */}
-      <div style={{ marginTop: '24px', textAlign: 'center' }}>
-        <button className="btn btn-secondary" onClick={() => navigate('/')}>
-          ← 返回首页
-        </button>
-      </div>
-    </div>
+    </>
   )
 }
 
