@@ -916,6 +916,27 @@ body {
   color: var(--text-bright);
   font-weight: 600;
 }
+
+/* v2.2.1: 字幕文字标签 (替代原来的图标 pill) */
+.subtitle-label {
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.subtitle-label-on {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.subtitle-label-off {
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+  opacity: 0.85;
+}
 }
 
 .reel-row:last-child {

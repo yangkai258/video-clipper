@@ -58,6 +58,17 @@ async def list_projects(
     projects = result.scalars().all()
 
     project_list = []
+    # v2.2.1: 一次性批量查 Style 表, 给所有有 style_id 的 project 填 style_name
+    # 老项目可能 processing_config 里存了 style_id 但没存 strategy_name (老 config 模板),
+    # 查 Style 表补上
+    from ..models.database import Style
+    style_ids = {cfg.get("style_id") for cfg in (p.processing_config or {} for p in projects) if cfg.get("style_id")}
+    style_map = {}
+    if style_ids:
+        result = await db.execute(select(Style).where(Style.id.in_(style_ids)))
+        for s in result.scalars().all():
+            style_map[s.id] = s.name
+
     for p in projects:
         latest = _latest_task(p.tasks)
         # 只暴露 ProjectCard 用的 task 字段 (progress / current_step / timing)
@@ -77,6 +88,13 @@ async def list_projects(
                     "total_estimated_seconds": td.get("total_estimated_seconds"),
                 },
             }
+        # v2.2.1: 从 processing_config 提 style_id / style_name / target_duration /
+        # max_clips / with_subtitle / output_format。ProjectCard 用 style_name 显示
+        # 风格 (用户选了"电影切片"而不是默认), 字幕用 with_subtitle 文字显示。
+        cfg = p.processing_config or {}
+        style_id = cfg.get("style_id")
+        # 老 config 可能只存 style_id 没存 strategy_name, 用 style_map 补
+        style_name = cfg.get("strategy_name") or style_map.get(style_id)
         project_list.append({
             "id": p.id,
             "name": p.name,
@@ -85,6 +103,14 @@ async def list_projects(
             "video_duration": p.video_duration,
             "created_at": to_iso_utc(p.created_at),
             "deleted_at": to_iso_utc(p.deleted_at),
+            # 风格信息 (ProjectCard 显示用)
+            "style_id": style_id,
+            "style_name": style_name,
+            "target_duration": cfg.get("target_duration"),
+            "max_clips": cfg.get("max_clips"),
+            # 字幕 + 输出格式
+            "has_subtitle": cfg.get("with_subtitle", False),
+            "output_format": cfg.get("output_format"),
             **task_fields,
         })
     return {"projects": project_list}

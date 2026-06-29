@@ -61,17 +61,23 @@ export default function ProjectCard({ project, onStart, onDelete }) {
         <div className="reel-card-title">{p.name}</div>
         <div className="reel-card-meta">
           <span
-            className={`style-badge ${p.style_id === '_default' ? 'style-badge-default' : ''}`}
+            className={`style-badge ${!p.style_id || p.style_id === '_default' ? 'style-badge-default' : ''}`}
             title={
               p.target_duration || p.max_clips
                 ? `${p.style_name || '默认'} · ${p.target_duration || '?'}s/片 · ≤${p.max_clips || '?'}片`
-                : undefined
+                : p.style_name
+                  ? p.style_name
+                  : '默认风格'
             }
           >
             {p.style_name || '默认'}
           </span>
-          <span className={`subtitle-pill ${hasSubtitle ? 'subtitle-pill-on' : 'subtitle-pill-off'}`}>
-            <span className="subtitle-pill-icon"><Icon name="tag" size={10} /></span>
+          {/* v2.2.1: 字幕用文字显示, 不用图标 — 用户更容易识别 */}
+          <span
+            className={`subtitle-label ${hasSubtitle ? 'subtitle-label-on' : 'subtitle-label-off'}`}
+            title={hasSubtitle ? '处理时启用字幕烧录' : '纯切片, 不烧字幕'}
+          >
+            {hasSubtitle ? '带字幕' : '无字幕'}
           </span>
           {/* v2.2.1: completed task 显示 预估 vs 实际 (启动时一次性算的 vs 真实耗时),
               后续数据归集得更好预估模型时, 这个对比给用户直观感受 */}
