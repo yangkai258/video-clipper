@@ -111,6 +111,9 @@ async def list_projects(
             # 字幕 + 输出格式
             "has_subtitle": cfg.get("with_subtitle", False),
             "output_format": cfg.get("output_format"),
+            # v2.2.1: 前/后置 padding (cut_clips 时给每个 clip 边界外扩几秒)
+            "pre_padding_seconds": cfg.get("pre_padding_seconds", 0),
+            "post_padding_seconds": cfg.get("post_padding_seconds", 0),
             **task_fields,
         })
     return {"projects": project_list}

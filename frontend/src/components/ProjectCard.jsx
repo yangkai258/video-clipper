@@ -91,6 +91,16 @@ export default function ProjectCard({ project, onStart, onDelete }) {
               <b>{formatDuration(p.actual_total_seconds)}</b>
             </span>
           )}
+          {/* v2.2.1: 前后置 padding — 用户在 ProjectDetail 改 setting 时,
+              下次重切 clip 会给每个 clip 边界外扩这几秒 */}
+          {(p.pre_padding_seconds || p.post_padding_seconds) ? (
+            <span className="padding-label" title={
+              `每个切片边界外扩, 避免 LLM 判定 topic 切换点时切得太突兀。\n` +
+              `前 ${p.pre_padding_seconds || 0}s / 后 ${p.post_padding_seconds || 0}s`
+            }>
+              ±{p.pre_padding_seconds || 0}s / +{p.post_padding_seconds || 0}s
+            </span>
+          ) : null}
         </div>
         <div className="reel-card-stats">
           <div className="reel-card-stat">

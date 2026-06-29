@@ -97,6 +97,18 @@ def process_video_pipeline(
         # Step 2-6: 大纲/时间线/评分/标题/聚类
         titled_clips, collections, outlines = _run_step2_to_6(srt_path, metadata_dir, project_config, task_id)
 
+        # v2.2.1: 前/后置 padding — 给每个 clip 边界外扩几秒, 避免 LLM 判定 topic
+        # 边界时切得太突兀。读 project_config.pre_padding_seconds /
+        # post_padding_seconds (默认 0)。clamp 到 [0, video_duration], 防止越界。
+        pre_pad = float(project_config.get("pre_padding_seconds", 0) or 0)
+        post_pad = float(project_config.get("post_padding_seconds", 0) or 0)
+        if pre_pad > 0 or post_pad > 0:
+            video_duration = project_config.get("video_duration") or 0
+            _apply_clip_padding(titled_clips, pre_pad, post_pad, video_duration)
+            # collections 也得跟着外扩 (合集复用 clip 的 start/end)
+            _apply_clip_padding(collections, pre_pad, post_pad, video_duration)
+            logger.info(f"clip padding: pre={pre_pad}s, post={post_pad}s, video_duration={video_duration}s")
+
         # Step 7: 切割视频（cut_clips 内部维护 70%-90% 进度）
         with_subtitle = project_config.get("with_subtitle", True) if project_config else True
         output_format = project_config.get("output_format", "original") if project_config else "original"
@@ -194,6 +206,30 @@ def _prepare_directories(
         d.mkdir(parents=True, exist_ok=True)
 
     return strategy_config, subtitle_config, project_dir, metadata_dir, output_dir, clips_dir, collections_dir
+
+
+def _apply_clip_padding(items: list, pre_pad: float, post_pad: float, video_duration: float) -> None:
+    """给 clip / collection 列表应用前后置 padding, 在原地修改 dict。
+
+    字段名兼容 start/start_time, end/end_time。clamp 到 [0, video_duration],
+    防止 start < 0 或 end > video_duration 越界。
+
+    为啥改 in-place: cut_clips / merge_collections / _persist_results 都
+    读同一份 titled_clips / collections list, 改了它们都受益。
+    """
+    for item in items:
+        start = item.get("start_time") or item.get("start", 0) or 0
+        end = item.get("end_time") or item.get("end", start + 1) or (start + 1)
+        new_start = max(0, float(start) - pre_pad)
+        new_end = (float(end) + post_pad) if video_duration <= 0 else min(float(video_duration), float(end) + post_pad)
+        # 也保证 new_end > new_start (clamp 后不能反转)
+        if new_end <= new_start:
+            new_end = min(float(video_duration) if video_duration > 0 else new_start + 1, new_start + 1)
+        item["start_time"] = new_start
+        item["end_time"] = new_end
+        # 兼容 start/end 别名
+        item["start"] = new_start
+        item["end"] = new_end
 
 
 def _load_project_config(project_id: str) -> Tuple[dict, dict]:
