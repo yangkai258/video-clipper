@@ -65,11 +65,11 @@ echo "✅ 数据库文件存在：$DB_FILE"
 
 echo ""
 echo "🚀 启动测试版后端 (8030)..."
-/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 > logs/backend_beta.log 2>&1 &
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 > logs/backend_beta.log 2>&1 &
 BACKEND_PID=$!
 
 echo "🚀 启动测试版 Worker..."
-/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=5 -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=5 -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成
@@ -93,7 +93,7 @@ fi
 echo "✅ Worker Redis db 校验通过：${WORKER_DB}"
 
 echo "🚀 预加载 faster-whisper 模型..."
-/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python scripts/preload_whisper_model.py base > /dev/null 2>&1 &
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python scripts/preload_whisper_model.py base > /dev/null 2>&1 &
 
 echo "🚀 启动测试版前端 (3030)..."
 cd frontend && npm run dev -- --config vite.config.beta.js --port 3030 > ../logs/frontend_beta.log 2>&1 &

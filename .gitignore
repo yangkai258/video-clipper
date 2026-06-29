@@ -61,3 +61,4 @@ Thumbs.db
 # SQLite WAL/SHM (临时文件, 不入仓)
 *.db-wal
 *.db-shm
+dump.rdb
