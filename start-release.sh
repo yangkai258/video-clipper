@@ -33,6 +33,10 @@ export HF_ENDPOINT="https://hf-mirror.com"
 export HF_HUB_DOWNLOAD_TIMEOUT=60
 export VITE_PORT="3000"
 export VITE_API_PORT="8000"
+# v2.1.51: 显式传入 version
+# main HEAD 实际没 tag (HEAD 在 v2.0 tag 之后 + 几个 fix), 走 v2.0 + 后续 fix
+# 等下次正式 release 时 bump
+export VITE_APP_VERSION="v2.0"
 
 # === Sanity check ===
 echo "============================================"

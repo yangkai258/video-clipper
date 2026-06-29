@@ -5,9 +5,16 @@ import { dirname, resolve } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+// v2.1.51: version 显式从 start-*.sh 注入, 避免 git describe 分支拓扑 + tag 时间歧义
+// VITE_APP_VERSION 在 start-beta.sh / start-release.sh 里 export
+const VERSION = process.env.VITE_APP_VERSION || 'dev'
+
 export default defineConfig({
   plugins: [react()],
   root: __dirname,
+  define: {
+    __APP_VERSION__: JSON.stringify(VERSION),
+  },
   server: {
     host: '0.0.0.0',
     port: 3030,

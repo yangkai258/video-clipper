@@ -45,6 +45,12 @@ function App() {
 
   const API_BASE = '/api/v1'
 
+  // v2.1.51: VERSION_LABEL 读 vite 启动注入的 __APP_VERSION__, 不再写死 v1.0/v1.1-beta
+  const isBeta = window.location.port === '3030'
+  const VERSION_LABEL = `${isBeta ? '测试版' : '正式版'} ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}`
+  const VERSION_CLASS = isBeta ? 'version-beta' : 'version-release'
+
+  // 加载项目列表
   const loadProjects = async () => {
     try {
       const res = await axios.get(`${API_BASE}/projects/`)

@@ -33,6 +33,9 @@ export HF_ENDPOINT="https://hf-mirror.com"
 export HF_HUB_DOWNLOAD_TIMEOUT=60
 export VITE_PORT="3030"
 export VITE_API_PORT="8030"
+# v2.1.51: 显式传入 version, 不依赖 git describe 分支拓扑歧义
+# beta HEAD 当前指向 v2.1.50, 后续 commit 跑完会 bump 到 v2.1.51+
+export VITE_APP_VERSION="v2.1.50"
 
 # === Sanity check ===
 echo "============================================"
