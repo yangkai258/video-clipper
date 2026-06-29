@@ -36,7 +36,7 @@ export VITE_API_PORT="8000"
 # v2.1.51: 显式传入 version
 # main HEAD 实际没 tag (HEAD 在 v2.0 tag 之后 + 几个 fix), 走 v2.0 + 后续 fix
 # 等下次正式 release 时 bump
-export VITE_APP_VERSION="v2.0"
+export VITE_APP_VERSION="v2.1.53"  # v2.0->v2.1.53, 跟 beta 同步
 
 # === Sanity check ===
 echo "============================================"
