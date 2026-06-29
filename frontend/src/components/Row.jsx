@@ -1,4 +1,4 @@
-function Row({ label, value }) {
+export default function Row({ label, value }) {
   return (
     <div style={{ display: 'flex', gap: 'var(--space-3)', fontSize: 'var(--text-sm)' }}>
       <span style={{ minWidth: '110px', color: 'var(--text-muted)' }}>{label}</span>

@@ -1,7 +1,9 @@
 import Icon from '../Icon'
 import { getOrientation, orientationLabel, formatTC, formatDate } from '../projectView'
+import Row from './Row'
+import Section from './Section'
 
-function ReportModal({ project, onClose }) {
+export default function ReportModal({ project, onClose }) {
   if (!project) return null
   const cfg = project.processing_config || {}
   const task = project.task || {}

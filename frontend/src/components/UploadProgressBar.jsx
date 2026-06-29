@@ -1,6 +1,6 @@
 import Icon from '../Icon'
 
-function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel }) {
+export default function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel }) {
   const { received, total, speed } = progress
   const pct = total > 0 ? Math.min(100, (received / total) * 100) : 0
   const remain = speed > 0 ? (total - received) / speed : null

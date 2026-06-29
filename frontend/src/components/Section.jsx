@@ -1,6 +1,6 @@
 import Icon from '../Icon'
 
-function Section({ title, icon, children }) {
+export default function Section({ title, icon, children }) {
   return (
     <div style={{ marginBottom: 'var(--space-5)' }}>
       <div style={{

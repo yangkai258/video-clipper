@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Icon from '../Icon'
 import { API_BASE } from '../projectView'
 
-function CollectionCard({ coll, index, projectId }) {
+export default function CollectionCard({ coll, index, projectId }) {
   const [playing, setPlaying] = useState(false)
   const videoSrc = coll.video_path
     ? `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(coll.video_path)}`

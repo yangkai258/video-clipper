@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Icon from '../Icon'
 import { API_BASE, getOrientation } from '../projectView'
 
-function ClipCard({ clip, index, projectId, withSubtitle }) {
+export default function ClipCard({ clip, index, projectId, withSubtitle }) {
   const [playing, setPlaying] = useState(false)
   const [errored, setErrored] = useState(false)
   const videoSrc = `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(clip.video_path)}`
