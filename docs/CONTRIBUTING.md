@@ -189,7 +189,32 @@ git push -f origin main   # 强制推送覆盖 main (慎用,需要确认没有 p
 
 ---
 
-## 5. 联系
+## 5. 发布：从 beta 到 main
+
+本仓库有两个长期分支，角色分明：
+
+- `main`：正式版，只接受已经在 `beta` 上验证过的改动，在这里打 tag 发布
+- `beta`：测试版，新功能 / 修复先合到这里，跑一段时间稳定后再同步到 `main`
+
+### 5.1 提交该合到哪里
+
+一切 feature / fix 都提 PR 到 `beta`，**不是** `main`。
+
+### 5.2 beta 同步到 main
+
+1. 在 fork 上切到最新的 `beta`：`git fetch upstream && git checkout beta`
+2. 本地 merge 到 `main`：`git checkout main && git merge --no-ff upstream/beta`（`--no-ff` 保留一次 merge commit，方便后期查看哪些改动跟着 beta 进了 main）
+3. 打 tag：`git tag v2.2.0`（按仓库里最近的 tag 续号，现有 `v1.0` / `v2.1.52`）
+4. 推送：`git push upstream main && git push upstream v2.2.0`（tag 不会随 `git push` 默认走，需要显式指定）
+
+### 5.3 常见问题
+
+- **为什么不直接 merge 到 main**：`beta` 是中间压测环境，有问题可以在这里发现并回滚，不影响正式版。只有验证过的改动才该进 main
+- **同步时出现冲突**：`beta` 与 `main` 不是一个线性历史，互相冲突是正常的，手动解决后推送即可
+- **tag 推不上去**：检查 tag 名符合 `vX.Y.Z` 格式，仓库可能配置了 tag 命名规则
+
+---
+## 6. 联系
 
 - 原作者仓库:https://github.com/yangkai258/video-clipper
 - 提 issue / 讨论:https://github.com/yangkai258/video-clipper/issues
