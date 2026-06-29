@@ -150,6 +150,7 @@ function App() {
                 <div className="reel-grid">
                   {filteredProjects.map(p => (
                     <ProjectCard
+                      key={p.id}
                       project={p}
                       onStart={startProcessing}
                       onDelete={deleteProject}
@@ -170,18 +171,20 @@ function App() {
         </div>
       </main>
 
-      <StrategyModal
-        pendingProject={pendingProject}
-        setPendingProject={setPendingProject}
-        presets={presets}
-        customStyles={customStyles}
-        withSubtitle={withSubtitle}
-        setWithSubtitle={setWithSubtitle}
-        outputFormat={outputFormat}
-        setOutputFormat={setOutputFormat}
-        onSelect={(s) => selectStrategy(s, pendingProject)}
-        onClose={closeStrategyModal}
-      />
+      {showStrategyModal && (
+        <StrategyModal
+          pendingProject={pendingProject}
+          setPendingProject={setPendingProject}
+          presets={presets}
+          customStyles={customStyles}
+          withSubtitle={withSubtitle}
+          setWithSubtitle={setWithSubtitle}
+          outputFormat={outputFormat}
+          setOutputFormat={setOutputFormat}
+          onSelect={(s) => selectStrategy(s, pendingProject)}
+          onClose={closeStrategyModal}
+        />
+      )}
     </div>
   )
 }

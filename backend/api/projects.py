@@ -46,7 +46,10 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
 ):
     """列出项目（默认不含已删除）"""
-    query = select(Project)
+    query = (
+        select(Project)
+        .options(selectinload(Project.tasks))
+    )
     if not include_deleted:
         query = query.where(Project.deleted_at.is_(None))
     query = query.order_by(Project.created_at.desc())
@@ -54,20 +57,34 @@ async def list_projects(
     result = await db.execute(query)
     projects = result.scalars().all()
 
-    return {
-        "projects": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "status": p.status,
-                "video_size": p.video_size,
-                "video_duration": p.video_duration,
-                "created_at": to_iso_utc(p.created_at),
-                "deleted_at": to_iso_utc(p.deleted_at),
+    project_list = []
+    for p in projects:
+        latest = _latest_task(p.tasks)
+        # 只暴露 ProjectCard 用的 task 字段 (progress / current_step / timing)
+        # status / started_at 仍来自 project,避免重名覆盖
+        task_fields = {}
+        if latest:
+            td = _task_to_dict(latest, p.video_duration)
+            task_fields = {
+                "progress": td.get("progress", 0),
+                "current_step": td.get("current_step"),
+                "timing": {
+                    "elapsed_seconds": td.get("elapsed_seconds", 0),
+                    "eta_seconds": td.get("eta_seconds"),
+                    "total_estimated_seconds": td.get("total_estimated_seconds"),
+                },
             }
-            for p in projects
-        ]
-    }
+        project_list.append({
+            "id": p.id,
+            "name": p.name,
+            "status": p.status,
+            "video_size": p.video_size,
+            "video_duration": p.video_duration,
+            "created_at": to_iso_utc(p.created_at),
+            "deleted_at": to_iso_utc(p.deleted_at),
+            **task_fields,
+        })
+    return {"projects": project_list}
 
 
 @router.get("/{project_id}")
@@ -187,6 +204,54 @@ async def get_project_file(project_id: str, db: AsyncSession = Depends(get_db)):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
     return FileResponse(path=str(file_path), filename=file_path.name)
+
+
+@router.get("/{project_id}/files/{file_path:path}")
+async def get_project_file_path(project_id: str, file_path: str, db: AsyncSession = Depends(get_db)):
+    """获取项目内任意文件 (clips, subtitles, thumbnails)。
+
+    v2.1.53: 4afb777 refactor 漏掉了这个 endpoint, 导致前端
+    `ClipCard.jsx` 加载 clip 视频 src 404。
+    修法: 解析 file_path 在 project_dir 内, 防 path traversal,
+    返 FileResponse + Accept-Ranges bytes 让浏览器可 seek。
+    """
+    from urllib.parse import quote
+
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project or project.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project_dir = (settings.PROJECTS_DIR / project_id).resolve()
+    full_path = (project_dir / file_path).resolve()
+    try:
+        full_path.relative_to(project_dir)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Forbidden: path outside project directory")
+
+    if not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # 根据扩展名给 media_type
+    suffix = full_path.suffix.lower()
+    media_type = {
+        ".mp4": "video/mp4",
+        ".srt": "application/x-subrip",
+        ".vtt": "text/vtt",
+        ".jpg": "image/jpeg",
+        ".png": "image/png",
+        ".json": "application/json",
+    }.get(suffix, "application/octet-stream")
+
+    encoded_filename = quote(full_path.name)
+    return FileResponse(
+        str(full_path),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}",
+            "Accept-Ranges": "bytes",
+        },
+    )
 
 
 @router.delete("/{project_id}")

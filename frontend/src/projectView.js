@@ -72,6 +72,6 @@ export function formatDuration(totalSeconds) {
   const mm = Math.floor((s % 3600) / 60)
   const ss = s % 60
   const pad = (n) => String(n).padStart(2, '0')
-  if (hh > 0) return `::`
-  return `:`
+  if (hh > 0) return `${hh}:${pad(mm)}:${pad(ss)}`
+  return `${pad(mm)}:${pad(ss)}`
 }

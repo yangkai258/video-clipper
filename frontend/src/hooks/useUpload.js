@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import ChunkedUploader from '../ChunkedUploader'
+import { ChunkedUploader } from '../ChunkedUploader'
 
 // ponytail: 简单文件名清洗 + 扩展名抽取
 function filenameSafe(s) {

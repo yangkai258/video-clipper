@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import Icon from '../Icon'
-import { API_BASE, getOrientation } from '../projectView'
+import { API_BASE, getOrientation, formatTime } from '../projectView'
 
 export default function ClipCard({ clip, index, projectId, withSubtitle }) {
   const [playing, setPlaying] = useState(false)

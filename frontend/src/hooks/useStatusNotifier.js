@@ -6,18 +6,18 @@ function notify(title, body) {
 }
 
 export function useStatusNotifier(project) {
-  const notifiedRef = useRef(new Set())
+  const notifiedRef = useRef(new Map())
   const status = project?.status
 
   useEffect(() => {
     if (!status || !project) return
     const prev = notifiedRef.current.get(project.id)
     if (prev === 'processing' && status === 'completed' && !notifiedRef.current.has(project.id + ':done')) {
-      notifiedRef.current.add(project.id + ':done')
+      notifiedRef.current.set(project.id + ':done', true)
       notify('切片完成', `「${project.name}」处理完成`)
     }
     if (prev === 'processing' && status === 'failed' && !notifiedRef.current.has(project.id + ':fail')) {
-      notifiedRef.current.add(project.id + ':fail')
+      notifiedRef.current.set(project.id + ':fail', true)
       notify('切片失败', `「${project.name}」处理失败`)
     }
     notifiedRef.current.set(project.id, status)

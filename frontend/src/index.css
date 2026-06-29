@@ -394,6 +394,13 @@ body {
   min-width: 0;
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
 .page-title {
   font-size: var(--text-md);
   font-weight: 600;
