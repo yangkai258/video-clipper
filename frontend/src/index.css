@@ -117,9 +117,9 @@
   --bg-elevated: rgba(255, 255, 255, 0.85);
   --bg-overlay: rgba(255, 255, 255, 0.92);
   --bg-hover: rgba(255, 255, 255, 1.0);
-  --bg-glass: rgba(255, 255, 255, 0.55);
-  --bg-card: rgba(255, 255, 255, 0.72);
-  --bg-modal: rgba(255, 255, 255, 0.92);
+  --bg-glass: rgba(255, 255, 255, 0.7);   /* ponytail: 亮色玻璃背景 0.55->0.7 更不透, 玻璃感更强 (跟 B 配套) */
+  --bg-card: rgba(255, 255, 255, 0.82);  /* ponytail: 配套 B 改, 保持 卡-玻璃-模态 递增 (0.82-0.7-0.96) */
+  --bg-modal: rgba(255, 255, 255, 0.96);  /* ponytail: 配套 B 改, 保持模态最不透 */
 
   /* Borders */
   --border-subtle: rgba(0, 0, 0, 0.06);
@@ -159,11 +159,11 @@
   --text-on-accent: #ffffff;
 
   /* Glassmorphism 配置 (浅色 blur 稍弱 — 白底过模糊会糊) */
-  --blur-strength: 28px;
+  --blur-strength: 40px;                  /* ponytail: 28->40 亮色玻璃感追平并超过暗色 32px (你 Q3 强化玻璃风) */
   --saturate-strength: 180%;
 
   /* 背景渐变（浅色 = 天蓝晴空） */
-  --bg-gradient: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 50%, #7dd3fc 100%);
+  --bg-gradient: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 50%, #0ea5e9 100%);  /* ponytail: 渐变末点 #7dd3fc->#0ea5e9 加饱和, 玻璃下有色彩衬托 */
   --bg-gradient-soft: linear-gradient(135deg, rgba(224, 242, 254, 0.85) 0%, rgba(186, 230, 253, 0.85) 50%, rgba(125, 211, 252, 0.85) 100%);
   --bg-glow:
     radial-gradient(60% 50% at 15% 20%, rgba(251, 146, 60, 0.45), transparent 70%),
