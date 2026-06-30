@@ -240,11 +240,26 @@ async def update_project_config(
     db: AsyncSession = Depends(get_db),
 ):
     """更新项目处理配置（如切片策略）"""
+    from ..models.database import Style
     project = await _load_project_basic(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    project.processing_config = {**project.processing_config, **config}
+    # v2.2.1: 如果传了 style_id, 自动从 Style 表复制 pre/post_padding snapshot
+    # 到 processing_config。这样切的时候读 snapshot, 跟当前 style 表解耦
+    # (用户改 style padding 不会影响已经在跑的 task)
+    merged_config = {**project.processing_config, **config}
+    if config.get("style_id"):
+        style_result = await db.execute(select(Style).where(Style.id == config["style_id"]))
+        s = style_result.scalar_one_or_none()
+        if s:
+            # 只在 client 没显式传 padding 时才覆盖 (避免 client 显式 override 时被吞)
+            if "pre_padding_seconds" not in config:
+                merged_config["pre_padding_seconds"] = s.pre_padding_seconds
+            if "post_padding_seconds" not in config:
+                merged_config["post_padding_seconds"] = s.post_padding_seconds
+
+    project.processing_config = merged_config
     project.updated_at = datetime.utcnow()
 
     if config.get("subtitle_style"):

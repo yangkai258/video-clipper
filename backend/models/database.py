@@ -187,6 +187,11 @@ class Style(Base):
     style_positioning = Column(Text, default="")
     # 字幕配置
     subtitle_config = Column(JSON, nullable=True)
+    # v2.2.1: 切片前/后置 padding (秒) — 该 Style 默认 padding
+    # 选这个 Style 切新 project 时, snapshot 复制到 project.processing_config
+    # 默认前 10s / 后 5s (用户偏好), 后续可改
+    pre_padding_seconds = Column(Float, default=10.0)
+    post_padding_seconds = Column(Float, default=5.0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

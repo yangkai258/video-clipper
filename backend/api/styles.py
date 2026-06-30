@@ -84,6 +84,9 @@ def _style_to_dict(s: Style) -> dict:
         "remove_rules": s.remove_rules or "",
         "style_positioning": s.style_positioning or "",
         "subtitle_config": s.subtitle_config,
+        # v2.2.1: 切片前/后置 padding (秒)
+        "pre_padding_seconds": s.pre_padding_seconds if s.pre_padding_seconds is not None else 10.0,
+        "post_padding_seconds": s.post_padding_seconds if s.post_padding_seconds is not None else 5.0,
         "created_at": to_iso_utc(s.created_at),
         "updated_at": to_iso_utc(s.updated_at),
     }
@@ -103,6 +106,9 @@ class StyleCreate(BaseModel):
     style_positioning: Optional[str] = ""  # 风格定位（如"沉稳、务实、有阅历"）
     # 新增：字幕配置
     subtitle_config: Optional[dict] = None  # {font_size, txt_color, stroke_color, stroke_width, font, position}
+    # v2.2.1: 切片前/后置 padding (秒)
+    pre_padding_seconds: Optional[float] = 10.0
+    post_padding_seconds: Optional[float] = 5.0
 
 
 class StyleUpdate(BaseModel):
@@ -119,6 +125,9 @@ class StyleUpdate(BaseModel):
     style_positioning: Optional[str] = None
     # 新增：字幕配置
     subtitle_config: Optional[dict] = None
+    # v2.2.1: 切片前/后置 padding (秒)
+    pre_padding_seconds: Optional[float] = None
+    post_padding_seconds: Optional[float] = None
 
 
 class StyleResponse(BaseModel):
@@ -138,6 +147,9 @@ class StyleResponse(BaseModel):
     style_positioning: Optional[str] = ""
     # 新增：字幕配置
     subtitle_config: Optional[dict] = None
+    # v2.2.1: 切片前/后置 padding (秒)
+    pre_padding_seconds: float = 10.0
+    post_padding_seconds: float = 5.0
 
 
 @router.get("/strategies/presets")
@@ -182,6 +194,9 @@ async def create_style(style: StyleCreate, db: AsyncSession = Depends(get_db)):
         remove_rules=style.remove_rules or "",
         style_positioning=style.style_positioning or "",
         subtitle_config=style.subtitle_config,
+        # v2.2.1: 切片前/后置 padding (秒, 默认 10/5)
+        pre_padding_seconds=style.pre_padding_seconds if style.pre_padding_seconds is not None else 10.0,
+        post_padding_seconds=style.post_padding_seconds if style.post_padding_seconds is not None else 5.0,
     )
     db.add(s)
     await db.commit()

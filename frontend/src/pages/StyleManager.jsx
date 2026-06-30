@@ -16,6 +16,9 @@ const defaultStyle = {
   keep_rules: '',
   remove_rules: '',
   style_positioning: '',
+  // v2.2.1: 切片前/后置 padding (秒), 默认 10 / 5
+  pre_padding_seconds: 10,
+  post_padding_seconds: 5,
   subtitle_config: {
     font_size: 28,
     txt_color: 'white',
@@ -175,6 +178,8 @@ function StyleManager({ navigate: navProp, location: locProp }) {
                   <div className="style-item-meta">
                     <span>时长 <b style={{ color: 'var(--text-default)' }}>{s.target_duration}s</b></span>
                     <span>最多 <b style={{ color: 'var(--text-default)' }}>{s.max_clips}</b></span>
+                    {/* v2.2.1: 显示 padding 让用户能看到当前风格切多少前后秒 */}
+                    <span title="切片前/后 padding">±{s.pre_padding_seconds ?? 10}s / +{s.post_padding_seconds ?? 5}s</span>
                   </div>
                   <div className="style-item-actions">
                     <button className="btn btn-ghost btn-sm" onClick={() => openEdit(s)}>编辑</button>
@@ -228,6 +233,21 @@ function StyleManager({ navigate: navProp, location: locProp }) {
                     <div>
                       <label>最大切片数</label>
                       <input className="mono" type="number" value={form.max_clips} onChange={e => update('max_clips', parseInt(e.target.value) || 20)} />
+                    </div>
+                  </div>
+                  {/* v2.2.1: 切片前/后置 padding — 用户偏好, 切所有片选这风格时自动应用 */}
+                  <div className="form-row">
+                    <div>
+                      <label>切片前置秒数（切点前多留几秒）</label>
+                      <input className="mono" type="number" step="0.5" min="0" max="60"
+                        value={form.pre_padding_seconds ?? 10}
+                        onChange={e => update('pre_padding_seconds', parseFloat(e.target.value) || 0)} />
+                    </div>
+                    <div>
+                      <label>切片后置秒数（切点后多留几秒）</label>
+                      <input className="mono" type="number" step="0.5" min="0" max="60"
+                        value={form.post_padding_seconds ?? 5}
+                        onChange={e => update('post_padding_seconds', parseFloat(e.target.value) || 0)} />
                     </div>
                   </div>
                 </>
