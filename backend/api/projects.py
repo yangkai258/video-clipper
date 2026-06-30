@@ -40,6 +40,39 @@ MIN_VIDEO_SIZE_BYTES = 1024 * 1024
 # ───────────────────────── 公开 API ─────────────────────────
 
 
+# v2.2.1 fix: /trash 和 /trash/all 必须注册在 /{project_id} 之前, 否则
+# FastAPI/Starlette 路由按注册顺序匹配, DELETE /trash 会被 DELETE /{project_id}
+# (project_id="trash") 截胡 → 404 "Project not found"
+# 同理 DELETE /trash/all 会被 DELETE /{project_id}/restore 等截胡 (但目前还没踩到,
+# 因为 Starlette 会先精确匹配 "/trash/all" 字面量再 fallback 到 path param)
+@router.delete("/trash")
+async def cleanup_trash(days: int = Query(default=30), db: AsyncSession = Depends(get_db)):
+    """清理 N 天前的已删除项目（软删 → 硬删）"""
+    threshold = datetime.utcnow() - timedelta(days=days)
+    result = await db.execute(
+        select(Project).where(
+            Project.deleted_at.is_not(None),
+            Project.deleted_at < threshold,
+        )
+    )
+    stale = result.scalars().all()
+    for p in stale:
+        await db.delete(p)
+    await db.commit()
+    return {"message": f"已清理 {len(stale)} 个项目", "count": len(stale)}
+
+
+@router.delete("/trash/all")
+async def purge_all_trash(db: AsyncSession = Depends(get_db)):
+    """清空整个回收站（不可恢复）"""
+    result = await db.execute(select(Project).where(Project.deleted_at.is_not(None)))
+    stale = result.scalars().all()
+    for p in stale:
+        await db.delete(p)
+    await db.commit()
+    return {"message": f"已清空 {len(stale)} 个项目", "count": len(stale)}
+
+
 @router.get("/")
 async def list_projects(
     include_deleted: bool = Query(default=False),
@@ -310,34 +343,6 @@ async def restore_project(project_id: str, db: AsyncSession = Depends(get_db)):
     project.deleted_at = None
     await db.commit()
     return {"message": "项目已恢复", "project_id": project_id}
-
-
-@router.delete("/trash")
-async def cleanup_trash(days: int = Query(default=30), db: AsyncSession = Depends(get_db)):
-    """清理 N 天前的已删除项目（软删 → 硬删）"""
-    threshold = datetime.utcnow() - timedelta(days=days)
-    result = await db.execute(
-        select(Project).where(
-            Project.deleted_at.is_not(None),
-            Project.deleted_at < threshold,
-        )
-    )
-    stale = result.scalars().all()
-    for p in stale:
-        await db.delete(p)
-    await db.commit()
-    return {"message": f"已清理 {len(stale)} 个项目", "count": len(stale)}
-
-
-@router.delete("/trash/all")
-async def purge_all_trash(db: AsyncSession = Depends(get_db)):
-    """清空整个回收站（不可恢复）"""
-    result = await db.execute(select(Project).where(Project.deleted_at.is_not(None)))
-    stale = result.scalars().all()
-    for p in stale:
-        await db.delete(p)
-    await db.commit()
-    return {"message": f"已清空 {len(stale)} 个项目", "count": len(stale)}
 
 
 # ───────────────────────── 进度/时间辅助 ─────────────────────────
