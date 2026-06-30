@@ -204,8 +204,11 @@ async def create_style(style: StyleCreate, db: AsyncSession = Depends(get_db)):
 
     # 同步字幕配置到用户偏好
     if style.subtitle_config:
-        from .projects import _sync_subtitle_style_to_preferences
-        await _sync_subtitle_style_to_preferences(db, style.subtitle_config)
+        # v2.2.1 fix: 4afb777 refactor 把 _sync_subtitle_style_to_preferences
+        # 重命名 + 移到 services/subtitle_preferences.py。ImportError 会导致
+        # 创建风格返 500。
+        from ..services.subtitle_preferences import sync_subtitle_style_to_preferences
+        await sync_subtitle_style_to_preferences(db, style.subtitle_config)
 
     return _style_to_dict(s)
 
@@ -227,8 +230,9 @@ async def update_style(style_id: str, style: StyleUpdate, db: AsyncSession = Dep
 
     # 同步字幕配置到用户偏好（自动复用）
     if style.subtitle_config is not None:
-        from .projects import _sync_subtitle_style_to_preferences
-        await _sync_subtitle_style_to_preferences(db, style.subtitle_config)
+        # v2.2.1 fix: 同上, 改 import 路径
+        from ..services.subtitle_preferences import sync_subtitle_style_to_preferences
+        await sync_subtitle_style_to_preferences(db, style.subtitle_config)
 
     return _style_to_dict(s)
 
