@@ -4,23 +4,24 @@ import Icon from './Icon'
 const STORAGE_KEY = 'video-clipper-theme'
 const DARK = 'dark'
 const LIGHT = 'light'
+const DEFAULT_THEME = LIGHT  // v2.2.1: 默认亮色 (运营团队反馈 dark 模式长时间使用眼睛累)
 
 /**
  * 读取持久化主题（无 localStorage 时返回默认）
  */
 function readSavedTheme() {
-  if (typeof window === 'undefined') return DARK
+  if (typeof window === 'undefined') return DEFAULT_THEME
   try {
-    return localStorage.getItem(STORAGE_KEY) || DARK
+    return localStorage.getItem(STORAGE_KEY) || DEFAULT_THEME
   } catch {
-    return DARK
+    return DEFAULT_THEME
   }
 }
 
 /**
  * 亮暗切换按钮
  *
- * - 默认 dark
+ * - 默认 light (运营团队偏好, v2.2.1+)
  * - 写 document.documentElement.dataset.theme（CSS 变量自动切换）
  * - 持久化到 localStorage
  * - 顶栏右侧 SVG icon 切换
