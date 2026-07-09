@@ -68,8 +68,8 @@ echo "✅ 数据库文件存在：$DB_FILE"
 
 echo ""
 echo "🚀 启动测试版后端 (8030)..."
-# v2.2.1+: --workers 4 多 process 并发处理 upload chunk
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 --workers 4 > logs/backend_beta.log 2>&1 &
+# v2.2.1+: --workers 1 单 worker (macOS Python 3.10 + fork 偶发 worker 卡死, 1 worker 稳)
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 --workers 1 > logs/backend_beta.log 2>&1 &
 BACKEND_PID=$!
 
 echo "🚀 启动测试版 Worker..."

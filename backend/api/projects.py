@@ -205,6 +205,32 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     4. 写 project.status = processing + 创建 Task 记录
     5. 提交 celery 任务
     """
+    project = await _load_project_basic(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    _ensure_status_restartable(project)
+
+    if project.status == "processing":
+        await _revoke_existing_tasks(db, project_id)
+
+    video_path = settings.PROJECTS_DIR / project.video_path
+    _ensure_video_file_exists(video_path)
+
+    project.status = "processing"
+    await db.commit()
+
+    task = await _create_processing_task(db, project_id)
+    celery_task_id = _dispatch_celery_task(project_id, video_path, project.subtitle_path, task.id)
+    task.celery_task_id = celery_task_id
+    task.status = "running"
+    await db.commit()
+
+    return {
+        "message": "处理已开始",
+        "project_id": project_id,
+        "task_id": task.id,
+        "celery_task_id": celery_task_id,
+    }
 
 
 @router.post("/{project_id}/rerun")
