@@ -13,7 +13,6 @@
 const CHUNK_SIZE = 10 * 1024 * 1024   // 10MB (v2.2.1+: 7GB 视频 700 chunk @ 10MB, 局域网 OK; cloudflared trycloudflare 限制单 chunk 30s 内完成, 10MB 在 3MB/s 网络 3.3s 写完 OK)
 
 const MAX_CONCURRENT = 6  // v2.2.1+: 3 -> 6 并发, disk + network 起来 (实测 15MB/s 7GB 提到 ~30MB/s)
-const MAX_CONCURRENT = 1              // 单并发：避免抢带宽
 const MAX_RETRY = 3                   // 单片最多重试 3 次
 
 export class ChunkedUploader {
