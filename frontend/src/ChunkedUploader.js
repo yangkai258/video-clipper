@@ -10,7 +10,7 @@
  *   uploader.resume()  // 恢复
  *   uploader.cancel()  // 取消（删 upload_id）
  */
-const CHUNK_SIZE = 1 * 1024 * 1024   // 1MB（cloudflared trycloudflare 限制：单 chunk 30s 内必须完成）
+const CHUNK_SIZE = 5 * 1024 * 1024   // 5MB (v2.2.1: 局域网 1MB chunk 写 50 chunk fopen 太慢, 5x chunk 提速 ~5x. cloudflared trycloudflare 限制单 chunk 30s 内完成, 5MB 在 3MB/s 网络下 1.7s 写完 OK)
 const MAX_CONCURRENT = 1              // 单并发：避免抢带宽
 const MAX_RETRY = 3                   // 单片最多重试 3 次
 

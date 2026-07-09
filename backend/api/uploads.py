@@ -114,8 +114,9 @@ async def init_upload(
         existing_offset: 已上传偏移（0 表示新会话）
     """
     # 验证文件类型
-    ext = filename.split(".")[-1].lower()
-    if not settings.is_allowed_video_ext(ext):
+    ext = filename.split(".")[-1].lower() if "." in filename else ""
+    # 无扩展名或未知扩展名：跳过格式校验，在 complete_upload 阶段由 ffprobe 验证
+    if ext and not settings.is_allowed_video_ext(ext):
         raise HTTPException(
             status_code=400,
             detail=f"不支持的视频格式：{ext}。支持的格式：{[e.lstrip('.') for e in settings.ALLOWED_VIDEO_EXTENSIONS]}"
@@ -234,7 +235,12 @@ async def upload_chunk(
     finally:
         await chunk.close()
 
-    received = _count_received_bytes(upload_id)
+    # v2.2.1: meta 累加 received_bytes, 避免 _count_received_bytes 每次遍历所有 part files
+    # 50MB @ 1MB chunk = 50 part files, 每次遍历 fs.stat 50 个, 累计 1250 次; 改 meta 累加
+    # 后只需 1 次 fs.write 同步 meta
+    meta["received_bytes"] = meta.get("received_bytes", 0) + bytes_written
+    mpath.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    received = meta["received_bytes"]
     logger.info(f"chunk {upload_id}: offset={offset} size={bytes_written} received={received}/{meta['total_size']}")
     return {
         "upload_id": upload_id,
