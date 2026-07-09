@@ -73,7 +73,7 @@ echo "🚀 启动正式版后端 (8000)..."
 BACKEND_PID=$!
 
 echo "🚀 启动正式版 Worker..."
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=2 -Q processing > logs/celery_worker.log 2>&1 &
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --pool=solo -Q processing > logs/celery_worker.log 2>&1 &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成

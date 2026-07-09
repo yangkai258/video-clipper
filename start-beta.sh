@@ -72,7 +72,7 @@ echo "🚀 启动测试版后端 (8030)..."
 BACKEND_PID=$!
 
 echo "🚀 启动测试版 Worker..."
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=5 -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --pool=solo -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成
