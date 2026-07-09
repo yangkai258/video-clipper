@@ -33,21 +33,36 @@ COVER_THUMB_QUALITY = 2       # q:v 值（封面比每片质量高）
 # ───────────────────────── 公开 API ─────────────────────────
 
 
-def _build_video_encoder_args(output_format: str, output_path: Path = None) -> list:
+def _build_video_encoder_args(output_format: str, output_path: Path = None, use_libx264: bool = False) -> list:
     """根据 output_format 生成 ffmpeg 编码参数。
 
     Args:
         output_format: "original" | "9:16-letterbox" | "9:16-smart-crop"
         output_path: v2.1.44 fix: 不传 ffmpeg 会报 "At least one output file must be specified"
+        use_libx264: True 强制 libx264 软件编码 (防 4K + h264_videotoolbox 合并 bug, v2.2.1+)
 
     Returns:
         list of ffmpeg args (不含 -i input)
     """
     # 基础编码参数 (硬件加速 + 抖音兼容)
-    base = [
-        "-c:v", "h264_videotoolbox",
-        "-keyint_min", "60",
-        "-g", "60",
+    # ⚠️ bug fix (v2.2.1+): h264_videotoolbox 合并 4K + concat demuxer 时炸
+    # (Could not open encoder before EOF, exit 187). 切单文件 step 7 OK,
+    # 合并多文件 step 8 触发. 简单修法: 合并时 use_libx264=True 走软件编码.
+    if use_libx264:
+        base = [
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",  # 4K 兼容 (videotoolbox 自动选, libx264 必须显式)
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+        ]
+    else:
+        base = [
+            "-c:v", "h264_videotoolbox",
+            "-keyint_min", "60",
+            "-g", "60",
         "-profile:v", "high",
         "-level", "4.0",
         "-c:a", "aac",
@@ -61,6 +76,10 @@ def _build_video_encoder_args(output_format: str, output_path: Path = None) -> l
     if output_path is not None:
         args.append(str(output_path))
     return args
+
+
+# v2.2.1+: 4K + h264_videotoolbox 合并 bug, 强制 merge 走 libx264
+_MERGE_USE_LIBX264 = True
 
 
 def cut_clips(
@@ -205,11 +224,15 @@ def _merge_single_collection(collection: Dict, index: int, clips_dir: Path, outp
     _write_concat_list(list_path, clips, clips_dir)
     try:
         output_path = output_dir / f"{title}.mp4"
+        # ⚠️ v2.2.1+: merge 用 libx264, 防 4K + h264_videotoolbox 合并 bug
+        # (Could not open encoder before EOF, exit 187). step 7 cut 单文件 OK,
+        # step 8 merge 多文件触发 macOS VideoToolbox 偶发 bug. software 编码
+        # 慢但稳, merge 是 I/O bound 不是 CPU bound, 实际差几秒.
         cmd = [
             "ffmpeg", "-y",
             "-f", "concat", "-safe", "0",
             "-i", str(list_path),
-            *_build_video_encoder_args("original", output_path),
+            *_build_video_encoder_args("original", output_path, use_libx264=_MERGE_USE_LIBX264),
         ]
         subprocess.run(cmd, check=True, capture_output=True, timeout=MERGE_TIMEOUT_SECONDS)
         collection["video_path"] = str(output_path.relative_to(output_path.parent.parent.parent))
