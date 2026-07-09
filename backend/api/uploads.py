@@ -269,6 +269,9 @@ async def upload_chunk(
 async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
     # orchestration: session check -> merge chunks -> probe -> DB
     meta = _resolve_upload_session(upload_id)
+    # v2.2.1: keep_raw 控制 step 10 跑完是否删 raw/input.mp4
+    # true: 保留 raw 供重切 (re-run 不重传); false: 跑完删 (省 disk, 7GB 1 个就 7G)
+    keep_raw = bool(meta.get("keep_raw", False))
 
     project_id = str(uuid.uuid4())
     project_dir = settings.PROJECTS_DIR / project_id
@@ -315,7 +318,10 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
         video_duration=video_duration,
         video_width=dims[0] if dims else None,
         video_height=dims[1] if dims else None,
-        processing_config={"subtitle_style": subtitle_style} if subtitle_style else {},
+        processing_config={
+            "subtitle_style": subtitle_style if subtitle_style else None,
+            "keep_raw": keep_raw,  # v2.2.1: 控制 step 10 是否保留 raw 供重切
+        },
     )
     db.add(project)
     await db.commit()

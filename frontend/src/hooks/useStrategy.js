@@ -12,6 +12,8 @@ export function useStrategy({ onAfterProcess }) {
   const [customStyles, setCustomStyles] = useState([])
   const [withSubtitle, setWithSubtitle] = useState(true)
   const [outputFormat, setOutputFormat] = useState('original')
+  // v2.2.1: 保留 raw 视频供后续重切 (rerun API 用), 默认 false 省 disk
+  const [keepRaw, setKeepRaw] = useState(false)
 
   const loadStrategies = useCallback(async () => {
     try {
@@ -47,6 +49,7 @@ export function useStrategy({ onAfterProcess }) {
         style_name: strategy.name,
         style_positioning: strategy.style_positioning,
         subtitle_style: strategy.subtitle_config || null,
+        keep_raw: keepRaw,  // v2.2.1: 保留 raw 供重切
       })
     } catch (e) { console.error('配置失败:', e) }
     try {
@@ -56,7 +59,7 @@ export function useStrategy({ onAfterProcess }) {
       alert(`处理失败：${e.response?.data?.detail || e.message}`)
     }
     closeStrategyModal()
-  }, [withSubtitle, outputFormat, onAfterProcess, closeStrategyModal])
+  }, [withSubtitle, outputFormat, keepRaw, onAfterProcess, closeStrategyModal])
 
   // 直接处理已存在项目 (不通过 strategy modal)
   const startProcessing = useCallback(async (id) => {
@@ -73,6 +76,7 @@ export function useStrategy({ onAfterProcess }) {
     presets, customStyles,
     withSubtitle, setWithSubtitle,
     outputFormat, setOutputFormat,
+    keepRaw, setKeepRaw,  // v2.2.1
     loadStrategies,
     openStrategyModal, closeStrategyModal,
     selectStrategy, startProcessing,

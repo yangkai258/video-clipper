@@ -160,7 +160,7 @@ def process_video_pipeline(
             }
 
         # 清理 raw 视频 + 临时文件
-        _cleanup_temp_files(project_dir)
+        _cleanup_temp_files(project_dir, project_id)
 
         gc.collect()
         logger.info(f"项目处理完成：{project_id}")
@@ -660,18 +660,35 @@ def _cleanup_temp_srt(with_subtitle: bool, srt_path: Path) -> None:
         logger.warning(f"清理临时 SRT 失败：{e}")
 
 
-def _cleanup_temp_files(project_dir: Path) -> None:
-    """删 raw 视频 + 临时音频 + 中间 JSON（独立 try，不影响主流程）。"""
+def _cleanup_temp_files(project_dir: Path, project_id: str = None) -> None:
+    """删 raw 视频 + 临时音频 + 中间 JSON（独立 try，不影响主流程）。
+
+    v2.2.1: 看 processing_config.keep_raw, true 时保留 raw 供重切 (re-run API 用)
+    raw 通常 7GB+ 视频保留 1 个就 7G, user 选 keep_raw=true 需自己权衡磁盘
+    """
     try:
+        keep_raw = False
+        if project_id:
+            from ..core.database import sync_get_db
+            from ..models.database import Project
+            with sync_get_db() as db:
+                p = db.query(Project).filter(Project.id == project_id).first()
+                if p and (p.processing_config or {}).get("keep_raw"):
+                    keep_raw = True
+
         raw_video = project_dir / "raw" / "input.mp4"
         if raw_video.exists():
-            raw_size = raw_video.stat().st_size
-            raw_video.unlink()
-            logger.info(f"清理：删除 raw/input.mp4 ({raw_size/1024/1024:.1f} MB)")
-            try:
-                (project_dir / "raw").rmdir()
-            except OSError:
-                pass
+            if keep_raw:
+                raw_size = raw_video.stat().st_size
+                logger.info(f"清理：保留 raw/input.mp4 ({raw_size/1024/1024:.1f} MB, keep_raw=true, 供重切)")
+            else:
+                raw_size = raw_video.stat().st_size
+                raw_video.unlink()
+                logger.info(f"清理：删除 raw/input.mp4 ({raw_size/1024/1024:.1f} MB)")
+                try:
+                    (project_dir / "raw").rmdir()
+                except OSError:
+                    pass
 
         metadata_dir = project_dir / "metadata"
         for temp_name in TEMP_AUDIO_FILES:

@@ -11,6 +11,8 @@ export default function StrategyModal({
   setWithSubtitle,
   outputFormat,
   setOutputFormat,
+  keepRaw,
+  setKeepRaw,
   onSelect,
   onClose,
 }) {
@@ -75,6 +77,25 @@ export default function StrategyModal({
             <div
               className={`toggle-switch ${outputFormat === '9:16-letterbox' ? 'on' : ''}`}
               onClick={() => setOutputFormat(outputFormat === '9:16-letterbox' ? 'original' : '9:16-letterbox')}
+            />
+          </div>
+
+          {/* v2.2.1: 保留 raw 供重切 (rerun API 用) */}
+          <div className="toggle-row">
+            <div>
+              <div className="toggle-info-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <Icon name="save" size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />
+                保留原视频
+              </div>
+              <div className="toggle-info-hint">
+                {keepRaw
+                  ? <>开 = 保留 raw (7GB 视频占 7G, 但可随时改风格重切)</>
+                  : <>关 = 跑完自动清理 (省磁盘, 重切需重传视频)</>}
+              </div>
+            </div>
+            <div
+              className={`toggle-switch ${keepRaw ? 'on' : ''}`}
+              onClick={() => setKeepRaw(!keepRaw)}
             />
           </div>
 

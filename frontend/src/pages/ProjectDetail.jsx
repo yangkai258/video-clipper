@@ -19,12 +19,15 @@ import CollectionsTab from '../components/CollectionsTab'
 import SrtTab from '../components/SrtTab'
 import SettingsTab from '../components/SettingsTab'
 import ReportModal from '../components/ReportModal'
+import RerunModal from '../components/RerunModal'
 
 // ponytail: 主组件仅负责装配 — 状态与业务逻辑都抽到 hooks / sub-components
 export default function ProjectDetail({ projectId, navigate: navProp }) {
   const navigate = navProp || useNavigate()
   const id = projectId
   const [showReport, setShowReport] = useState(false)
+  // v2.2.1: 重新处理弹窗 (复用 raw, 改 with_subtitle/output_format/style/padding)
+  const [showRerun, setShowRerun] = useState(false)
 
   // ponytail: 必须在所有 hook 之前且无条件执行,避免 hooks 顺序违规
   useEffect(() => {
@@ -86,6 +89,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
         onStart: startProcessing,
         onShowReport: () => setShowReport(true),
         onDelete: deleteProject,
+        onRerun: () => setShowRerun(true),  // v2.2.1: 重新处理
       },
     }
   }, [project])
@@ -152,6 +156,20 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
               icon={isProcessing ? <Icon name="clock" size={32} /> : project.status === 'failed' ? <Icon name="x" size={32} /> : <Icon name="film" size={32} />}
               title={isProcessing ? '处理中，请稍候...' : project.status === 'pending' ? '项目就绪' : project.status === 'failed' ? '处理失败' : '暂无视频数据'}
               hint={project.status === 'pending' ? '点击顶部「开始处理」生成切片' : project.status === 'failed' ? '请检查日志或重新处理' : null}
+              action={
+                // v2.2.1: completed/failed 状态显示「重新处理」按钮 (复用 raw 改 with_subtitle/output_format/style/padding)
+                (project.status === 'completed' || project.status === 'failed') && (
+                  <button
+                    className="btn btn-secondary"
+                    style={{ marginTop: 'var(--space-3)' }}
+                    onClick={() => setShowRerun(true)}
+                    title="复用原视频重新处理（需先启用「保留 raw」）"
+                  >
+                    <Icon name="refresh" size={14} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+                    重新处理
+                  </button>
+                )
+              }
             />
           )}
         </div>
@@ -160,6 +178,14 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
       </div>
 
       {showReport && <ReportModal project={project} onClose={() => setShowReport(false)} />}
+
+      {showRerun && (
+        <RerunModal
+          project={project}
+          onClose={() => setShowRerun(false)}
+          onDone={() => reload()}
+        />
+      )}
     </div>
   )
 }

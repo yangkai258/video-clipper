@@ -29,7 +29,7 @@ function App() {
   const projectsApi = useProjects()
   const { projects, setProjects, trashProjects, showTrash, setShowTrash, activeTab, setActiveTab, search, setSearch, filteredProjects, counts, loadProjects, loadTrash, deleteProject, restoreProject, purgeTrash, purgeAllTrash } = projectsApi
   const strategyApi = useStrategy({ onAfterProcess: loadProjects })
-  const { showStrategyModal, setShowStrategyModal, presets, customStyles, withSubtitle, setWithSubtitle, outputFormat, setOutputFormat, loadStrategies, openStrategyModal, closeStrategyModal, selectStrategy, startProcessing } = strategyApi
+  const { showStrategyModal, setShowStrategyModal, presets, customStyles, withSubtitle, setWithSubtitle, outputFormat, setOutputFormat, keepRaw, setKeepRaw, loadStrategies, openStrategyModal, closeStrategyModal, selectStrategy, startProcessing } = strategyApi
   const uploadApi = useUpload({
     onDone: ({ projectId, name }) => {
       setPendingProject({ id: projectId, name })
@@ -181,6 +181,8 @@ function App() {
           setWithSubtitle={setWithSubtitle}
           outputFormat={outputFormat}
           setOutputFormat={setOutputFormat}
+          keepRaw={keepRaw}
+          setKeepRaw={setKeepRaw}
           onSelect={(s) => selectStrategy(s, pendingProject)}
           onClose={closeStrategyModal}
         />

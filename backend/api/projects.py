@@ -205,6 +205,75 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     4. 写 project.status = processing + 创建 Task 记录
     5. 提交 celery 任务
     """
+
+
+@router.post("/{project_id}/rerun")
+async def rerun_project(
+    project_id: str,
+    config: dict = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """v2.2.1: 重新处理项目 (复用 raw, 改 with_subtitle/output_format/style/padding)
+
+    流程：
+    1. 校验项目存在 + raw 视频在 (raw 没保留就 422, 提示重传)
+    2. 应用 config overrides (with_subtitle / output_format / style_id / padding)
+    3. 清 output/clips + output/collections + output/thumbnails + metadata/step*.json
+       (input.srt 留, 但 rerun_all 也会重新生成 step 1; 留了不影响)
+    4. 重置 project.status = pending
+    5. 复用 start_processing 流程: 标 processing + dispatch celery
+    """
+    project = await _load_project_basic(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    video_path = settings.PROJECTS_DIR / project.video_path
+    if not video_path.exists():
+        # v2.2.1: 友好提示 — raw 没保留就要重传
+        raise HTTPException(
+            status_code=422,
+            detail=f"原视频已清理（未启用「保留 raw」），无法重新处理。请重新上传视频。",
+        )
+
+    # 应用 config overrides (跟 update_project_config 一样, 但不强制 style_id 触发 padding snapshot)
+    overrides = config or {}
+    current_cfg = dict(project.processing_config or {})
+    current_cfg.update(overrides)
+    # style_id override 时, 从 Style 表 snapshot 当前 padding (跟 update_project_config 一致)
+    if overrides.get("style_id"):
+        style_result = await db.execute(select(Style).where(Style.id == overrides["style_id"]))
+        s = style_result.scalar_one_or_none()
+        if s:
+            if "pre_padding_seconds" not in overrides:
+                current_cfg["pre_padding_seconds"] = s.pre_padding_seconds
+            if "post_padding_seconds" not in overrides:
+                current_cfg["post_padding_seconds"] = s.post_padding_seconds
+    project.processing_config = current_cfg
+    project.updated_at = datetime.utcnow()
+    await db.commit()
+
+    # 清 output + metadata/step*.json (重跑会重新生成)
+    project_dir = settings.PROJECTS_DIR / project_id
+    for sub in ("output/clips", "output/collections", "output/thumbnails", "metadata"):
+        target = project_dir / sub
+        if target.exists():
+            import shutil
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                target.unlink(missing_ok=True)
+    # 重建目录 (后续 step 7/8/10 要写)
+    (project_dir / "output" / "clips").mkdir(parents=True, exist_ok=True)
+    (project_dir / "output" / "collections").mkdir(parents=True, exist_ok=True)
+    (project_dir / "output" / "thumbnails").mkdir(parents=True, exist_ok=True)
+    (project_dir / "metadata").mkdir(parents=True, exist_ok=True)
+
+    # 重置 status -> pending, 复用 start_processing 流程
+    project.status = "pending"
+    await db.commit()
+
+    # 走 start_processing 主流程
+    return await start_processing(project_id, db)
     project = await _load_project_basic(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
