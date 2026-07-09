@@ -193,16 +193,21 @@ export class ChunkedUploader {
       }
 
       // 进度回调：每收到一点数据就更新 UI
+      // v2.2.1+: 6 chunk 并发, onprogress 直接 set this.receivedBytes = offset + chunkLoaded
+      // 会 race condition (chunk 0 上报 80% 8MB 会把 chunk 1 上报 15MB 覆盖掉, 进度条跳回)
+      // 修法: 客户端估算也用 max(this.receivedBytes, newValue) 保证单调不减
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
-          // 本片已上传 + 之前所有完整片的累计
           const chunkLoaded = e.loaded
-          this.receivedBytes = offset + chunkLoaded
-          this.onProgress({
-            received: this.receivedBytes,
-            total: this.totalSize,
-            speed: this.speedBps,
-          })
+          // 客户端估算: offset + chunkLoaded, 但要单调不减避免跳
+          if (offset + chunkLoaded > this.receivedBytes) {
+            this.receivedBytes = offset + chunkLoaded
+            this.onProgress({
+              received: this.receivedBytes,
+              total: this.totalSize,
+              speed: this.speedBps,
+            })
+          }
         }
       }
 
@@ -210,7 +215,11 @@ export class ChunkedUploader {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const data = JSON.parse(xhr.responseText)
-            this.receivedBytes = data.received_bytes
+            // v2.2.1+: server 累加 received_bytes 是权威值, 也用 max 防止回退
+            // (onprogress 估算的 client 值可能比 server 大, 但 server 是真值, max 保证单调)
+            if (data.received_bytes > this.receivedBytes) {
+              this.receivedBytes = data.received_bytes
+            }
             this._saveProgress()
             this.onProgress({
               received: this.receivedBytes,
