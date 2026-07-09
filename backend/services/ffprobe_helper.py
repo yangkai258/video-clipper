@@ -47,6 +47,43 @@ def get_video_dimensions(video_path: Path) -> Optional[Tuple[int, int]]:
         return None
 
 
+def get_video_duration(video_path: Path) -> Optional[float]:
+    """提取视频时长 (秒) — 给 _apply_clip_padding 等用
+
+    失败/缺失 ffprobe 返回 None, 让调用方降级 (例如取 max clip end + post_pad).
+
+    Returns:
+        duration (秒) 浮点, 失败返回 None
+    """
+    if not Path(video_path).exists():
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "json",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        duration_str = data.get("format", {}).get("duration")
+        if not duration_str:
+            return None
+        duration = float(duration_str)
+        if duration <= 0:
+            return None
+        return duration
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, ValueError, FileNotFoundError):
+        return None
+
+
 def get_orientation(width: int, height: int) -> str:
     """根据宽高判断视频方向 (v2.1.26 加 cinemascope)
 

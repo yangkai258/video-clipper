@@ -29,6 +29,7 @@ from celery import shared_task
 from sqlalchemy import select
 
 from ..core.config import settings
+from ..services.ffprobe_helper import get_video_duration
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,25 @@ def process_video_pipeline(
         post_pad = float(project_config.get("post_padding_seconds", 0) or 0)
         if pre_pad > 0 or post_pad > 0:
             video_duration = project_config.get("video_duration") or 0
+            # ⚠️ bug fix (v2.2.1+): project_config 没存 video_duration 时 fallback 0,
+            # _apply_clip_padding 走 `if video_duration <= 0` 分支不 clamp,
+            # 切出 0 bytes 空文件 (clip end > 实际 video_duration).
+            # 修法: ffprobe 实时算, 拿不到时取 max(end)+post_pad+1.
+            if video_duration <= 0:
+                ff_dur = get_video_duration(Path(input_path))
+                if ff_dur and ff_dur > 0:
+                    video_duration = ff_dur
+                    logger.info(f"video_duration 从 ffprobe 实时算: {video_duration}s")
+                else:
+                    # ffprobe 拿不到 (罕见), 退到 max(end) + post_pad + 1
+                    all_ends = []
+                    for c in titled_clips:
+                        e = c.get("end_time") or c.get("end", 0) or 0
+                        all_ends.append(float(e))
+                    video_duration = (max(all_ends) if all_ends else 0) + post_pad + 1
+                    logger.warning(
+                        f"video_duration ffprobe 失败, fallback 到 max(end)+post_pad+1={video_duration}s"
+                    )
             _apply_clip_padding(titled_clips, pre_pad, post_pad, video_duration)
             # collections 也得跟着外扩 (合集复用 clip 的 start/end)
             _apply_clip_padding(collections, pre_pad, post_pad, video_duration)
