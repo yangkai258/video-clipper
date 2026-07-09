@@ -6,6 +6,7 @@
 3. GET  /uploads/{uid}/status → 查已传 offset（断点续传时调用）
 4. POST /uploads/{uid}/complete → 合并 + 创建 project
 """
+import asyncio
 import json
 import logging
 import shutil
@@ -96,6 +97,17 @@ def _probe_video_duration(video_path):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"file validation failed: {e}")
+
+
+def _write_part_sync(part_file: Path, data: bytes) -> None:
+    """同步写 part 文件 (给 asyncio.to_thread 用, v2.2.1+).
+
+    跟 inline 写的区别: 走 thread pool 不阻塞 event loop.
+    6 chunk 并发时, APFS SSD GC pause 200-500ms 期间, 其他 5 个 chunk 的
+    HTTP read + parse 还能继续.
+    """
+    with open(part_file, "wb") as f:
+        f.write(data)
 
 
 
@@ -232,8 +244,10 @@ async def upload_chunk(
         raise HTTPException(status_code=400, detail="空的分片")
 
     part_file = _part_path(upload_id, offset)
-    with open(part_file, "wb") as f:
-        f.write(data)
+    # v2.2.1+: 写 disk 放 thread pool, 不阻塞 event loop
+    # 旧: open + f.write 同步, APFS SSD GC pause 200-500ms 期间阻塞所有 6 个并发 chunk
+    # 新: asyncio.to_thread 把 fwrite 丢 thread pool, event loop 继续服务其他请求
+    await asyncio.to_thread(_write_part_sync, part_file, data)
 
     # v2.2.1: meta 累加 received_bytes, 避免 _count_received_bytes 每次遍历所有 part files
     # 50MB @ 1MB chunk = 50 part files, 每次遍历 fs.stat 50 个, 累计 1250 次; 改 meta 累加

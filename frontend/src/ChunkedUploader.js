@@ -259,7 +259,12 @@ export class ChunkedUploader {
     const dt = (now - this.lastTickTime) / 1000  // seconds
     if (dt > 0) {
       const dBytes = this.receivedBytes - this.lastTickBytes
-      this.speedBps = dBytes / dt
+      const instantBps = dBytes / dt
+      // v2.2.1+: EMA 平滑速度, 避免显示瞬时抖动 (SSD GC pause / TCP 拥塞控制让瞬时速度跳)
+      // alpha=0.3: 历史 70% + 当前 30%, 窗口约 2-3s 平滑
+      this.speedBps = this.speedBps
+        ? this.speedBps * 0.7 + instantBps * 0.3
+        : instantBps
       this.lastTickBytes = this.receivedBytes
       this.lastTickTime = now
     }

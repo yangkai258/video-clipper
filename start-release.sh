@@ -69,7 +69,10 @@ echo "✅ 数据库文件存在：$DB_FILE"
 
 echo ""
 echo "🚀 启动正式版后端 (8000)..."
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 > logs/backend_release.log 2>&1 &
+# v2.2.1+: --workers 4 多 process 并发处理 upload chunk
+# 旧单 worker: 1 个 chunk 慢 (SSD GC pause 200-500ms) 阻塞所有 6 个并发 chunk
+# 新 4 worker: 4 个 event loop 独立, 1 个 worker 慢不影响其他
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4 > logs/backend_release.log 2>&1 &
 BACKEND_PID=$!
 
 echo "🚀 启动正式版 Worker..."
