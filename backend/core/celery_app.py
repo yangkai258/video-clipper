@@ -15,7 +15,10 @@ celery_app = Celery(
     "video_clipper",
     broker=CELERY_BROKER_URL,
     backend=CELERY_RESULT_BACKEND,
-    include=["backend.tasks.processing"]
+    include=[
+        "backend.tasks.processing",       # 切片项目 task (process_video_pipeline)
+        "backend.tasks.processing_mix",   # v2.2.3: 混剪项目 task (process_mix_pipeline)
+    ]
 )
 
 # Celery 配置
@@ -30,6 +33,8 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_routes={
         "backend.tasks.processing.*": {"queue": CELERY_QUEUE_NAME},
+        # v2.2.3: 混剪独立队列 (跟切片完全分开, 互不影响)
+        "backend.tasks.processing_mix.*": {"queue": "processing_mix"},
     },
     # Beat 调度：每 30s 扫一次 watch folder
     beat_schedule={
