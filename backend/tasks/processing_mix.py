@@ -19,7 +19,7 @@ from celery import shared_task
 from sqlalchemy import select
 
 from ..core.database_mix import sync_get_mix_db
-from ..models.mix import MixProject, MixSourceClip, MixTask, MixBase
+from ..models.mix import MixProject, MixSourceClip, MixTask, MixBatch, MixBase
 from ..services.mix_service import (
     parse_script,
     build_clip_library_from_slice_db,
@@ -79,7 +79,19 @@ def _mark_mix_task_running(task_id: str) -> None:
         logger.warning(f"混剪 task 启动标记失败: {e}")
 
 
-@shared_task(bind=True)
+# v2.2.6: 加 autoretry_for 性能 + 可靠性
+# - MoviePy h264_videotoolbox 偶发失败 (worker side 偶发, 不可控)
+# - ffmpeg subprocess 偶发 pipe broken (资源压力)
+# - redis 临时不可用
+# retry 1 次 + 指数退避 (10s, 20s, 40s... 上限 60s), 不影响主流程 fail-tolerant
+@shared_task(
+    bind=True,
+    autoretry_for=(RuntimeError, OSError, IOError, ConnectionError),
+    retry_backoff=True,           # 指数退避
+    retry_backoff_max=60,         # 上限 60s
+    retry_jitter=True,            # 加 jitter 防止雷击
+    max_retries=1,                # 最多重试 1 次
+)
 def process_mix_pipeline(
     self,
     mix_project_id: str,
@@ -194,6 +206,9 @@ def process_mix_pipeline(
             db.commit()
             logger.info(f"混剪完成: {mix_project_id}, output={output_video}, segments={len(matched)}")
 
+            # v2.2.6: 更新 batch 进度 (如果有)
+            _update_batch_progress(proj, success=True)
+
         _update_mix_task_progress(task_id, MIX_PROGRESS["complete"], "混剪完成")
         return {
             "status": "completed",
@@ -213,4 +228,48 @@ def process_mix_pipeline(
                 task.status = "failed"
                 task.error_message = str(e)[:500]
             db.commit()
+
+            # v2.2.6: 更新 batch 进度 (失败时)
+            _update_batch_progress(proj, success=False)
         raise
+
+def _update_batch_progress(proj: MixProject, success: bool) -> None:
+    """v2.2.6: 原子更新 batch 计数 + 检查是否全部完成
+
+    在 task 自己的 session (sync_get_mix_db) 内调用, 不需要新 session.
+    用 UPDATE ... + 重新查 total 来算, 避免并发 UPDATE 竞态.
+    """
+    if not proj or not proj.batch_id:
+        return
+    try:
+        # 用 proj 的 session (已经是 sync_get_mix_db 上下文)
+        from ..core.database_mix import sync_get_mix_db
+        with sync_get_mix_db() as db:
+            batch = db.execute(select(MixBatch).where(MixBatch.id == proj.batch_id)).scalar_one_or_none()
+            if not batch:
+                return
+            if success:
+                batch.completed_count = (batch.completed_count or 0) + 1
+            else:
+                batch.failed_count = (batch.failed_count or 0) + 1
+
+            # 检查是否全部完成 (completed + failed == total)
+            total_done = (batch.completed_count or 0) + (batch.failed_count or 0)
+            if total_done >= batch.total_count and batch.status not in ("cancelled",):
+                batch.completed_at = datetime.utcnow()
+                if (batch.failed_count or 0) == 0:
+                    batch.status = "completed"
+                elif (batch.completed_count or 0) == 0:
+                    batch.status = "failed"
+                else:
+                    batch.status = "partial"  # 部分成功
+            elif batch.status == "pending":
+                batch.status = "running"
+
+            db.commit()
+            logger.info(
+                f"batch {batch.id} 进度更新: +{'1成功' if success else '1失败'} → "
+                f"{batch.completed_count}/{batch.total_count} 完成, {batch.failed_count} 失败, status={batch.status}"
+            )
+    except Exception as e:
+        logger.warning(f"batch 进度更新失败 (非致命): {e}")

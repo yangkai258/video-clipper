@@ -21,6 +21,10 @@ import TrashView from './components/TrashView'
 import MixListPage from './pages/MixListPage'
 import MixWizardPage from './pages/MixWizardPage'
 import MixDetailPage from './pages/MixDetailPage'
+// v2.2.6: 批量混剪路由页面
+import MixBatchListPage from './pages/MixBatchListPage'
+import MixBatchWizardPage from './pages/MixBatchWizardPage'
+import MixBatchDetailPage from './pages/MixBatchDetailPage'
 // v2.2.5: 资源库独立路由页面
 import LibraryPage from './pages/LibraryPage'
 import './index.css'
@@ -70,6 +74,7 @@ function App() {
         onStyles={() => { navigate('/styles'); setShowTrash(false); setShowWatchFolders(false) }}
         onWatchFolders={() => { navigate('/'); setShowWatchFolders(true); setShowTrash(false) }}
         onMix={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/mix') }}
+        onMixBatch={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/mix/batch') }}
         onLibrary={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/library') }}
       />
 
@@ -93,9 +98,15 @@ function App() {
         />
 
         <div className="content fade-in">
-          {/* 路径优先分发: 资源库 / 混剪详情 / 混剪向导 / 项目详情 / 风格管理 / 监控 / 回收站 / 主列表 / 混剪列表 */}
+          {/* 路径优先分发: 批量混剪详情/向导/列表 → 资源库 / 混剪详情 / 混剪向导 / 项目详情 / 风格管理 / 监控 / 回收站 / 主列表 / 混剪列表 */}
           {location.pathname === '/library' ? (
             <LibraryPage />
+          ) : location.pathname.startsWith('/mix/batch/') && !location.pathname.startsWith('/mix/batch/new') ? (
+            <MixBatchDetailInShell />
+          ) : location.pathname === '/mix/batch/new' ? (
+            <MixBatchWizardPage navigate={navigate} />
+          ) : location.pathname === '/mix/batch' ? (
+            <MixBatchListPage navigate={navigate} />
           ) : location.pathname.startsWith('/mix/') && !location.pathname.startsWith('/mix/new') ? (
             <MixDetailInShell />
           ) : location.pathname === '/mix/new' ? (
@@ -249,6 +260,13 @@ function MixDetailInShell() {
   const { id } = useParams()
   const navigate = useNavigate()
   return <MixDetailPage projectId={id} navigate={navigate} />
+}
+
+// v2.2.6: MixBatchDetailInShell 模块顶层
+function MixBatchDetailInShell() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  return <MixBatchDetailPage batchId={id} navigate={navigate} />
 }
 
 

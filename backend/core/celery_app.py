@@ -31,6 +31,9 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=7200,  # 2 小时超时（适应长视频处理）
     worker_prefetch_multiplier=1,
+    # v2.2.6: task_acks_late=True — task 真正完成后才 ack, 防 worker 崩溃丢任务
+    # 配 prefetch=1 (上面) → 同一时刻 worker 只 prefetch 1 个 task + 不 ack 死的 worker 不补 task
+    task_acks_late=True,
     task_routes={
         "backend.tasks.processing.*": {"queue": CELERY_QUEUE_NAME},
         # v2.2.3: 混剪独立队列 (跟切片完全分开, 互不影响)

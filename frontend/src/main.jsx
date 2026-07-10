@@ -7,7 +7,9 @@ import StyleManager from './pages/StyleManager'
 import MixListPage from './pages/MixListPage'
 import MixWizardPage from './pages/MixWizardPage'
 import MixDetailPage from './pages/MixDetailPage'
-// v2.2.5: 资源库独立路由
+import MixBatchListPage from './pages/MixBatchListPage'
+import MixBatchWizardPage from './pages/MixBatchWizardPage'
+import MixBatchDetailPage from './pages/MixBatchDetailPage'
 import LibraryPage from './pages/LibraryPage'
 import './index.css'
 
@@ -24,6 +26,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/mix/:id" element={<App />} />
         {/* v2.2.5: 资源库路由 */}
         <Route path="/library" element={<App />} />
+        {/* v2.2.6: 批量混剪路由 */}
+        <Route path="/mix/batch" element={<App />} />
+        <Route path="/mix/batch/new" element={<App />} />
+        <Route path="/mix/batch/:id" element={<App />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,

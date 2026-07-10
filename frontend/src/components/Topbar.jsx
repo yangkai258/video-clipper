@@ -28,27 +28,36 @@ export default function Topbar({
   const location = useLocation()
 
   const isProjectDetail = location.pathname.startsWith('/project/')
-  const isMixDetail = location.pathname.startsWith('/mix/') && !location.pathname.startsWith('/mix/new')
+  const isMixDetail = location.pathname.startsWith('/mix/') && !location.pathname.startsWith('/mix/new') && !location.pathname.startsWith('/mix/batch')
   const isMixWizard = location.pathname === '/mix/new'
   const isMixList = location.pathname === '/mix' || isMixDetail || isMixWizard
   const isLibrary = location.pathname.startsWith('/library')
+  const isMixBatchDetail = location.pathname.startsWith('/mix/batch/') && !location.pathname.startsWith('/mix/batch/new')
+  const isMixBatchWizard = location.pathname === '/mix/batch/new'
+  const isMixBatchList = location.pathname.startsWith('/mix/batch') && !isMixBatchDetail && !isMixBatchWizard
   const pageTitle = isProjectDetail
     ? '项目详情'
     : isMixDetail
       ? '混剪详情'
       : isMixWizard
         ? '新建混剪'
-        : location.pathname === '/styles'
-          ? '风格管理'
-          : location.pathname === '/mix'
-            ? '混剪项目'
-            : isLibrary
-              ? '资源库'
-              : showWatchFolders
-                ? '监控文件夹'
-                : showTrash
-                  ? '回收站'
-                  : '切片项目'
+        : isMixBatchDetail
+          ? '批量详情'
+          : isMixBatchWizard
+            ? '新建批量'
+            : location.pathname === '/styles'
+              ? '风格管理'
+              : location.pathname === '/mix'
+                ? '混剪项目'
+                : isMixBatchList
+                  ? '批量混剪'
+                  : isLibrary
+                    ? '资源库'
+                    : showWatchFolders
+                      ? '监控文件夹'
+                      : showTrash
+                        ? '回收站'
+                        : '切片项目'
 
   return (
     <div className="topbar">
@@ -115,6 +124,31 @@ export default function Topbar({
               </button>
               <span className="breadcrumb-sep">/</span>
               <span className="page-title">{pageTitle}</span>
+            </>
+          ) : isMixBatchList || isMixBatchDetail || isMixBatchWizard ? (
+            // v2.2.6: 批量混剪面包屑 = "工作台 / 混剪项目 / 批量混剪 / [wizard|detail]"
+            <>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/mix/batch')}
+                title="返回批量列表"
+              >
+                <Icon name="chevronLeft" size={12} />
+              </button>
+              <span className="breadcrumb-sep">/</span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/mix/batch')}
+                style={{ padding: '0 4px' }}
+              >
+                批量混剪
+              </button>
+              {(isMixBatchDetail || isMixBatchWizard) && (
+                <>
+                  <span className="breadcrumb-sep">/</span>
+                  <span className="page-title">{pageTitle}</span>
+                </>
+              )}
             </>
           ) : (
             <>
