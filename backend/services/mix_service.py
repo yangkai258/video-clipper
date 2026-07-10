@@ -166,37 +166,61 @@ def build_clip_library_from_slice_db(
 ) -> List[Dict]:
     """从切片 db 读 candidate_clip_ids 的 clip 详情 (不写切片 db)
 
+    v2.2.5: candidate_clip_id 可能是 resource_clip (从 /library 来的) 或 clip (从 /clips/library 来的),
+    先查切片 Clip 表, 找不到再查 ResourceClip 表. 两种 source 都加 source_type 字段区分.
+
     返回 [{clip_id, source_project_id, source_project_name, title,
-           subtitle_text, video_path, duration, width, height}, ...]
+           subtitle_text, video_path, duration, width, height, source_type}, ...]
     """
-    from ..models.database import Clip, Project
+    from ..models.database import Clip, Project, ResourceClip
     from ..core.database import sync_get_db
 
     library = []
     with sync_get_db() as db:
         for clip_id in candidate_clip_ids:
+            # 先查切片 Clip 表
             clip = db.query(Clip).filter(Clip.id == clip_id).first()
-            if not clip:
-                logger.warning(f"candidate_clip_id 不存在: {clip_id}")
+            if clip:
+                project = db.query(Project).filter(Project.id == clip.project_id).first()
+                subtitle_text = (clip.description or clip.title or "").strip()
+                if clip.clip_metadata and isinstance(clip.clip_metadata, dict):
+                    st = clip.clip_metadata.get("subtitle_text")
+                    if st:
+                        subtitle_text = st
+                library.append({
+                    "clip_id": clip.id,
+                    "source_project_id": clip.project_id,
+                    "source_project_name": project.name if project else "",
+                    "title": clip.title or "",
+                    "subtitle_text": subtitle_text,
+                    "video_path": clip.video_path or "",
+                    "duration": clip.duration or 0,
+                    "width": clip.width,
+                    "height": clip.height,
+                    "source_type": "project",
+                })
                 continue
-            project = db.query(Project).filter(Project.id == clip.project_id).first()
-            subtitle_text = (clip.description or clip.title or "").strip()
-            if clip.clip_metadata and isinstance(clip.clip_metadata, dict):
-                st = clip.clip_metadata.get("subtitle_text")
-                if st:
-                    subtitle_text = st
-            library.append({
-                "clip_id": clip.id,
-                "source_project_id": clip.project_id,
-                "source_project_name": project.name if project else "",
-                "title": clip.title or "",
-                "subtitle_text": subtitle_text,
-                "video_path": clip.video_path or "",
-                "duration": clip.duration or 0,
-                "width": clip.width,
-                "height": clip.height,
-            })
-    logger.info(f"从切片 db 加载 {len(library)} 个 clip")
+
+            # 再查 ResourceClip (资源库)
+            rc = db.query(ResourceClip).filter(ResourceClip.id == clip_id, ResourceClip.deleted_at.is_(None)).first()
+            if rc:
+                library.append({
+                    "clip_id": rc.id,
+                    "source_project_id": rc.source_project_id or rc.id,  # 资源库没源项目时用自身 id
+                    "source_project_name": rc.source_project_name or "资源库",
+                    "title": rc.name or "",
+                    "subtitle_text": "",  # 资源库没存 subtitle_text
+                    "video_path": rc.file_path or "",  # 资源库 file_path 是绝对路径 (data/resources/<id>.mp4)
+                    "duration": rc.duration or 0,
+                    "width": rc.width,
+                    "height": rc.height,
+                    "source_type": "library",
+                })
+                continue
+
+            logger.warning(f"candidate_clip_id 不存在 (Clip 或 ResourceClip 都查不到): {clip_id}")
+
+    logger.info(f"从切片 db + 资源库加载 {len(library)} 个 clip (project: {sum(1 for x in library if x['source_type']=='project')}, library: {sum(1 for x in library if x['source_type']=='library')})")
     return library
 
 
@@ -284,6 +308,7 @@ def match_clips_for_segments(
             "source_project_name": best_clip.get("source_project_name", ""),
             "source_clip_title": best_clip.get("title", ""),
             "matched_video_path": best_clip["video_path"],
+            "source_type": best_clip.get("source_type", "project"),  # v2.2.5: project/library
             "source_start": float(start),
             "source_end": float(end),
             "clip_duration": use_dur,
@@ -320,18 +345,28 @@ def assemble_mix_video(
     part_files = []
     try:
         for i, seg in enumerate(segments):
-            # v2.2.3 修: source clip 路径 = data/projects/<project_id>/<video_path>
-            # 之前漏了 project_id 中间层, 现在用 seg["source_project_id"] 拼
-            project_id = seg.get("source_project_id", "")
+            # v2.2.5: source_type 分支 — library (资源库, 绝对路径) / project (切片项目, 相对路径要拼)
+            source_type = seg.get("source_type", "project")
             src_rel = seg["matched_video_path"]
-            if project_id and not src_rel.startswith(f"{project_id}/"):
-                # 相对路径 (output/clips/xxx.mp4) → 拼上 project_id 中间层
-                src_video = (slice_clips_root / project_id / src_rel).resolve()
-            else:
-                # 已经是绝对或包含 project_id
+
+            if source_type == "library":
+                # 资源库 file_path 已是绝对路径 (data/resources/<id>.mp4)
                 src_video = Path(src_rel)
                 if not src_video.is_absolute():
-                    src_video = (slice_clips_root / src_rel).resolve()
+                    # 兼容万一存的是相对路径, fallback 到 data/resources/<basename>
+                    src_video = (Path("data/resources") / src_rel).resolve()
+            else:
+                # v2.2.3 修: source clip 路径 = data/projects/<project_id>/<video_path>
+                # 之前漏了 project_id 中间层, 现在用 seg["source_project_id"] 拼
+                project_id = seg.get("source_project_id", "")
+                if project_id and not src_rel.startswith(f"{project_id}/"):
+                    # 相对路径 (output/clips/xxx.mp4) → 拼上 project_id 中间层
+                    src_video = (slice_clips_root / project_id / src_rel).resolve()
+                else:
+                    # 已经是绝对或包含 project_id
+                    src_video = Path(src_rel)
+                    if not src_video.is_absolute():
+                        src_video = (slice_clips_root / src_rel).resolve()
 
             if not src_video.exists():
                 logger.warning(f"source clip 缺失: {src_video}")

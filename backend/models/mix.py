@@ -99,6 +99,8 @@ class MixSourceClip(MixBase):
     source_project_id = Column(String(36), nullable=False)
     source_project_name = Column(String(255), default="")
     source_clip_title = Column(String(512), default="")
+    # v2.2.5: 来源类型 — 'project' (切片项目 clip) / 'library' (资源库 clip)
+    source_type = Column(String(20), default="project")
 
     # 拼接顺序 + 脚本匹配
     position = Column(Integer, default=0)

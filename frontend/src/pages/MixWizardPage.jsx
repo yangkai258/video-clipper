@@ -29,6 +29,8 @@ export default function MixWizardPage() {
   const [candidates, setCandidates] = useState([])
   const [selectedClipIds, setSelectedClipIds] = useState([])
   const [libraryProject, setLibraryProject] = useState('all')
+  // v2.2.5: 素材库 source 切换 — 'all' (混合) / 'project' (切片项目) / 'library' (资源库)
+  const [librarySource, setLibrarySource] = useState('all')
   const [targetDuration, setTargetDuration] = useState(60)
   const [submitting, setSubmitting] = useState(false)
   // v2.2.5: AI 帮写脚本 (Step 1)
@@ -57,16 +59,16 @@ export default function MixWizardPage() {
     if (step === 2) {
       loadLibrary()
     }
-  }, [step])
+  }, [step, librarySource])  // v2.2.5: source 变化时重新加载
 
-  // v2.2.5: 进入页面也预加载素材库, 让 Step 1 的 AI 帮写有 clips_context 可传
+  // v2.2.5: 进入页面也预加载素材库 (默认 all), 让 Step 1 的 AI 帮写有 clips_context 可传
   useEffect(() => {
-    loadLibrary()
+    loadLibrary('all')
   }, [])
 
-  const loadLibrary = async () => {
+  const loadLibrary = async (source = librarySource) => {
     try {
-      const r = await axios.get(`${API_BASE}/mix/clips/library`)
+      const r = await axios.get(`${API_BASE}/mix/clips/library`, { params: { source } })
       setCandidates(r.data.clips || [])
     } catch (e) {
       console.error('load library failed:', e)
@@ -312,32 +314,68 @@ export default function MixWizardPage() {
         <div className="wizard-pane">
           <div className="wizard-pane-header">
             <h2>选择素材片段</h2>
-            <p className="wizard-hint">从已有的切片项目中勾选素材（{selectedClipIds.length} 已选）</p>
+            <p className="wizard-hint">从切片项目 / 资源库勾选素材（{selectedClipIds.length} 已选）</p>
           </div>
 
-          {/* 按项目分组 tabs */}
+          {/* v2.2.5: 第一层 source 切换 — 切片项目 / 资源库 */}
           <div className="tabs">
             <button
-              className={`tab ${libraryProject === 'all' ? 'tab-active' : ''}`}
-              onClick={() => setLibraryProject('all')}
+              className={`tab ${librarySource === 'all' ? 'tab-active' : ''}`}
+              onClick={() => { setLibrarySource('all'); setLibraryProject('all') }}
             >
-              全部 ({candidates.length})
+              <Icon name="layers" size={11} style={{ verticalAlign: '-1px', marginRight: 4 }} />
+              全部 ({candidates.filter(c => c.source_type !== 'library').length}+{candidates.filter(c => c.source_type === 'library').length})
             </button>
-            {/* 按 source_project_name 分组 */}
-            {Array.from(new Set(candidates.map(c => c.source_project_name).filter(Boolean))).map(pname => (
-              <button
-                key={pname}
-                className={`tab ${libraryProject === pname ? 'tab-active' : ''}`}
-                onClick={() => setLibraryProject(pname)}
-              >
-                {pname.slice(0, 18)} ({candidates.filter(c => c.source_project_name === pname).length})
-              </button>
-            ))}
+            <button
+              className={`tab ${librarySource === 'project' ? 'tab-active' : ''}`}
+              onClick={() => { setLibrarySource('project'); setLibraryProject('all') }}
+            >
+              <Icon name="scissors" size={11} style={{ verticalAlign: '-1px', marginRight: 4 }} />
+              切片库
+            </button>
+            <button
+              className={`tab ${librarySource === 'library' ? 'tab-active' : ''}`}
+              onClick={() => { setLibrarySource('library'); setLibraryProject('all') }}
+            >
+              <Icon name="database" size={11} style={{ verticalAlign: '-1px', marginRight: 4 }} />
+              资源库
+            </button>
           </div>
+
+          {/* 第二层 — 按项目/标签分组 (跟 source 联动) */}
+          {librarySource !== 'library' && (
+            <div className="tabs">
+              <button
+                className={`tab ${libraryProject === 'all' ? 'tab-active' : ''}`}
+                onClick={() => setLibraryProject('all')}
+              >
+                全部 ({candidates.filter(c => librarySource === 'all' || c.source_type === librarySource).length})
+              </button>
+              {/* 按 source_project_name 分组 */}
+              {Array.from(new Set(
+                candidates
+                  .filter(c => librarySource === 'all' || c.source_type === librarySource)
+                  .map(c => c.source_project_name)
+                  .filter(Boolean)
+              )).map(pname => (
+                <button
+                  key={pname}
+                  className={`tab ${libraryProject === pname ? 'tab-active' : ''}`}
+                  onClick={() => setLibraryProject(pname)}
+                >
+                  {pname.slice(0, 18)} ({candidates.filter(c => c.source_project_name === pname && (librarySource === 'all' || c.source_type === librarySource)).length})
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="library-grid">
             {candidates
-              .filter(c => libraryProject === 'all' || c.source_project_name === libraryProject)
+              .filter(c => {
+                if (librarySource !== 'all' && c.source_type !== librarySource) return false
+                if (librarySource !== 'library' && libraryProject !== 'all' && c.source_project_name !== libraryProject) return false
+                return true
+              })
               .map(c => {
                 const selected = selectedClipIds.includes(c.id)
                 return (
@@ -347,6 +385,18 @@ export default function MixWizardPage() {
                     onClick={() => toggleClip(c.id)}
                   >
                     {selected && <div className="library-card-check"><Icon name="check" size={14} /></div>}
+                    {/* v2.2.5: 资源库卡显示 thumbnail, 切片项目卡继续纯文字 */}
+                    {c.source_type === 'library' && (
+                      <div className="library-card-thumb">
+                        <img
+                          src={`/api/v1/library/thumbnails/${c.id}`}
+                          alt={c.title}
+                          loading="lazy"
+                          onError={(e) => { e.currentTarget.style.display = 'none' }}
+                        />
+                        <span className="library-source-tag">资源库</span>
+                      </div>
+                    )}
                     <div className="library-card-title">{c.title || '(未命名片段)'}</div>
                     <div className="library-card-sub">
                       <span>{c.source_project_name}</span>

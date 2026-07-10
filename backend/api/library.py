@@ -313,10 +313,13 @@ async def from_clip_resource(
 
         # 防路径穿越 + 存在性
         source_video_path = Path(sc.video_path) if sc.video_path else None
-        if not source_video_path or not source_video_path.exists():
-            raise HTTPException(status_code=404, detail=f"source clip 视频文件不存在: {sc.video_path}")
+        if not source_video_path:
+            raise HTTPException(status_code=404, detail=f"source clip video_path 空: {source_clip_id}")
         if not source_video_path.is_absolute():
-            source_video_path = source_video_path.resolve()
+            # 跟 from-project 保持一致: 拼 data/projects/<project_id>/<video_path>
+            source_video_path = (Path("data/projects") / source_project_id / sc.video_path).resolve()
+        if not source_video_path.exists():
+            raise HTTPException(status_code=404, detail=f"source clip 视频文件不存在: {source_video_path}")
 
         source_project_name = sp.name or ""
         clip_title = sc.title or f"clip-{source_clip_id[:8]}"
@@ -331,7 +334,8 @@ async def from_clip_resource(
         if sc.thumbnail_path:
             src_thumb = Path(sc.thumbnail_path)
             if not src_thumb.is_absolute():
-                src_thumb = src_thumb.resolve()
+                # 跟 mp4 保持一致: 拼 data/projects/<project_id>/<thumbnail_path>
+                src_thumb = (Path("data/projects") / source_project_id / sc.thumbnail_path).resolve()
             if src_thumb.exists():
                 new_thumb_path = _resources_dir() / f"{new_id}.jpg"
                 try:
@@ -427,3 +431,123 @@ async def delete_resource(
 
     logger.info(f"library delete: id={rid}")
     return {"id": rid, "deleted": True}
+
+
+# ──────────────────────────── v2.2.5: 一键从项目批量导入 ────────────────────────────
+
+
+@router.post("/from-project")
+async def from_project_batch_resource(
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """一键从切片项目批量导入全部 clip 进资源库 (跨项目长期保留)
+
+    Body: {"source_project_id": "..."}
+
+    复制 data/projects/<id>/output/clips/*.mp4 到 data/resources/<new_id>.mp4,
+    同步 metadata + thumbnail. 跳过缺失文件 + 已存在 (按 source_clip_id 查重).
+
+    Returns: {"imported": N, "skipped": M, "errors": [...]}
+    """
+    source_project_id = payload.get("source_project_id")
+    if not source_project_id:
+        raise HTTPException(status_code=400, detail="source_project_id 必填")
+
+    with sync_get_db() as sdb:
+        sp = sdb.query(Project).filter(Project.id == source_project_id).first()
+        if not sp:
+            raise HTTPException(status_code=404, detail=f"source project {source_project_id} 不存在")
+        source_project_name = sp.name or ""
+
+        # 查这个项目的全部 clip
+        clips = sdb.query(Clip).filter(
+            Clip.project_id == source_project_id,
+        ).order_by(Clip.created_at).all()
+
+    if not clips:
+        raise HTTPException(status_code=404, detail="该项目没有任何 clip")
+
+    # 查重: 已经导入过这个 source_clip_id 的就跳过
+    with sync_get_db() as sdb:
+        existing = sdb.query(ResourceClip).filter(
+            ResourceClip.source_project_id == source_project_id,
+            ResourceClip.deleted_at.is_(None),
+        ).all()
+        existing_clip_ids = {rc.source_clip_id for rc in existing if rc.source_clip_id}
+
+    imported = 0
+    skipped = 0
+    errors = []
+    new_rows: List[ResourceClip] = []
+
+    for sc in clips:
+        if sc.id in existing_clip_ids:
+            skipped += 1
+            continue
+
+        try:
+            # 复制 mp4 — clip.video_path 是相对路径 (output/clips/xxx.mp4),
+            # 必须拼上 data/projects/<source_project_id>/ 中间层
+            if not sc.video_path:
+                errors.append({"clip_id": sc.id, "title": sc.title, "error": "video_path 空"})
+                continue
+            src_p = Path(sc.video_path)
+            if not src_p.is_absolute():
+                src_p = (Path("data/projects") / source_project_id / sc.video_path).resolve()
+            if not src_p.exists():
+                errors.append({"clip_id": sc.id, "title": sc.title, "error": f"mp4 缺失: {src_p}"})
+                continue
+
+            new_id = str(uuid.uuid4())
+            new_video = _resources_dir() / f"{new_id}.mp4"
+            shutil.copy2(src_p, new_video)
+
+            # 复制 thumbnail
+            new_thumb = None
+            if sc.thumbnail_path:
+                src_thumb = Path(sc.thumbnail_path)
+                if not src_thumb.is_absolute():
+                    src_thumb = (Path("data/projects") / source_project_id / sc.thumbnail_path).resolve()
+                if src_thumb.exists():
+                    new_thumb = _resources_dir() / f"{new_id}.jpg"
+                    try:
+                        shutil.copy2(src_thumb, new_thumb)
+                    except Exception:
+                        new_thumb = None
+
+            row = ResourceClip(
+                id=new_id,
+                name=sc.title or f"clip-{sc.id[:8]}",
+                file_path=str(new_video),
+                thumbnail_path=str(new_thumb) if new_thumb else None,
+                duration=sc.duration or 0.0,
+                width=sc.width,
+                height=sc.height,
+                size=new_video.stat().st_size,
+                source_type="from_project",
+                source_project_id=source_project_id,
+                source_clip_id=sc.id,
+                source_project_name=source_project_name,
+                description=f"一键从项目「{source_project_name}」批量导入",
+            )
+            new_rows.append(row)
+            imported += 1
+        except Exception as e:
+            errors.append({"clip_id": sc.id, "title": sc.title, "error": str(e)})
+
+    if new_rows:
+        with sync_get_db() as sdb:
+            for row in new_rows:
+                sdb.add(row)
+            sdb.commit()
+            logger.info(f"library from-project batch: imported={imported}, skipped={skipped}, errors={len(errors)}")
+
+    return {
+        "source_project_id": source_project_id,
+        "source_project_name": source_project_name,
+        "total_clips": len(clips),
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+    }

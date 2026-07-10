@@ -172,6 +172,7 @@ def process_mix_pipeline(
                     source_project_id=seg["source_project_id"],
                     source_project_name=seg.get("source_project_name", ""),
                     source_clip_title=seg.get("source_clip_title", ""),
+                    source_type=seg.get("source_type", "project"),  # v2.2.5: project/library
                     position=seg["position"],
                     script_segment_text=seg["text"],
                     keywords=seg.get("keywords", []),
