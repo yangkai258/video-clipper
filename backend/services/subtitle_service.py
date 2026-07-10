@@ -84,6 +84,33 @@ def generate_subtitle(video_path: Path, output_path: Path = None, in_memory: boo
         logger.error(f"字幕生成失败：{e}")
         raise
 
+    # v2.2.2: hallucination 检测 — Whisper 在静音 / 异常音频下会重复 initial_prompt
+    # 当作识别结果 (base 模型中文直播常见). 检测: >40% segment 文本相同 = hallucination,
+    # 标 failed 让 user 选别的 ASR 方法 / 重传. 修根因见 speech_recognizer._INITIAL_PROMPT.
+    try:
+        if actual_output.exists():
+            srt_text = actual_output.read_text(encoding="utf-8")
+            # 提取每段文字 (跳过 index + timestamp 行)
+            lines = [l.strip() for l in srt_text.split("\n") if l.strip() and not l.strip().isdigit() and "-->" not in l]
+            if lines:
+                from collections import Counter
+                counter = Counter(lines)
+                most_common_text, most_common_count = counter.most_common(1)[0]
+                repeat_ratio = most_common_count / len(lines)
+                if repeat_ratio > 0.4:
+                    msg = (f"字幕识别失败 (Whisper hallucination): "
+                           f"{len(lines)} 段中有 {most_common_count} 段重复 '{most_common_text[:30]}'. "
+                           f"可能是视频静音 / 纯背景音乐 / base 模型在中文直播短句上不可靠.")
+                    logger.error(msg)
+                    if temp_to_cleanup and temp_to_cleanup.exists():
+                        temp_to_cleanup.unlink()
+                    raise RuntimeError(msg)
+    except RuntimeError:
+        raise
+    except Exception as e:
+        # hallucination 检测本身失败, 不影响字幕生成, 走原流程
+        logger.debug(f"hallucination 检查跳过: {e}")
+
     # in_memory 模式：读回内容，删除临时文件
     if in_memory:
         try:

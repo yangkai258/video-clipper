@@ -119,7 +119,10 @@ class SpeechRecognizer:
         
         # mlx-whisper transcribe 函数
         # 引导模型输出简体中文（默认偏繁体，模型训练集偏向港台语料）
-        _INITIAL_PROMPT = "以下是普通话的日常对话，请使用简体中文（不写繁体字）。"
+        # v2.2.2: 改短 ("请使用简体中文。") 减少 hallucination 触发 (旧版 24 字 prompt
+        # 在 base 模型 + 中文直播短句 + 静音场景会被 Whisper 当作识别结果重复输出).
+        # 详细修法见 subtitle_service.generate_subtitle hallucination 检测.
+        _INITIAL_PROMPT = "请使用简体中文。"
         _kwargs = {
             "path_or_hf_repo": f"mlx-community/whisper-1-{model}",
             "language": language if language != "auto" else None,
@@ -186,8 +189,8 @@ class SpeechRecognizer:
             str(audio_path),
             language=language if language != "auto" else None,
             vad_filter=True,
-            # 引导模型输出简体中文（默认是繁体，模型训练集偏港台语料）
-            initial_prompt="以下是普通话的日常对话，请使用简体中文（不写繁体字）。",
+            # v2.2.2: 改短 initial_prompt ("请使用简体中文。") 减少 hallucination
+            initial_prompt="请使用简体中文。",
         )
         
         logger.info(f"检测到语言：{info.language}")
