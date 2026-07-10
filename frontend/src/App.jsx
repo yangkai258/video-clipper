@@ -39,6 +39,12 @@ function App() {
   })
   const { uploading, uploadProgress, uploadState, uploadError, handleUpload, handlePause, handleResume, handleCancel } = uploadApi
 
+  // v2.2.4: 当前项目名 (Topbar 面包屑用) — 从 projects list 缓存拿, 无网络请求
+  const { id: routeProjectId } = useParams()
+  const currentProjectName = routeProjectId
+    ? projects.find(p => p.id === routeProjectId)?.name || ''
+    : ''
+
   useEffect(() => {
     loadProjects()
     loadStrategies()
@@ -75,6 +81,7 @@ function App() {
           handleCancel={handleCancel}
           versionLabel={VERSION_LABEL}
           isBeta={isBeta}
+          currentProjectName={currentProjectName}
         />
 
         <div className="content fade-in">

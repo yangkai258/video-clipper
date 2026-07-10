@@ -53,6 +53,8 @@ class MixProject(MixBase):
     video_duration = Column(Float, default=0.0)
     video_width = Column(Integer, nullable=True)
     video_height = Column(Integer, nullable=True)
+    # v2.2.4: 缩略图路径 (output/thumbnail.jpg, 列表 card 用)
+    thumbnail_path = Column(String(512), nullable=True)
 
     # 字幕样式 (跟切片项目一致, 用户偏好同步)
     subtitle_style = Column(JSON, default=dict)
