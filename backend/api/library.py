@@ -551,3 +551,115 @@ async def from_project_batch_resource(
         "skipped": skipped,
         "errors": errors,
     }
+
+
+# ──────────────────────────── v2.2.7: LLM 自动标签 ────────────────────────────
+
+
+@router.post("/auto-tag")
+async def auto_tag_resources(
+    payload: dict = Body(default_factory=dict),
+    db: AsyncSession = Depends(get_db),
+):
+    """LLM 给资源库批量打主题标签 (v2.2.7)
+
+    payload:
+        limit: int                  最多处理多少个 (默认 50, 防止一次 LLM 调用太多超时)
+        force: bool                 是否覆盖已有 tags (默认 False 跳过)
+
+    Returns: {"processed": N, "tagged": M, "skipped": K, "errors": [...]}
+
+    性能:
+      - 每个资源 1 次 LLM 调用, 50 个资源 = 50 次 LLM call
+      - 失败 fallback 到 keyword 提取 (不报错)
+      - 默认 limit=50 防止一次请求太长, 大批量分批调用
+    """
+    from ..services.library_tag import generate_tags_for_clip
+    from ..models.database import ResourceClip
+    from sqlalchemy import select
+
+    limit = int(payload.get("limit", 50))
+    force = bool(payload.get("force", False))
+
+    # 查资源 (按 created_at desc, 跳过已 tag 的除非 force)
+    with sync_get_db() as sdb:
+        query = sdb.query(ResourceClip).filter(
+            ResourceClip.deleted_at.is_(None),
+        )
+        if not force:
+            # 跳过已有 tags 的 (tags 是 JSON list 长度 >= 1 算已 tag)
+            from sqlalchemy import or_, func
+            query = query.filter(
+                or_(ResourceClip.tags.is_(None), func.json_array_length(ResourceClip.tags) == 0)
+            )
+        clips = query.order_by(ResourceClip.created_at.desc()).limit(limit).all()
+
+    if not clips:
+        return {"processed": 0, "tagged": 0, "skipped": 0, "errors": [], "message": "没有需要 tag 的资源"}
+
+    tagged = 0
+    errors = []
+    new_tags_map = {}
+
+    for c in clips:
+        try:
+            tags = generate_tags_for_clip(
+                title=c.name or "",
+                source_project_name=c.source_project_name or "",
+                description=c.description or "",
+                max_tags=3,
+            )
+            new_tags_map[c.id] = tags
+            tagged += 1
+        except Exception as e:
+            errors.append({"resource_id": c.id, "name": c.name, "error": str(e)[:200]})
+
+    # 批量写回 db (sync_get_db 上下文外需要新 session, 用 async db 写)
+    if new_tags_map:
+        # 切到 async db 写
+        for rid, tags in new_tags_map.items():
+            result = await db.execute(select(ResourceClip).where(ResourceClip.id == rid))
+            rc = result.scalar_one_or_none()
+            if rc:
+                rc.tags = tags
+        await db.commit()
+
+    return {
+        "processed": len(clips),
+        "tagged": tagged,
+        "skipped": len(clips) - tagged,
+        "errors": errors,
+        "sample_tags": {k: v for k, v in list(new_tags_map.items())[:5]},
+    }
+
+
+@router.get("/tags")
+async def list_all_tags(
+    db: AsyncSession = Depends(get_db),
+):
+    """列出资源库所有出现过的 tag + 频次 (用于 wizard filter)
+
+    Returns: {"tags": [{"tag": "防水", "count": 5}, ...], "total_resources": 26}
+    """
+    from sqlalchemy import select, func
+    from ..models.database import ResourceClip
+
+    with sync_get_db() as sdb:
+        rows = sdb.query(ResourceClip).filter(
+            ResourceClip.deleted_at.is_(None),
+        ).all()
+
+    tag_counter = {}
+    total = 0
+    for rc in rows:
+        total += 1
+        for t in (rc.tags or []):
+            tag_counter[t] = tag_counter.get(t, 0) + 1
+
+    # 按 count 降序
+    sorted_tags = sorted(
+        [{"tag": t, "count": c} for t, c in tag_counter.items()],
+        key=lambda x: -x["count"],
+    )
+
+    return {"tags": sorted_tags, "total_resources": total}

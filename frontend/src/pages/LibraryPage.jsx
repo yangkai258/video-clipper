@@ -21,6 +21,10 @@ export default function LibraryPage() {
   const [uploadError, setUploadError] = useState('')
   const [uploadFileName, setUploadFileName] = useState('')
   const [playingId, setPlayingId] = useState(null)
+  // v2.2.7: tag filter + 自动 tag
+  const [allTags, setAllTags] = useState([])
+  const [activeTag, setActiveTag] = useState('')
+  const [autoTagging, setAutoTagging] = useState(false)
   const fileInputRef = useRef(null)
 
   const load = async (q = search, tab = activeTab) => {
@@ -39,14 +43,44 @@ export default function LibraryPage() {
     }
   }
 
+  const loadTags = async () => {
+    try {
+      const r = await axios.get(`${API_BASE}/library/tags`)
+      setAllTags(r.data.tags || [])
+    } catch (e) {
+      console.error('load tags failed:', e)
+    }
+  }
+
+  const handleAutoTag = async () => {
+    if (autoTagging) return
+    setAutoTagging(true)
+    try {
+      const r = await axios.post(`${API_BASE}/library/auto-tag`, { limit: 50, force: false })
+      alert(`自动标签完成: 处理 ${r.data.processed} 个, 标签 ${r.data.tagged} 个, 失败 ${r.data.errors?.length || 0}\n\n样本:\n${Object.entries(r.data.sample_tags || {}).slice(0, 3).map(([k, v]) => `• ${v.join(', ')}`).join('\n')}`)
+      load()
+      loadTags()
+    } catch (e) {
+      alert('自动标签失败: ' + (e.response?.data?.detail || e.message))
+    } finally {
+      setAutoTagging(false)
+    }
+  }
+
   useEffect(() => {
     load()
+    loadTags()
   }, [])
 
   useEffect(() => {
     const t = setTimeout(() => load(search, activeTab), 250)
     return () => clearTimeout(t)
   }, [search, activeTab])
+
+  // v2.2.7: activeTag 变了 reload tags (UI 选中高亮)
+  useEffect(() => {
+    loadTags()
+  }, [resources.length])
 
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0]
@@ -126,13 +160,45 @@ export default function LibraryPage() {
           <input
             className="search-input"
             type="text"
-            placeholder="搜索资源名 / 描述 / 来源项目..."
+            placeholder="搜索资源名 / 标签 / 来源项目..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             style={{ width: 280 }}
           />
+          {/* v2.2.7: tag filter chips */}
+          {allTags.length > 0 && (
+            <div className="library-tag-filter" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginLeft: 12 }}>
+              <button
+                className={`library-tag-chip ${activeTag === '' ? 'active' : ''}`}
+                onClick={() => setActiveTag('')}
+              >
+                全部
+              </button>
+              {allTags.slice(0, 15).map(t => (
+                <button
+                  key={t.tag}
+                  className={`library-tag-chip ${activeTag === t.tag ? 'active' : ''}`}
+                  onClick={() => setActiveTag(activeTag === t.tag ? '' : t.tag)}
+                  title={`${t.count} 个资源`}
+                >
+                  {t.tag} <span className="library-tag-count">{t.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="content-header-right">
+          {/* v2.2.7: 自动标签按钮 */}
+          <button
+            className="btn btn-ghost"
+            onClick={handleAutoTag}
+            disabled={autoTagging}
+            title="LLM 自动给所有资源打主题标签"
+          >
+            {autoTagging
+              ? <><Icon name="spinner" size={11} /> 标签生成中...</>
+              : <>✨ 自动标签</>}
+          </button>
           {uploading ? (
             <div className="library-upload-progress">
               <Icon name="spinner" size={14} />
@@ -198,12 +264,17 @@ export default function LibraryPage() {
         />
       ) : (
         <div className="reel-grid">
-          {resources.map(r => (
+          {resources
+            // v2.2.7: activeTag 过滤 (匹配 tags 数组里包含 activeTag)
+            .filter(r => !activeTag || (r.tags || []).includes(activeTag))
+            .map(r => (
             <ResourceCard
               key={r.id}
               resource={r}
               onPlay={() => setPlayingId(r.id)}
               onDelete={(e) => deleteResource(r.id, r.name, e)}
+              activeTag={activeTag}
+              setActiveTag={setActiveTag}
             />
           ))}
         </div>
@@ -230,7 +301,7 @@ export default function LibraryPage() {
 
 
 // 单个资源卡 — 复用 .reel-card, cover 直接 thumbnail img
-function ResourceCard({ resource, onPlay, onDelete }) {
+function ResourceCard({ resource, onPlay, onDelete, activeTag, setActiveTag }) {
   const r = resource
   return (
     <div className="reel-card" data-status="library" onClick={onPlay}>
@@ -256,6 +327,21 @@ function ResourceCard({ resource, onPlay, onDelete }) {
       </div>
       <div className="reel-card-body">
         <div className="reel-card-title" title={r.name}>{r.name || '未命名'}</div>
+        {/* v2.2.7: LLM 自动标签 (主题词) */}
+        {r.tags && r.tags.length > 0 && (
+          <div className="library-card-tags">
+            {r.tags.slice(0, 4).map(tag => (
+              <span
+                key={tag}
+                className={`library-card-tag ${activeTag === tag ? 'active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); setActiveTag(activeTag === tag ? '' : tag) }}
+                title={`点击按 "${tag}" 过滤`}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="reel-card-meta">
           <span><Icon name="clock" size={10} /> {formatTC(r.duration)}</span>
           <span>· {(r.size / 1024 / 1024).toFixed(1)} MB</span>
