@@ -1,10 +1,16 @@
 """数据库模型"""
+import uuid as _uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Text, JSON, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
 Base = declarative_base()
+
+
+def _uuid_str() -> str:
+    """默认 id 生成器 (跟 mix.py 风格一致)"""
+    return str(_uuid.uuid4())
 
 
 class Project(Base):
@@ -210,3 +216,32 @@ class UserPreference(Base):
     last_used_subtitle_style = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ResourceClip(Base):
+    """资源库 (v2.2.5)
+
+    跨项目长期保留的"金句片段" + 用户主动上传的素材.
+    独立于切片项目 Project/Clip — 项目软删 30 天真删不影响这里.
+
+    存储: data/resources/<id>.mp4 + <id>.jpg (跟项目 output 完全分离).
+    """
+    __tablename__ = "resource_clips"
+
+    id = Column(String(36), primary_key=True, default=_uuid_str)
+    name = Column(String(255), nullable=False)
+    file_path = Column(String(512), nullable=False)               # data/resources/<id>.mp4
+    thumbnail_path = Column(String(512), nullable=True)           # data/resources/<id>.jpg
+    duration = Column(Float, default=0.0)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    size = Column(Integer, default=0)
+    source_type = Column(String(20), nullable=False)              # "upload" / "from_project"
+    source_project_id = Column(String(36), nullable=True)
+    source_clip_id = Column(String(36), nullable=True)
+    source_project_name = Column(String(255), nullable=True)      # 冗余便于展示
+    tags = Column(JSON, default=list)                             # [{"category": "防水", "score": 0.85}, ...]
+    description = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)                  # 软删, NULL = 正常

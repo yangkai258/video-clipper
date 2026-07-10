@@ -4,6 +4,7 @@ import Icon from '../Icon'
 // ponytail: Sidebar 5 nav buttons + brand + user chip
 // 传 5 个 handler 让 App 决定状态怎么变 (避免循环依赖)
 // v2.2.4: 加"混剪项目"入口
+// v2.2.5: 加"资源库"入口 (在风格管理之后)
 export default function Sidebar({
   showTrash,
   showWatchFolders,
@@ -12,6 +13,7 @@ export default function Sidebar({
   onStyles,
   onWatchFolders,
   onMix,
+  onLibrary,
 }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -21,6 +23,7 @@ export default function Sidebar({
   const isTrashActive = showTrash
   const isStylesActive = location.pathname === '/styles' && !showTrash && !showWatchFolders
   const isWatchActive = showWatchFolders
+  const isLibraryActive = location.pathname.startsWith('/library') && !showTrash && !showWatchFolders
 
   return (
     <aside className="sidebar">
@@ -57,6 +60,14 @@ export default function Sidebar({
       >
         <span className="nav-item-icon"><Icon name="edit" /></span>
         风格管理
+      </button>
+      {/* v2.2.5: 资源库入口 — 跨项目长期保留的金句片段 + 主动上传的素材 */}
+      <button
+        className={`nav-item ${isLibraryActive ? 'active' : ''}`}
+        onClick={onLibrary}
+      >
+        <span className="nav-item-icon"><Icon name="database" /></span>
+        资源库
       </button>
       <button
         className={`nav-item ${isWatchActive ? 'active' : ''}`}

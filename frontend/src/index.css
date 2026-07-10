@@ -3219,3 +3219,107 @@ input[type="color"] {
   white-space: nowrap;
   max-width: 220px;
 }
+
+/* === v2.2.5: 资源库 (Resource Library) === */
+.library-upload-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-glass);
+  border: var(--glass-border);
+  border-radius: var(--radius-md);
+  color: var(--text-bright);
+  font-size: var(--text-sm);
+}
+.library-upload-progress svg {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.library-upload-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: var(--space-3);
+  background: color-mix(in srgb, #ef4444 8%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+  border-radius: var(--radius-md);
+  color: #fca5a5;
+  font-size: var(--text-sm);
+}
+
+.library-source-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.library-source-upload {
+  background: color-mix(in srgb, #06b6d4 18%, transparent);
+  color: #67e8f9;
+  border: 1px solid color-mix(in srgb, #06b6d4 40%, transparent);
+}
+.library-source-from_project {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-hover, #7170ff);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* 视频播放 modal — 全屏 fixed + 黑色背景 */
+.library-video-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: library-modal-fade-in 0.18s ease-out;
+}
+@keyframes library-modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.library-video-modal-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 92vw;
+  max-height: 92vh;
+}
+.library-video-modal-inner video {
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  background: #000;
+}
+.library-video-modal-close {
+  position: absolute;
+  top: -44px;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.library-video-modal-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.05);
+}

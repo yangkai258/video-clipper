@@ -21,6 +21,8 @@ import TrashView from './components/TrashView'
 import MixListPage from './pages/MixListPage'
 import MixWizardPage from './pages/MixWizardPage'
 import MixDetailPage from './pages/MixDetailPage'
+// v2.2.5: 资源库独立路由页面
+import LibraryPage from './pages/LibraryPage'
 import './index.css'
 
 function App() {
@@ -68,6 +70,7 @@ function App() {
         onStyles={() => { navigate('/styles'); setShowTrash(false); setShowWatchFolders(false) }}
         onWatchFolders={() => { navigate('/'); setShowWatchFolders(true); setShowTrash(false) }}
         onMix={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/mix') }}
+        onLibrary={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/library') }}
       />
 
       <main className="main">
@@ -90,8 +93,10 @@ function App() {
         />
 
         <div className="content fade-in">
-          {/* 路径优先分发: 混剪详情 / 混剪向导 / 项目详情 / 风格管理 / 监控 / 回收站 / 主列表 / 混剪列表 */}
-          {location.pathname.startsWith('/mix/') && !location.pathname.startsWith('/mix/new') ? (
+          {/* 路径优先分发: 资源库 / 混剪详情 / 混剪向导 / 项目详情 / 风格管理 / 监控 / 回收站 / 主列表 / 混剪列表 */}
+          {location.pathname === '/library' ? (
+            <LibraryPage />
+          ) : location.pathname.startsWith('/mix/') && !location.pathname.startsWith('/mix/new') ? (
             <MixDetailInShell />
           ) : location.pathname === '/mix/new' ? (
             <MixWizardPage navigate={navigate} />
@@ -142,6 +147,28 @@ function App() {
                       : 0}%
                   </div>
                   <div className="metric-sub">{counts.failed} 失败</div>
+                </div>
+              </div>
+
+              {/* v2.2.5: 新建切片从 Topbar 挪到内容区 (跟混剪一致) */}
+              <div className="content-header">
+                <div className="content-header-left">
+                  {/* 列表 tab 后续渲染, 这里只放搜索框/占位 */}
+                </div>
+                <div className="content-header-right">
+                  <label className="btn btn-primary">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    <span>新建切片</span>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={handleUpload}
+                      disabled={uploading}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
                 </div>
               </div>
 
