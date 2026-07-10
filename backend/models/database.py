@@ -28,33 +28,19 @@ class Project(Base):
     # 字幕文件
     subtitle_path = Column(String(512))
     subtitle_method = Column(String(50), default="auto")
-
-    # v2.2.3: 项目类型 'clip' (切片项目, 单视频切多段) | 'mix' (混剪项目, 脚本+多素材拼1段)
-    project_type = Column(String(20), default="clip")
-    # 混剪专用字段 (project_type='mix' 时填):
-    script_text = Column(Text, default="")          # 用户输入的直播脚本
-    script_segments = Column(JSON, default=list)     # LLM 分段结果 [{text, keywords, position}]
-    target_duration_seconds = Column(Integer, default=60)  # 用户选的目标时长 (30/60/180/300)
-    output_video_path = Column(String(512))          # 混剪输出 mp4 路径
-
+    
     # 处理配置
     processing_config = Column(JSON, default=dict)
-
+    
     # 时间戳
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
-
+    
     # 关系
     clips = relationship("Clip", back_populates="project", cascade="all, delete-orphan")
     collections = relationship("Collection", back_populates="project", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
-    # 混剪专用: 关联到来源 clip + 来源 project
-    mix_segments = relationship(
-        "MixSegment", back_populates="mix_project",
-        cascade="all, delete-orphan",
-        foreign_keys="MixSegment.mix_project_id",
-    )
 
 
 class Clip(Base):
@@ -93,46 +79,6 @@ class Clip(Base):
     
     # 关系
     project = relationship("Project", back_populates="clips")
-    # 混剪: 这个 clip 被哪些 mix project 引用 (反向查询)
-    used_in_mix_segments = relationship(
-        "MixSegment", back_populates="source_clip",
-        foreign_keys="MixSegment.source_clip_id",
-    )
-
-
-class MixSegment(Base):
-    """混剪片段关联表 — 一个 mix project 引用了哪些 source clips, 按什么顺序"""
-    __tablename__ = "mix_segments"
-
-    id = Column(String(36), primary_key=True)
-    # 混剪项目 (project_type='mix')
-    mix_project_id = Column(String(36), ForeignKey("projects.id"), nullable=False)
-    # 来源 clip (从哪个切片项目来)
-    source_clip_id = Column(String(36), ForeignKey("clips.id"), nullable=False)
-    # 来源 project (冗余, 便于按 source project 查询)
-    source_project_id = Column(String(36), ForeignKey("projects.id"), nullable=False)
-    # 拼接顺序 0/1/2/...
-    position = Column(Integer, default=0)
-    # 这个片段对应的脚本片段文本 (烧字幕用)
-    script_segment_text = Column(Text, default="")
-    # LLM 匹配分 0-1
-    match_score = Column(Float, default=0.0)
-    # 实际拼接用的起止 (从 source clip 上截取一段)
-    start_time = Column(Float, default=0.0)
-    end_time = Column(Float, default=0.0)
-    duration = Column(Float, default=0.0)
-    # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    # 关系
-    mix_project = relationship(
-        "Project", back_populates="mix_segments",
-        foreign_keys=[mix_project_id],
-    )
-    source_clip = relationship(
-        "Clip", back_populates="used_in_mix_segments",
-        foreign_keys=[source_clip_id],
-    )
 
 
 class Collection(Base):
