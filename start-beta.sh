@@ -35,7 +35,7 @@ export VITE_PORT="3030"
 export VITE_API_PORT="8030"
 # v2.1.51: 显式传入 version, 不依赖 git describe 分支拓扑歧义
 # beta HEAD 当前指向 v2.1.50, 后续 commit 跑完会 bump 到 v2.1.51+
-export VITE_APP_VERSION="v2.2.6"  # v2.1.52->v2.1.53, P0#2 watchdog 心跳修复 + WIP 重构 (4afb777) + 玻璃药丸版本号
+export VITE_APP_VERSION="v2.2.6"  # v2.1.53->v2.2.6, 跟 main 同步 (混剪 v2 + 资源库 + 批量混剪 + AI 帮写脚本)
 
 # === Sanity check ===
 echo "============================================"
@@ -68,11 +68,12 @@ echo "✅ 数据库文件存在：$DB_FILE"
 
 echo ""
 echo "🚀 启动测试版后端 (8030)..."
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 > logs/backend_beta.log 2>&1 &
+# v2.2.1+: --workers 1 单 worker (macOS Python 3.10 + fork 偶发 worker 卡死, 1 worker 稳)
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 --workers 1 > logs/backend_beta.log 2>&1 &
 BACKEND_PID=$!
 
 echo "🚀 启动测试版 Worker..."
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --concurrency=5 -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --pool=solo -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成
