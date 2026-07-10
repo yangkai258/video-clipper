@@ -51,6 +51,14 @@ PROGRESS_DICT = {
     "merge_start": 93,
     "verify_done": 96,
     "complete": 100,
+    # v2.2.3: 混剪项目 pipeline 进度
+    "mix_parse_start": 10,        # LLM 解析脚本
+    "mix_parse_done": 25,
+    "mix_match_start": 30,        # 素材匹配 (关键词)
+    "mix_match_done": 55,
+    "mix_assemble_start": 60,     # ffmpeg 拼接
+    "mix_assemble_done": 90,
+    "mix_burn_done": 96,          # 烧字幕
 }
 
 # 临时文件名
@@ -831,4 +839,172 @@ def _update_task_progress(task_id: str, progress: int, current_step: str) -> Non
                 task.progress_changed_at = datetime.utcnow()
                 db.commit()
     except Exception as e:
-        logger.warning(f"进度更新失败 (progress={progress}, step={current_step}): {e}")
+        logger.warning(f"进度更新失败 (progress={progress}, step={current_step}): {e}")# ───────────────────────── Mix Pipeline (v2.2.3) ─────────────────────────
+
+
+@shared_task(bind=True)
+def process_mix_pipeline(
+    self,
+    mix_project_id: str,
+    script_text: str,
+    target_duration_seconds: int,
+    candidate_clip_ids: List[str],
+    task_id: str = None,
+) -> dict:
+    """混剪项目 pipeline (v2.2.3)
+
+    输入:
+        mix_project_id: 混剪项目 id (Project, project_type='mix')
+        script_text: 用户输入的直播脚本
+        target_duration_seconds: 目标时长 (30/60/180/300)
+        candidate_clip_ids: 候选 source clip id 列表 (从切片库勾选)
+        task_id: 关联的 Task row id (更新进度用)
+
+    流程:
+        Step 1 LLM 解析脚本 → segments [{position, text, keywords}]
+        Step 2 加载候选 clips 字幕 → clip_library
+        Step 3 关键词匹配 + 时长分配 → matched segments
+        Step 4 ffmpeg 拼接
+        Step 5 烧脚本原字幕
+        Step 6 写库 + 标 completed
+
+    跟切片项目对比:
+        - 切片: 1 video → N clips (按 LLM 评分切)
+        - 混剪: N clips + 1 script → 1 video (按关键词拼)
+    """
+    from ..core.database import sync_get_db
+    from ..models.database import Project, Clip, MixSegment
+    from ..services.mix_service import (
+        parse_script, build_clip_library, match_clips_for_segments,
+        assemble_mix_video, build_script_srt, burn_mix_subtitle,
+    )
+    from ..api.config import get_project_subtitle_style
+
+    logger.info(f"开始混剪项目: {mix_project_id}, target_duration={target_duration_seconds}s, candidates={len(candidate_clip_ids)}")
+
+    _mark_task_running(task_id)
+
+    # 加载 project + clip 库
+    with sync_get_db() as db:
+        project = db.execute(select(Project).where(Project.id == mix_project_id)).scalar_one_or_none()
+        if not project:
+            raise Exception(f"混剪项目不存在: {mix_project_id}")
+        project_dir = Path(project.video_path or "").parent if project.video_path else None
+        # mix project 没 video_path, 自己创建 output dir
+        if not project_dir or not str(project_dir).startswith(str(Path("data/projects").resolve())):
+            project_dir = Path("data/projects") / mix_project_id
+            (project_dir / "output").mkdir(parents=True, exist_ok=True)
+
+        clips_q = db.execute(
+            select(Clip, Project.name.label("project_name"))
+            .join(Project, Clip.project_id == Project.id)
+            .where(Clip.id.in_(candidate_clip_ids))
+        ).all()
+        clip_records = []
+        for row in clips_q:
+            c, pname = row
+            clip_records.append({
+                "id": c.id,
+                "project_id": c.project_id,
+                "title": c.title,
+                "description": c.description,
+                "duration": c.duration,
+                "video_path": c.video_path,
+                "metadata": c.clip_metadata or {},
+            })
+
+clips_root = Path("data/projects").resolve()
+    # 字幕样式: 优先项目 processing_config.subtitle_style, fallback 默认
+    subtitle_style = {}
+    try:
+        with sync_get_db() as db:
+            proj_for_style = db.execute(select(Project).where(Project.id == mix_project_id)).scalar_one()
+            cfg_style = (proj_for_style.processing_config or {}).get("subtitle_style")
+            if cfg_style:
+                subtitle_style = cfg_style
+    except Exception as e:
+        logger.warning(f"读 subtitle_style 失败, 用默认: {e}")
+        subtitle_style = {}
+
+    try:
+        # Step 1: LLM 解析脚本
+        _update_task_progress(task_id, PROGRESS_DICT["mix_parse_start"], "解析脚本...")
+        segments = parse_script(script_text, target_duration_seconds)
+        if not segments:
+            raise RuntimeError("LLM 解析脚本失败, 没得到有效分段")
+
+        with sync_get_db() as db:
+            proj = db.execute(select(Project).where(Project.id == mix_project_id)).scalar_one()
+            proj.script_segments = segments
+            db.commit()
+
+        # Step 2: 构建素材库 (clip_records → 加 description / metadata.subtitle_text)
+        clip_library = build_clip_library(clip_records)
+
+        # Step 3: 关键词匹配 + 时长分配
+        _update_task_progress(task_id, PROGRESS_DICT["mix_match_start"], "匹配素材片段...")
+        matched = match_clips_for_segments(segments, clip_library, target_duration_seconds)
+        if not matched:
+            raise RuntimeError("没匹配到任何 source clip, 检查素材库或脚本关键词")
+
+        # Step 4: ffmpeg 拼接
+        _update_task_progress(task_id, PROGRESS_DICT["mix_assemble_start"], f"拼接 {len(matched)} 段视频...")
+        output_video = project_dir / "output" / "mix_output.mp4"
+        assemble_mix_video(matched, clips_root, output_video)
+
+        # Step 5: 烧脚本原字幕
+        _update_task_progress(task_id, PROGRESS_DICT["mix_assemble_done"], "烧字幕...")
+        total_dur = sum(s["clip_duration"] for s in matched)
+        srt_text = build_script_srt(matched, total_dur)
+        burn_mix_subtitle(output_video, srt_text, subtitle_style)
+
+        # Step 6: 写库
+        with sync_get_db() as db:
+            proj = db.execute(select(Project).where(Project.id == mix_project_id)).scalar_one()
+            proj.output_video_path = str(output_video.relative_to(Path("data/projects").resolve()))
+            proj.video_size = output_video.stat().st_size
+            proj.video_duration = total_dur
+            proj.status = "completed"
+            proj.completed_at = datetime.utcnow()
+
+            # 写 MixSegment rows
+            for seg in matched:
+                ms = MixSegment(
+                    id=str(uuid.uuid4()),
+                    mix_project_id=mix_project_id,
+                    source_clip_id=seg["matched_clip_id"],
+                    source_project_id=seg["source_project_id"],
+                    position=seg["position"],
+                    script_segment_text=seg["text"],
+                    match_score=seg["match_score"],
+                    start_time=seg["source_start"],
+                    end_time=seg["source_end"],
+                    duration=seg["clip_duration"],
+                )
+                db.add(ms)
+
+            task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+            if task:
+                task.status = "completed"
+                task.progress = 100
+                task.completed_at = datetime.utcnow()
+                task.actual_total_seconds = (datetime.utcnow() - task.started_at).total_seconds() if task.started_at else None
+
+            db.commit()
+            logger.info(f"混剪完成: {mix_project_id}, output={output_video}")
+
+        _update_task_progress(task_id, PROGRESS_DICT["complete"], "混剪完成")
+        return {"status": "completed", "output_video": str(output_video), "segments_matched": len(matched)}
+
+    except Exception as e:
+        logger.exception(f"混剪失败: {e}")
+        with sync_get_db() as db:
+            proj = db.execute(select(Project).where(Project.id == mix_project_id)).scalar_one_or_none()
+            if proj:
+                proj.status = "failed"
+            task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+            if task:
+                task.status = "failed"
+                task.error_message = str(e)[:500]
+            db.commit()
+        raise
