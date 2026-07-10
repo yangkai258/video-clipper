@@ -17,6 +17,10 @@ import { formatDuration, formatTC, formatDate, statusLabel } from './projectView
 import ProjectCard from './components/ProjectCard'
 import StrategyModal from './components/StrategyModal'
 import TrashView from './components/TrashView'
+// v2.2.4: 混剪独立路由页面
+import MixListPage from './pages/MixListPage'
+import MixWizardPage from './pages/MixWizardPage'
+import MixDetailPage from './pages/MixDetailPage'
 import './index.css'
 
 function App() {
@@ -63,6 +67,7 @@ function App() {
         onTrash={() => { navigate('/'); setShowTrash(true); setShowWatchFolders(false); loadTrash() }}
         onStyles={() => { navigate('/styles'); setShowTrash(false); setShowWatchFolders(false) }}
         onWatchFolders={() => { navigate('/'); setShowWatchFolders(true); setShowTrash(false) }}
+        onMix={() => { setShowTrash(false); setShowWatchFolders(false); navigate('/mix') }}
       />
 
       <main className="main">
@@ -85,8 +90,14 @@ function App() {
         />
 
         <div className="content fade-in">
-          {/* 路径优先分发: 项目详情 / 风格管理 / 监控 / 回收站 / 主列表 */}
-          {location.pathname.startsWith('/project/') ? (
+          {/* 路径优先分发: 混剪详情 / 混剪向导 / 项目详情 / 风格管理 / 监控 / 回收站 / 主列表 / 混剪列表 */}
+          {location.pathname.startsWith('/mix/') && !location.pathname.startsWith('/mix/new') ? (
+            <MixDetailInShell />
+          ) : location.pathname === '/mix/new' ? (
+            <MixWizardPage navigate={navigate} />
+          ) : location.pathname === '/mix' ? (
+            <MixListPage navigate={navigate} />
+          ) : location.pathname.startsWith('/project/') ? (
             <ProjectDetailInShell />
           ) : location.pathname === '/styles' ? (
             <StyleManager navigate={navigate} location={location} />
@@ -206,6 +217,13 @@ function ProjectDetailInShell() {
   const { id } = useParams()
   const navigate = useNavigate()
   return <ProjectDetail projectId={id} navigate={navigate} />
+}
+
+// v2.2.4: MixDetailInShell 同样模块顶层 (防 HMR state slot 错位)
+function MixDetailInShell() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  return <MixDetailPage projectId={id} navigate={navigate} />
 }
 
 
