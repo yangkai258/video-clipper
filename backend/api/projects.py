@@ -102,6 +102,20 @@ async def list_projects(
         for s in result.scalars().all():
             style_map[s.id] = s.name
 
+    # v2.2.2: 批量查 clip_count (group by project_id), 避免 N+1
+    # ProjectCard 显示 "切片 N" 用这个字段 (之前 list_projects 没返, UI 永远 0)
+    from ..models.database import Clip
+    from sqlalchemy import func
+    project_ids = [p.id for p in projects]
+    clip_counts: dict = {}
+    if project_ids:
+        result = await db.execute(
+            select(Clip.project_id, func.count(Clip.id))
+            .where(Clip.project_id.in_(project_ids))
+            .group_by(Clip.project_id)
+        )
+        clip_counts = dict(result.all())
+
     for p in projects:
         latest = _latest_task(p.tasks)
         # 只暴露 ProjectCard 用的 task 字段 (progress / current_step / timing)
@@ -136,6 +150,8 @@ async def list_projects(
             "video_duration": p.video_duration,
             "created_at": to_iso_utc(p.created_at),
             "deleted_at": to_iso_utc(p.deleted_at),
+            # v2.2.2: clip_count (clips 表 group by count) — ProjectCard 显示用
+            "clip_count": clip_counts.get(p.id, 0),
             # 风格信息 (ProjectCard 显示用)
             "style_id": style_id,
             "style_name": style_name,
