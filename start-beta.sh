@@ -35,7 +35,7 @@ export VITE_PORT="3030"
 export VITE_API_PORT="8030"
 # v2.1.51: 显式传入 version, 不依赖 git describe 分支拓扑歧义
 # beta HEAD 当前指向 v2.1.50, 后续 commit 跑完会 bump 到 v2.1.51+
-export VITE_APP_VERSION="v2.1.53"  # v2.1.52->v2.1.53, P0#2 watchdog 心跳修复 + WIP 重构 (4afb777) + 玻璃药丸版本号
+export VITE_APP_VERSION="v2.2.6"  # v2.1.52->v2.1.53, P0#2 watchdog 心跳修复 + WIP 重构 (4afb777) + 玻璃药丸版本号
 
 # === Sanity check ===
 echo "============================================"
