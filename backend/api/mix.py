@@ -168,39 +168,69 @@ async def list_mix_projects(
 @router.get("/clips/library")
 async def list_candidate_clips(
     limit: int = 500,
+    source: str = "all",  # "all" | "project" | "library"  v2.2.5 wizard 接资源库
 ):
-    """候选素材库: 从切片 db 读 clips (只读)
+    """候选素材库: 从切片 db 读 clips + 资源库 (只读)
 
     用于 /mix/new wizard 步骤 2 (选素材).
-    切片 db 完全只读, 不写.
+    v2.2.5: source query 区分来源 — project (切片项目 clip) / library (资源库) / all (默认)
     """
     from ..models.database import Clip, Project
     from ..core.database import sync_get_db
+    from ..models.database import ResourceClip
 
-    with sync_get_db() as db:
-        rows = db.query(Clip, Project.name.label("project_name")).join(
-            Project, Clip.project_id == Project.id
-        ).filter(
-            Project.deleted_at.is_(None),
-        ).order_by(Clip.created_at.desc()).limit(limit).all()
+    items = []
 
-        items = []
-        for clip, pname in rows:
-            subtitle_preview = ""
-            if clip.clip_metadata and isinstance(clip.clip_metadata, dict):
-                subtitle_preview = (clip.clip_metadata.get("subtitle_text") or "")[:200]
-            items.append({
-                "clip_id": clip.id,
-                "title": clip.title,
-                "source_project_id": clip.project_id,
-                "source_project_name": pname or "",
-                "video_path": clip.video_path,
-                "duration": clip.duration,
-                "width": clip.width,
-                "height": clip.height,
-                "subtitle_text_preview": subtitle_preview,
-                "created_at": clip.created_at.isoformat() if clip.created_at else None,
-            })
+    if source in ("all", "project"):
+        # 切片项目的 clips
+        with sync_get_db() as db:
+            rows = db.query(Clip, Project.name.label("project_name")).join(
+                Project, Clip.project_id == Project.id
+            ).filter(
+                Project.deleted_at.is_(None),
+            ).order_by(Clip.created_at.desc()).limit(limit).all()
+
+            for clip, pname in rows:
+                subtitle_preview = ""
+                if clip.clip_metadata and isinstance(clip.clip_metadata, dict):
+                    subtitle_preview = (clip.clip_metadata.get("subtitle_text") or "")[:200]
+                items.append({
+                    "id": clip.id,                  # v2.2.5: 统一用 id 字段 (前端一致处理)
+                    "clip_id": clip.id,             # 兼容旧字段
+                    "title": clip.title,
+                    "source_project_id": clip.project_id,
+                    "source_project_name": pname or "",
+                    "source_type": "project",
+                    "video_path": clip.video_path,
+                    "duration": clip.duration,
+                    "width": clip.width,
+                    "height": clip.height,
+                    "subtitle_text_preview": subtitle_preview,
+                    "created_at": clip.created_at.isoformat() if clip.created_at else None,
+                })
+
+    if source in ("all", "library"):
+        # 资源库 clips (ResourceClip 跟切片 Project 在同一个 db, 用同一个 session)
+        with sync_get_db() as db:
+            rows = db.query(ResourceClip).filter(
+                ResourceClip.deleted_at.is_(None),
+            ).order_by(ResourceClip.created_at.desc()).limit(limit).all()
+            for rc in rows:
+                items.append({
+                    "id": rc.id,
+                    "clip_id": rc.id,  # wizard Step 3 POST /mix 用 candidate_clip_ids, 都按 id 处理
+                    "title": rc.name,
+                    "source_project_id": rc.source_project_id,
+                    "source_project_name": rc.source_project_name or "资源库",
+                    "source_type": "library",
+                    "video_path": rc.file_path,
+                    "duration": rc.duration,
+                    "width": rc.width,
+                    "height": rc.height,
+                    "subtitle_text_preview": "",  # 资源库没存字幕
+                    "created_at": rc.created_at.isoformat() if rc.created_at else None,
+                })
+
     return {"clips": items, "count": len(items)}
 
 

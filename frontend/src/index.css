@@ -3323,3 +3323,32 @@ input[type="color"] {
   background: rgba(255, 255, 255, 0.2);
   transform: scale(1.05);
 }
+
+
+/* ──────────────────────────── v2.2.5: 资源库卡 thumbnail ──────────────────────────── */
+
+.library-card-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-base);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+}
+.library-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.library-source-tag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--accent) 80%, transparent);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+}

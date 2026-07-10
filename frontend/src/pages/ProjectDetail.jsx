@@ -61,6 +61,24 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
     }
   }
 
+  // v2.2.5: 一键把整个项目所有 clip 批量导入资源库 (放在 useMemo 前, 避免 TDZ)
+  const handleSaveAllToLibrary = async () => {
+    if (!project || project.status !== 'completed') return
+    if (!confirm(`把项目「${project.name}」的全部 ${project.clips?.length || 0} 个片段批量存入资源库？`)) return
+    try {
+      const r = await axios.post(`${API_BASE}/library/from-project`, {
+        source_project_id: project.id,
+      })
+      const imported = r.data.imported ?? 0
+      const skipped = r.data.skipped ?? 0
+      const errors = r.data.errors?.length ?? 0
+      alert(`批量导入完成:\n• 新增 ${imported} 个\n• 已存在跳过 ${skipped}\n• 失败 ${errors} 个\n去「资源库」页面查看`)
+      reload()
+    } catch (err) {
+      alert('批量导入失败: ' + (err.response?.data?.detail || err.message))
+    }
+  }
+
   // 被重复读取的派生数据在这里一次性算好
   const view = useMemo(() => {
     if (!project) return null
@@ -91,6 +109,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
         onShowReport: () => setShowReport(true),
         onDelete: deleteProject,
         onRerun: () => setShowRerun(true),  // v2.2.1: 重新处理
+        onSaveAllToLibrary: handleSaveAllToLibrary,  // v2.2.5: 一键存全部
       },
     }
   }, [project])
