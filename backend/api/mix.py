@@ -27,6 +27,7 @@ from sqlalchemy.orm import selectinload
 
 from ..core.database_mix import get_mix_db, sync_get_mix_db
 from ..models.mix import MixProject, MixSourceClip, MixTask, MixBase
+from ..services.risk_detector import check_script_risk
 
 router = APIRouter(prefix="/mix", tags=["mix"])
 logger = logging.getLogger(__name__)
@@ -151,6 +152,7 @@ async def list_mix_projects(
             "output_video_path": p.output_video_path,
             "video_size": p.video_size,
             "video_duration": p.video_duration,
+            "thumbnail_path": p.thumbnail_path,  # v2.2.4: 缩略图 (list card 用)
             "source_clip_count": len(p.source_clips),
             "task": {
                 "progress": latest.progress if latest else 0,
@@ -286,6 +288,24 @@ async def stream_mix_video(project_id: str):
     )
 
 
+@router.get("/thumbnails/{project_id}")
+async def get_mix_thumbnail(project_id: str):
+    """返回混剪项目缩略图 (v2.2.4 list card 用)
+
+    路径: data/projects/<mix_project_id>/output/thumbnail.jpg
+    生成于 processing_mix 烧字幕完的 ffmpeg -ss 1s -frames:v 1
+    """
+    mix_projects_root = Path("data/projects").resolve()
+    thumb_path = mix_projects_root / project_id / "output" / "thumbnail.jpg"
+    if not thumb_path.exists():
+        raise HTTPException(status_code=404, detail="缩略图未生成")
+    return FileResponse(
+        path=str(thumb_path),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 @router.delete("/{project_id}")
 async def delete_mix_project(
     project_id: str,
@@ -304,3 +324,28 @@ async def delete_mix_project(
     project.deleted_at = datetime.utcnow()
     await db.commit()
     return {"id": project_id, "deleted": True}
+
+
+# ──────────────────────────── v2.2.4: 风险词检测 ────────────────────────────
+
+@router.post("/script-risk-check")
+async def check_script_risk_endpoint(payload: dict = Body(...)):
+    """扫描脚本中的抖音直播违规词 + 广告法敏感词
+
+    输入: {"script_text": "..."} 或 {"segments": [{"text": "..."}, ...]}
+    输出: {"total_risk_count", "has_risk", "level": "none/low/medium/high", "hits": [...], "version"}
+
+    不阻止提交, 仅警告. user 可强制提交 (自己负责).
+    """
+    text = payload.get("script_text", "")
+    segments = payload.get("segments") or []
+
+    if not text and not segments:
+        raise HTTPException(status_code=400, detail="script_text 或 segments 至少传一个")
+
+    # 多段合并: segment_text 用换行隔开
+    if not text and segments:
+        text = "\n".join(str(s.get("text", "") if isinstance(s, dict) else s) for s in segments)
+
+    result = check_script_risk(text)
+    return result

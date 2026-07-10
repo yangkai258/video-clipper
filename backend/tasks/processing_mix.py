@@ -27,6 +27,7 @@ from ..services.mix_service import (
     assemble_mix_video,
     build_script_srt,
     burn_mix_subtitle,
+    generate_thumbnail,
 )
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,10 @@ def process_mix_pipeline(
         srt_text = build_script_srt(matched, total_duration=total_dur)
         burn_mix_subtitle(output_video, srt_text, subtitle_style, total_duration=total_dur)
 
+        # v2.2.4: 抽缩略图 (1s 中段, 720px, list card 用)
+        thumbnail_path = output_video.parent / "thumbnail.jpg"
+        generate_thumbnail(output_video, thumbnail_path, ss_seconds=1.0)
+
         # Step 6: 写 mix db (MixProject.output_video_path + MixSourceClip rows + MixTask.completed)
         total_dur = sum(s["clip_duration"] for s in matched)
         with sync_get_mix_db() as db:
@@ -156,6 +161,8 @@ def process_mix_pipeline(
             proj.video_duration = total_dur
             proj.status = "completed"
             proj.completed_at = datetime.utcnow()
+            if thumbnail_path.exists():
+                proj.thumbnail_path = str(thumbnail_path.relative_to(mix_projects_root))
 
             for seg in matched:
                 ms = MixSourceClip(

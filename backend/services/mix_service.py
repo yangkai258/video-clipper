@@ -444,9 +444,55 @@ def build_script_srt_from_text(srt_text: str, total_duration: float) -> str:
         new_s = int(new_end % 60)
         new_ms = int((new_end - int(new_end)) * 1000)
         new_ts = f"{new_h:02d}:{new_m:02d}:{new_s:02d},{new_ms:03d}"
-        # 替换 end_time (保留 start_time)
         start_match = re.match(r"(\d{2}:\d{2}:\d{2},\d{3}) -->", ts_line)
         if start_match:
             lines[last_ts_idx] = f"{start_match.group(1)} --> {new_ts}"
 
     return "\n".join(lines) + "\n"
+
+
+def generate_thumbnail(video_path: Path, thumbnail_path: Path, ss_seconds: float = 1.0) -> bool:
+    """抽视频某一秒作为缩略图 (mix project list card 用)
+
+    v2.2.4: ffmpeg -ss 1s -frames:v 1 -vf scale=720:-2 (16:9 cover 等比)
+    返回 True 成功, False 失败 (但不 raise — 缩略图不是关键路径)
+
+    跟切片项目 thumbnail 区别:
+    - 切片: <project_id>.jpg (data/projects/<id>/<project_id>.jpg)
+    - 混剪: data/projects/<mix_id>/output/thumbnail.jpg (跟 mix_output.mp4 同目录)
+    """
+    thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # 边界: video 时长 < ss_seconds 时取一半
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+                capture_output=True, text=True, timeout=30,
+            )
+            vid_duration = float(result.stdout.strip() or 0)
+        except Exception:
+            vid_duration = 0
+
+        actual_ss = ss_seconds
+        if vid_duration > 0 and ss_seconds >= vid_duration:
+            actual_ss = max(0.5, vid_duration / 2)
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(actual_ss),
+            "-i", str(video_path),
+            "-frames:v", "1",
+            "-vf", "scale=720:-2",
+            "-q:v", "3",
+            str(thumbnail_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            logger.warning(f"thumbnail ffmpeg failed: {result.stderr[:300]}")
+            return False
+        return thumbnail_path.exists() and thumbnail_path.stat().st_size > 0
+    except Exception as e:
+        logger.warning(f"generate_thumbnail exception: {e}")
+        return False

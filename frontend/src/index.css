@@ -418,6 +418,37 @@ body {
 
 .breadcrumb-sep {
   color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+}
+
+.breadcrumb-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.breadcrumb-link:hover {
+  color: var(--accent);
+}
+
+.breadcrumb-current {
+  color: var(--text-bright);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* v2.2.4: 详情页面包屑容器 — 顶部空隙, 跟在 page-title 下面 */
+.pda-breadcrumb {
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* v2.1.52: version badge in topbar right */

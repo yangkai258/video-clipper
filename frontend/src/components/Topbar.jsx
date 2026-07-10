@@ -20,11 +20,13 @@ export default function Topbar({
   handleCancel,
   versionLabel,
   isBeta,
+  currentProjectName,
 }) {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const pageTitle = location.pathname.startsWith('/project/')
+  const isProjectDetail = location.pathname.startsWith('/project/')
+  const pageTitle = isProjectDetail
     ? '项目详情'
     : location.pathname === '/styles'
       ? '风格管理'
@@ -38,13 +40,29 @@ export default function Topbar({
     <div className="topbar">
       <div className="topbar-left">
         <span className="breadcrumb">
-          {location.pathname.startsWith('/project/') ? (
+          {isProjectDetail ? (
+            // v2.2.4: 详情页面包屑 = "工作台 / 切片项目 / 项目名"
+            // currentProjectName 从 App.jsx 的 projects list 缓存拿, 不走网络
             <>
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/')}
+                title="返回项目列表"
+              >
                 <Icon name="chevronLeft" size={12} />
               </button>
               <span className="breadcrumb-sep">/</span>
-              <span className="page-title">项目详情</span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/')}
+                style={{ padding: '0 4px' }}
+              >
+                切片项目
+              </button>
+              <span className="breadcrumb-sep">/</span>
+              <span className="page-title" title={currentProjectName || pageTitle}>
+                {currentProjectName || pageTitle}
+              </span>
             </>
           ) : (
             <>

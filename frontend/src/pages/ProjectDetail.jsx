@@ -9,6 +9,7 @@ import { API_BASE, statusLabel, formatTC, formatDate } from '../projectView'
 
 import Icon from '../Icon'
 import EmptyState from '../components/EmptyState'
+import Breadcrumb from '../components/Breadcrumb'
 import ProjectHeader from '../components/ProjectHeader'
 import ProjectMetrics from '../components/ProjectMetrics'
 import ProjectProgressCard from '../components/ProjectProgressCard'
@@ -111,6 +112,16 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
 
   return (
     <div className="pda-layout">
+      {/* v2.2.4: 面包屑 — 工作台 / 切片项目 / 当前项目 */}
+      <div className="pda-breadcrumb">
+        <Breadcrumb
+          items={[
+            { label: '工作台' },
+            { label: '切片项目', icon: 'list', onClick: () => navigate('/') },
+            { label: project.name, icon: 'film' },
+          ]}
+        />
+      </div>
       <ProjectHeader {...headerProps} />
       <ProjectMetrics
         clipsCount={clips.length}
