@@ -2,9 +2,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import Icon from '../Icon'
 
 // ponytail: Sidebar 5 nav buttons + brand + user chip
-// 传 5 个 handler 让 App 决定状态怎么变 (避免循环依赖)
 // v2.2.4: 加"混剪项目"入口
-// v2.2.5: 加"资源库"入口 (在风格管理之后)
+// v2.2.5: 加"资源库"入口
+// v2.2.6: 加"批量混剪"入口 (混剪项目下面子菜单)
 export default function Sidebar({
   showTrash,
   showWatchFolders,
@@ -13,13 +13,15 @@ export default function Sidebar({
   onStyles,
   onWatchFolders,
   onMix,
+  onMixBatch,
   onLibrary,
 }) {
   const navigate = useNavigate()
   const location = useLocation()
 
   const isProjectsActive = (location.pathname === '/' || location.pathname.startsWith('/project/')) && !showTrash && !showWatchFolders
-  const isMixActive = location.pathname.startsWith('/mix') && !showTrash && !showWatchFolders
+  const isMixActive = location.pathname === '/mix' && !showTrash && !showWatchFolders
+  const isMixBatchActive = location.pathname.startsWith('/mix/batch') && !showTrash && !showWatchFolders
   const isTrashActive = showTrash
   const isStylesActive = location.pathname === '/styles' && !showTrash && !showWatchFolders
   const isWatchActive = showWatchFolders
@@ -47,6 +49,15 @@ export default function Sidebar({
         <span className="nav-item-icon"><Icon name="layers" /></span>
         混剪项目
       </button>
+      {/* v2.2.6: 批量混剪入口 (混剪的批量提交, 一次跑多个变体) */}
+      <button
+        className={`nav-item nav-item-child ${isMixBatchActive ? 'active' : ''}`}
+        onClick={onMixBatch}
+        style={{ paddingLeft: 28, fontSize: 13 }}
+      >
+        <span className="nav-item-icon"><Icon name="layers" size={12} /></span>
+        批量混剪
+      </button>
       <button
         className={`nav-item ${isTrashActive ? 'active' : ''}`}
         onClick={onTrash}
@@ -61,7 +72,6 @@ export default function Sidebar({
         <span className="nav-item-icon"><Icon name="edit" /></span>
         风格管理
       </button>
-      {/* v2.2.5: 资源库入口 — 跨项目长期保留的金句片段 + 主动上传的素材 */}
       <button
         className={`nav-item ${isLibraryActive ? 'active' : ''}`}
         onClick={onLibrary}

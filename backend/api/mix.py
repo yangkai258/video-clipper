@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..core.database_mix import get_mix_db, sync_get_mix_db
-from ..models.mix import MixProject, MixSourceClip, MixTask, MixBase
+from ..models.mix import MixProject, MixSourceClip, MixTask, MixBatch, MixBase
 from ..services.risk_detector import check_script_risk
 
 router = APIRouter(prefix="/mix", tags=["mix"])
@@ -63,7 +63,7 @@ async def create_mix_project(
     if target_duration not in (30, 60, 180, 300):
         raise HTTPException(status_code=400, detail="target_duration_seconds 必须是 30/60/180/300")
 
-    # 1) 创建 MixProject
+    # 1) 创建 MixProject (v2.2.6 batch_id 透传)
     project_id = str(_uuid.uuid4())
     project = MixProject(
         id=project_id,
@@ -73,6 +73,7 @@ async def create_mix_project(
         script_text=script_text,
         target_duration_seconds=target_duration,
         subtitle_style=subtitle_style,
+        batch_id=payload.get("batch_id"),  # v2.2.6: 批量批次关联
     )
     db.add(project)
 
@@ -232,6 +233,275 @@ async def list_candidate_clips(
                 })
 
     return {"clips": items, "count": len(items)}
+
+
+# ──────────────────────────── v2.2.6: 批量混剪 ────────────────────────────
+
+
+@router.post("/batch")
+async def create_mix_batch(
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_mix_db),
+):
+    """批量创建混剪变体 (v2.2.6)
+
+    payload:
+        name: str                  批次名 (如 "防水 A/B 测试")
+        common_script_text: str    公共脚本 (会被 variations[].script_text 覆盖)
+        common_target_duration: int  公共目标时长 30/60/180/300
+        max_concurrent: int        同一时刻最大并发数 (1-3, 默认 1)
+        variations: list[dict]     N 个变体定义
+            {
+                "name": "变体 A",
+                "script_text": "(可选, 覆盖 common)",
+                "target_duration_seconds": 60,
+                "candidate_clip_ids": ["id1", "id2", ...]
+            }
+
+    Returns: {batch_id, total_count, projects: [{project_id, name}]}
+
+    性能约束:
+      - 创建 batch + N 个 project + N 个 task, 一次性 commit (避免 N 次 round-trip)
+      - 派 N 个 celery task 到 processing_mix queue
+      - 实际并发由 worker side 控制 (task 启动时检查 batch.max_concurrent)
+      - 默认 max_concurrent=1 (零额外负载, 跟现在一致)
+    """
+    import uuid as _uuid
+
+    name = payload.get("name") or f"批量混剪 {datetime.utcnow().strftime('%H:%M')}"
+    common_script = (payload.get("common_script_text") or "").strip()
+    common_duration = int(payload.get("common_target_duration") or 60)
+    max_concurrent = int(payload.get("max_concurrent") or 1)
+    variations = payload.get("variations") or []
+
+    if not variations:
+        raise HTTPException(status_code=400, detail="variations 不能为空")
+    if not common_script and not all(v.get("script_text") for v in variations):
+        raise HTTPException(status_code=400, detail="common_script_text 或每个 variation.script_text 至少要有一个")
+    if common_duration not in (30, 60, 180, 300):
+        raise HTTPException(status_code=400, detail="common_target_duration 必须是 30/60/180/300")
+    if max_concurrent < 1 or max_concurrent > 3:
+        raise HTTPException(status_code=400, detail="max_concurrent 必须在 1-3 (考虑服务器性能)")
+    if len(variations) > 100:
+        raise HTTPException(status_code=400, detail=f"variations 上限 100 (当前 {len(variations)})")
+
+    batch_id = str(_uuid.uuid4())
+
+    # 一次性建 batch + N 个 project + N 个 task
+    new_projects = []
+    for i, var in enumerate(variations):
+        if not var.get("candidate_clip_ids"):
+            raise HTTPException(status_code=400, detail=f"variation {i} 缺 candidate_clip_ids")
+
+        var_script = (var.get("script_text") or common_script).strip()
+        var_duration = int(var.get("target_duration_seconds") or common_duration)
+        var_name = var.get("name") or f"{name} #{i+1}"
+
+        if var_duration not in (30, 60, 180, 300):
+            raise HTTPException(status_code=400, detail=f"variation {i} target_duration_seconds 必须是 30/60/180/300")
+        if not var_script:
+            raise HTTPException(status_code=400, detail=f"variation {i} 缺 script_text")
+
+        pid = str(_uuid.uuid4())
+        tid = str(_uuid.uuid4())
+        new_projects.append({
+            "id": pid, "name": var_name,
+            "script": var_script, "duration": var_duration,
+            "clips": var["candidate_clip_ids"],
+            "task_id": tid,
+            "desc": f"批量 #{i+1}/{len(variations)}: AI 混剪 {len(var['candidate_clip_ids'])} 素材, 目标 {var_duration}s",
+        })
+
+    # 写 db (一次性 commit)
+    batch = MixBatch(
+        id=batch_id,
+        name=name,
+        description=payload.get("description", ""),
+        common_script_text=common_script,
+        common_target_duration=common_duration,
+        variations=variations,
+        max_concurrent=max_concurrent,
+        status="pending",
+        total_count=len(new_projects),
+        completed_count=0,
+        failed_count=0,
+    )
+    db.add(batch)
+
+    for p in new_projects:
+        db.add(MixProject(
+            id=p["id"], name=p["name"], status="pending",
+            script_text=p["script"], target_duration_seconds=p["duration"],
+            batch_id=batch_id,
+        ))
+        db.add(MixTask(
+            id=p["task_id"], mix_project_id=p["id"],
+            task_type="mix_processing", name=p["name"],
+            description=p["desc"], status="pending", progress=0,
+            current_step="等待 worker 启动",
+        ))
+
+    await db.commit()
+
+    # 派 celery tasks (依次派, 不并发派避免 Redis pipeline 压力)
+    from ..tasks.processing_mix import process_mix_pipeline
+    dispatched = 0
+    for p in new_projects:
+        try:
+            process_mix_pipeline.apply_async(
+                kwargs={
+                    "mix_project_id": p["id"],
+                    "script_text": p["script"],
+                    "target_duration_seconds": p["duration"],
+                    "candidate_clip_ids": p["clips"],
+                    "task_id": p["task_id"],
+                },
+                queue="processing_mix",
+            )
+            dispatched += 1
+        except Exception as e:
+            logger.exception(f"派发批量 task 失败: {e}")
+
+    logger.info(f"批量混剪已派发: batch_id={batch_id}, total={len(new_projects)}, dispatched={dispatched}")
+
+    return {
+        "batch_id": batch_id,
+        "name": name,
+        "total_count": len(new_projects),
+        "max_concurrent": max_concurrent,
+        "dispatched": dispatched,
+        "projects": [{"project_id": p["id"], "task_id": p["task_id"], "name": p["name"]} for p in new_projects],
+    }
+
+
+@router.get("/batch")
+async def list_mix_batches(
+    include_deleted: bool = False,
+    db: AsyncSession = Depends(get_mix_db),
+):
+    """批量混剪批次列表"""
+    query = select(MixBatch).order_by(MixBatch.created_at.desc()).limit(100)
+    result = await db.execute(query)
+    batches = result.scalars().all()
+    items = []
+    for b in batches:
+        items.append({
+            "id": b.id,
+            "name": b.name,
+            "status": b.status,
+            "total_count": b.total_count,
+            "completed_count": b.completed_count,
+            "failed_count": b.failed_count,
+            "max_concurrent": b.max_concurrent,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+            "completed_at": b.completed_at.isoformat() if b.completed_at else None,
+        })
+    return {"batches": items}
+
+
+@router.get("/batch/{batch_id}")
+async def get_mix_batch(
+    batch_id: str,
+    db: AsyncSession = Depends(get_mix_db),
+):
+    """批量混剪详情 + 所有子项目状态"""
+    result = await db.execute(select(MixBatch).where(MixBatch.id == batch_id))
+    batch = result.scalar_one_or_none()
+    if not batch:
+        raise HTTPException(status_code=404, detail="批次不存在")
+
+    # 查 N 个子项目 + 最新 task
+    result = await db.execute(
+        select(MixProject).where(MixProject.batch_id == batch_id).order_by(MixProject.created_at)
+    )
+    projects = result.scalars().all()
+
+    items = []
+    for p in projects:
+        result = await db.execute(select(MixTask).where(MixTask.mix_project_id == p.id))
+        task = result.scalar_one_or_none()
+        items.append({
+            "id": p.id,
+            "name": p.name,
+            "status": p.status,
+            "video_size": p.video_size,
+            "video_duration": p.video_duration,
+            "thumbnail_path": p.thumbnail_path,
+            "output_video_path": p.output_video_path,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "completed_at": p.completed_at.isoformat() if p.completed_at else None,
+            "task": {
+                "progress": task.progress if task else 0,
+                "current_step": task.current_step if task else "",
+                "status": task.status if task else "pending",
+                "error_message": task.error_message if task else "",
+            } if task else None,
+        })
+
+    return {
+        "id": batch.id,
+        "name": batch.name,
+        "description": batch.description,
+        "status": batch.status,
+        "total_count": batch.total_count,
+        "completed_count": batch.completed_count,
+        "failed_count": batch.failed_count,
+        "max_concurrent": batch.max_concurrent,
+        "common_script_text": batch.common_script_text,
+        "common_target_duration": batch.common_target_duration,
+        "created_at": batch.created_at.isoformat() if batch.created_at else None,
+        "completed_at": batch.completed_at.isoformat() if batch.completed_at else None,
+        "projects": items,
+    }
+
+
+@router.delete("/batch/{batch_id}")
+async def cancel_mix_batch(
+    batch_id: str,
+    db: AsyncSession = Depends(get_mix_db),
+):
+    """取消批量混剪 — revoke 未跑的 task, 已跑的不停
+
+    已跑的 task 占用 worker 资源, 强行 revoke 会失败 (worker 正在跑).
+    pending 状态的 task 可以 revoke 让 worker 跳过.
+    """
+    result = await db.execute(select(MixBatch).where(MixBatch.id == batch_id))
+    batch = result.scalar_one_or_none()
+    if not batch:
+        raise HTTPException(status_code=404, detail="批次不存在")
+    if batch.status == "completed":
+        raise HTTPException(status_code=409, detail="批次已完成, 无需取消")
+
+    # revoke 所有 pending 状态的 MixTask (已 running 的不 revoke, 让它跑完自然失败)
+    from ..core.celery_app import celery_app
+    revoked = 0
+    result = await db.execute(
+        select(MixTask).join(MixProject, MixTask.mix_project_id == MixProject.id)
+        .where(MixProject.batch_id == batch_id)
+    )
+    tasks = result.scalars().all()
+    for task in tasks:
+        if task.status == "pending" and task.celery_task_id:
+            try:
+                celery_app.control.revoke(task.celery_task_id, terminate=False)
+                revoked += 1
+            except Exception:
+                pass
+        elif task.status == "pending":
+            task.status = "failed"
+            task.error_message = "batch 取消"
+            revoked += 1
+
+    # 把 batch 标 cancelled
+    batch.status = "cancelled"
+    batch.completed_at = datetime.utcnow()
+    await db.commit()
+
+    return {
+        "batch_id": batch_id,
+        "status": "cancelled",
+        "revoked_tasks": revoked,
+    }
 
 
 @router.get("/{project_id}")
@@ -414,3 +684,7 @@ async def check_script_risk_endpoint(payload: dict = Body(...)):
 
     result = check_script_risk(text)
     return result
+
+
+
+

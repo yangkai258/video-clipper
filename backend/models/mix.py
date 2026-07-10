@@ -56,6 +56,9 @@ class MixProject(MixBase):
     # v2.2.4: 缩略图路径 (output/thumbnail.jpg, 列表 card 用)
     thumbnail_path = Column(String(512), nullable=True)
 
+    # v2.2.6: 批量混剪关联 (nullable, 单个混剪没 batch)
+    batch_id = Column(String(36), nullable=True, index=True)
+
     # 字幕样式 (跟切片项目一致, 用户偏好同步)
     subtitle_style = Column(JSON, default=dict)
 
@@ -164,3 +167,42 @@ class MixTask(MixBase):
 
     # 关系
     mix_project = relationship("MixProject", back_populates="tasks")
+
+
+class MixBatch(MixBase):
+    """批量混剪批次 (v2.2.6)
+
+    一次提交 N 个混剪变体 (同一脚本 + 不同素材组, 或不同脚本组合).
+    性能约束:
+      - max_concurrent 控制同一时刻 worker 处理数 (默认 1, 上限 3 跟 M2 8 核甜区匹配)
+      - 单 worker solo pool, N 个 task 串行 (worker_prefetch_multiplier=1)
+      - 失败 task 不影响其他, batch 整体 progress 独立计算
+    """
+    __tablename__ = "mix_batches"
+
+    id = Column(String(36), primary_key=True, default=_uuid_str)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, default="")
+
+    # 公共配置 (所有变体共用)
+    common_script_text = Column(Text, default="")
+    common_target_duration = Column(Integer, default=60)
+
+    # 变体定义 JSON: [{name?, script_text?, target_duration?, candidate_clip_ids: [...]}, ...]
+    variations = Column(JSON, default=list)
+
+    # 性能控制 (1-3, 默认 1)
+    max_concurrent = Column(Integer, default=1)
+
+    # 状态: pending / running / completed / partial / failed / cancelled
+    status = Column(String(50), default="pending")
+
+    # 计数
+    total_count = Column(Integer, default=0)
+    completed_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
