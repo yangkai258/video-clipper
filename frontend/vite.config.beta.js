@@ -43,10 +43,10 @@ function detectLanIp() {
   }
 }
 const LAN_IP = process.env.LAN_IP || detectLanIp()
-// v2.2.2-hotfix: UPLOAD_API 留空, 强制走 vite proxy 相对路径; 之前 LAN_IP 注入在多网卡环境 cross-route 失败
-const UPLOAD_API = ''
-// 可选: 手动指定 (cloudflared 临时域名场景, 比如 `VITE_UPLOAD_API=https://xxx.trycloudflare.com`)
-// const UPLOAD_API = process.env.VITE_UPLOAD_API || (LAN_IP === 'localhost' ? '' : `http://${LAN_IP}:8030`)
+// v2.2.2-hotfix2: vite proxy ECONNREFUSED 频繁 (432 次/小时), 走直连 8030 反而稳
+// 早 5 个 v2.2.1 init 在 79 段 (同 wifi), 直连 172.16.120.82:8030 OK
+// v2.2.2 第一次注入 LAN_IP 失败是 WS path bug, XHR 4 流直连 没问题
+const UPLOAD_API = process.env.VITE_UPLOAD_API || (LAN_IP === 'localhost' ? '' : `http://${LAN_IP}:8030`)
 // v2.2.2-hotfix: 强制 XHR 路径 (disable WS, 因为 WS 在 OPTIONS preflight 后 PUT 0 个)
 const FORCE_XHR = '1'
 

@@ -28,8 +28,8 @@ function detectLanIp() {
   }
 }
 const LAN_IP = process.env.LAN_IP || detectLanIp()
-// v2.2.2-hotfix: 跟 beta 一样临时禁用, 走 vite proxy 相对路径 (修多网卡环境 cross-route)
-const UPLOAD_API = ''
+// v2.2.2-hotfix2: vite proxy ECONNREFUSED 频繁, 走直连 8000 反而稳
+const UPLOAD_API = process.env.VITE_UPLOAD_API || (LAN_IP === 'localhost' ? '' : `http://${LAN_IP}:8000`)
 // v2.2.2-hotfix: 强制 XHR 路径 (disable WS, 因为 WS 在 OPTIONS preflight 后 PUT 0 个)
 const FORCE_XHR = '1'
 
