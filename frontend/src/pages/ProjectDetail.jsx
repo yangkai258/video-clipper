@@ -110,6 +110,21 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   const currentPage = activeTab === 'collections' ? collectionsPage : clipsPage
   const setCurrentPage = activeTab === 'collections' ? setCollectionsPage : setClipsPage
 
+  // v2.2.5: 存入资源库 handler — 透传到 ClipCard
+  const handleSaveToLibrary = async ({ source_project_id, source_clip_id }) => {
+    try {
+      const r = await axios.post(`${API_BASE}/library/from-clip`, {
+        source_project_id,
+        source_clip_id,
+      })
+      alert(`已存入资源库: ${r.data.name || ''}`)
+      // 刷新当前项目 (clip 仍在, 不需要 reload, 仅提示)
+    } catch (err) {
+      alert('存入资源库失败: ' + (err.response?.data?.detail || err.message))
+      throw err  // 让 ClipCard 重置 saving 状态
+    }
+  }
+
   return (
     <div className="pda-layout">
       {/* v2.2.4: 面包屑 — 工作台 / 切片项目 / 当前项目 */}
@@ -153,7 +168,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
                 <button className={`pda-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>设置</button>
               </div>
 
-              {activeTab === 'clips' && <ClipsTab projectId={id} clips={clips} withSubtitle={cfg.with_subtitle !== false} currentPage={currentPage} onPageChange={setCurrentPage} />}
+              {activeTab === 'clips' && <ClipsTab projectId={id} clips={clips} withSubtitle={cfg.with_subtitle !== false} currentPage={currentPage} onPageChange={setCurrentPage} onSaveToLibrary={handleSaveToLibrary} />}
               {activeTab === 'collections' && <CollectionsTab projectId={id} collections={collections} />}
               {activeTab === 'srt' && <SrtTab projectId={id} subtitlePath={view.subtitlePath} />}
               {activeTab === 'settings' && <SettingsTab project={project} cfg={cfg} />}

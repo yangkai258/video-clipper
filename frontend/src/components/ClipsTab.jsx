@@ -5,7 +5,7 @@ import Icon from '../Icon'
 
 const ITEMS_PER_PAGE = 12
 
-export default function ClipsTab({ projectId, clips, withSubtitle, currentPage, onPageChange }) {
+export default function ClipsTab({ projectId, clips, withSubtitle, currentPage, onPageChange, onSaveToLibrary }) {
   if (clips.length === 0) {
     return <EmptyState icon={<Icon name="film" size={32} />} title="暂无切片" hint="处理完成后切片会出现在这里" />
   }
@@ -26,6 +26,7 @@ export default function ClipsTab({ projectId, clips, withSubtitle, currentPage, 
             index={i}
             projectId={projectId}
             withSubtitle={withSubtitle}
+            onSaveToLibrary={onSaveToLibrary}
           />
         ))}
       </div>

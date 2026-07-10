@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .core.config import settings
 from .core.database import init_db
-from .api import projects, clips, collections, styles, admin, user_preferences, uploads, watch_folders, mix
+from .api import projects, clips, collections, styles, admin, user_preferences, uploads, watch_folders, mix, library
 
 
 @asynccontextmanager
@@ -44,6 +44,8 @@ app.include_router(user_preferences.router, prefix="/api/v1", tags=["preferences
 app.include_router(uploads.router, prefix="/api/v1", tags=["uploads"])
 app.include_router(watch_folders.router, prefix="/api/v1", tags=["watch-folders"])
 app.include_router(mix.router, prefix="/api/v1", tags=["mix"])
+# v2.2.5: 资源库
+app.include_router(library.router, prefix="/api/v1/library", tags=["library"])
 
 
 @app.get("/api/v1/thumbnails/{project_id}.jpg")

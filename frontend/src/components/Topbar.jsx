@@ -3,7 +3,9 @@ import Icon from '../Icon'
 import ThemeToggle from '../ThemeToggle'
 import UploadProgressBar from './UploadProgressBar'
 
-// ponytail: Topbar 含面包屑 + 搜索 + 主题切换 + 上传按钮 + 进度条
+// ponytail: Topbar 含面包屑 + 搜索 + 主题切换 + 上传进度条
+// v2.2.5: "新建切片" 按钮从 Topbar 挪到内容区 content-header (跟混剪一致)
+//         Topbar 只剩上传进度条 (uploading 时显示), 不再有"新建切片"按钮
 // 12 个 props 全部传进来 (App 持有全部状态)
 export default function Topbar({
   showTrash,
@@ -29,6 +31,7 @@ export default function Topbar({
   const isMixDetail = location.pathname.startsWith('/mix/') && !location.pathname.startsWith('/mix/new')
   const isMixWizard = location.pathname === '/mix/new'
   const isMixList = location.pathname === '/mix' || isMixDetail || isMixWizard
+  const isLibrary = location.pathname.startsWith('/library')
   const pageTitle = isProjectDetail
     ? '项目详情'
     : isMixDetail
@@ -39,11 +42,13 @@ export default function Topbar({
           ? '风格管理'
           : location.pathname === '/mix'
             ? '混剪项目'
-            : showWatchFolders
-              ? '监控文件夹'
-              : showTrash
-                ? '回收站'
-                : '切片项目'
+            : isLibrary
+              ? '资源库'
+              : showWatchFolders
+                ? '监控文件夹'
+                : showTrash
+                  ? '回收站'
+                  : '切片项目'
 
   return (
     <div className="topbar">
@@ -98,6 +103,19 @@ export default function Topbar({
                 </>
               )}
             </>
+          ) : isLibrary ? (
+            // v2.2.5: 资源库面包屑 = "工作台 / 资源库"
+            <>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/library')}
+                title="资源库"
+              >
+                <Icon name="chevronLeft" size={12} />
+              </button>
+              <span className="breadcrumb-sep">/</span>
+              <span className="page-title">{pageTitle}</span>
+            </>
           ) : (
             <>
               <span>工作台</span>
@@ -121,14 +139,7 @@ export default function Topbar({
             {versionLabel}
           </span>
         )}
-        <label className="btn btn-primary upload-compact">
-          {/* v2.1.35: SVG 替换 unicode, 玻璃按钮上的 emoji 看着糙 */}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          <span>新建切片</span>
-          <input type="file" accept="video/*" onChange={handleUpload} disabled={uploading} />
-        </label>
+        {/* v2.2.5: "新建切片" 按钮挪到内容区 content-header (跟混剪风格一致) */}
         {uploading && (
           <UploadProgressBar
             state={uploadState}

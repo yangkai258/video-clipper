@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import axios from 'axios'
 import Icon from '../Icon'
 import { API_BASE, getOrientation, formatTime } from '../projectView'
 
-export default function ClipCard({ clip, index, projectId, withSubtitle }) {
+export default function ClipCard({ clip, index, projectId, withSubtitle, onSaveToLibrary }) {
   const [playing, setPlaying] = useState(false)
   const [errored, setErrored] = useState(false)
+  const [saving, setSaving] = useState(false)
   const videoSrc = `${API_BASE}/projects/${projectId}/files/${encodeURIComponent(clip.video_path)}`
   const srtSrc = `${API_BASE}/projects/${projectId}/files/${encodeURIComponent('metadata/input.srt')}`
   // 用 clip 文件名派生缩略图 key
@@ -14,6 +16,19 @@ export default function ClipCard({ clip, index, projectId, withSubtitle }) {
     : `/api/v1/thumbnails/${projectId}.jpg`
   // v2.1.26: 按 orientation 选容器
   const orientation = getOrientation(clip.width, clip.height)
+
+  // v2.2.5: 存入资源库 — App 注入 handler, 没传就不显示按钮
+  const handleSaveToLibrary = async (e) => {
+    e.stopPropagation()
+    if (!onSaveToLibrary || saving) return
+    setSaving(true)
+    try {
+      await onSaveToLibrary({ source_project_id: projectId, source_clip_id: clip.id })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="pda-clip">
       <div className="pda-clip-thumb" data-orientation={orientation}>
@@ -53,6 +68,17 @@ export default function ClipCard({ clip, index, projectId, withSubtitle }) {
             title="下载本片"
              onClick={(e) => e.stopPropagation()}
            ><Icon name="download" size={12} /></a>
+          {/* v2.2.5: 存入资源库 (App 注入 onSaveToLibrary 时才显示) */}
+          {onSaveToLibrary && (
+            <button
+              className="pda-clip-download"
+              onClick={handleSaveToLibrary}
+              title="存入资源库 (跨项目长期保留)"
+              disabled={saving}
+            >
+              <Icon name={saving ? 'spinner' : 'save'} size={12} />
+            </button>
+          )}
         </div>
       </div>
     </div>
