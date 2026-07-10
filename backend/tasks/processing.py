@@ -23,7 +23,7 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 from celery import shared_task
 from sqlalchemy import select
@@ -913,7 +913,7 @@ def process_mix_pipeline(
                 "metadata": c.clip_metadata or {},
             })
 
-clips_root = Path("data/projects").resolve()
+    clips_root = Path("data/projects").resolve()
     # 字幕样式: 优先项目 processing_config.subtitle_style, fallback 默认
     subtitle_style = {}
     try:
