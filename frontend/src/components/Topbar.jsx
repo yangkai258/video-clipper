@@ -26,15 +26,24 @@ export default function Topbar({
   const location = useLocation()
 
   const isProjectDetail = location.pathname.startsWith('/project/')
+  const isMixDetail = location.pathname.startsWith('/mix/') && !location.pathname.startsWith('/mix/new')
+  const isMixWizard = location.pathname === '/mix/new'
+  const isMixList = location.pathname === '/mix' || isMixDetail || isMixWizard
   const pageTitle = isProjectDetail
     ? '项目详情'
-    : location.pathname === '/styles'
-      ? '风格管理'
-      : showWatchFolders
-        ? '监控文件夹'
-        : showTrash
-          ? '回收站'
-          : '切片项目'
+    : isMixDetail
+      ? '混剪详情'
+      : isMixWizard
+        ? '新建混剪'
+        : location.pathname === '/styles'
+          ? '风格管理'
+          : location.pathname === '/mix'
+            ? '混剪项目'
+            : showWatchFolders
+              ? '监控文件夹'
+              : showTrash
+                ? '回收站'
+                : '切片项目'
 
   return (
     <div className="topbar">
@@ -63,6 +72,31 @@ export default function Topbar({
               <span className="page-title" title={currentProjectName || pageTitle}>
                 {currentProjectName || pageTitle}
               </span>
+            </>
+          ) : isMixList ? (
+            // v2.2.4: 混剪页面包屑 = "工作台 / 混剪项目 / [wizard|detail]"
+            <>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/mix')}
+                title="返回混剪列表"
+              >
+                <Icon name="chevronLeft" size={12} />
+              </button>
+              <span className="breadcrumb-sep">/</span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => navigate('/mix')}
+                style={{ padding: '0 4px' }}
+              >
+                混剪项目
+              </button>
+              {(isMixDetail || isMixWizard) && (
+                <>
+                  <span className="breadcrumb-sep">/</span>
+                  <span className="page-title">{pageTitle}</span>
+                </>
+              )}
             </>
           ) : (
             <>

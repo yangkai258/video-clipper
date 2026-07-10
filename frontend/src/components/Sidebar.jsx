@@ -1,8 +1,9 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import Icon from '../Icon'
 
-// ponytail: Sidebar 4 nav buttons + brand + user chip
-// 传 4 个 handler 让 App 决定状态怎么变 (避免循环依赖)
+// ponytail: Sidebar 5 nav buttons + brand + user chip
+// 传 5 个 handler 让 App 决定状态怎么变 (避免循环依赖)
+// v2.2.4: 加"混剪项目"入口
 export default function Sidebar({
   showTrash,
   showWatchFolders,
@@ -10,11 +11,13 @@ export default function Sidebar({
   onTrash,
   onStyles,
   onWatchFolders,
+  onMix,
 }) {
   const navigate = useNavigate()
   const location = useLocation()
 
   const isProjectsActive = (location.pathname === '/' || location.pathname.startsWith('/project/')) && !showTrash && !showWatchFolders
+  const isMixActive = location.pathname.startsWith('/mix') && !showTrash && !showWatchFolders
   const isTrashActive = showTrash
   const isStylesActive = location.pathname === '/styles' && !showTrash && !showWatchFolders
   const isWatchActive = showWatchFolders
@@ -30,8 +33,16 @@ export default function Sidebar({
         className={`nav-item ${isProjectsActive ? 'active' : ''}`}
         onClick={onProjects}
       >
-        <span className="nav-item-icon"><Icon name="list" /></span>
+        <span className="nav-item-icon"><Icon name="scissors" /></span>
         切片项目
+      </button>
+      {/* v2.2.4: 混剪项目入口 (跟切片独立) */}
+      <button
+        className={`nav-item ${isMixActive ? 'active' : ''}`}
+        onClick={onMix}
+      >
+        <span className="nav-item-icon"><Icon name="layers" /></span>
+        混剪项目
       </button>
       <button
         className={`nav-item ${isTrashActive ? 'active' : ''}`}

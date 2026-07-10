@@ -4,6 +4,9 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import App from './App'
 import ProjectDetail from './pages/ProjectDetail'
 import StyleManager from './pages/StyleManager'
+import MixListPage from './pages/MixListPage'
+import MixWizardPage from './pages/MixWizardPage'
+import MixDetailPage from './pages/MixDetailPage'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -13,6 +16,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/" element={<App />} />
         <Route path="/project/:id" element={<App />} />
         <Route path="/styles" element={<App />} />
+        {/* v2.2.4: 混剪独立路由 */}
+        <Route path="/mix" element={<App />} />
+        <Route path="/mix/new" element={<App />} />
+        <Route path="/mix/:id" element={<App />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,
