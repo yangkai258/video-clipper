@@ -165,6 +165,11 @@ class Task(Base):
     # 跑完时记的实际总耗时 (completed_at - started_at)
     actual_total_seconds = Column(Float, nullable=True)
 
+    # v2.2.2: 字幕状态 (字幕识别失败时不终止 pipeline, 标 failed 继续切无字幕视频)
+    # 后续 rerun / 手动配字幕时参考. subtitle_error 写失败具体原因 (Whisper hallucination 等).
+    subtitle_status = Column(String(50), default="")  # '' | 'success' | 'failed'
+    subtitle_error = Column(Text, default="")
+
     # 关系
     project = relationship("Project", back_populates="tasks")
 

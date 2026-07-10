@@ -132,6 +132,19 @@ def process_video_pipeline(
         # Step 7: 切割视频（cut_clips 内部维护 70%-90% 进度）
         with_subtitle = project_config.get("with_subtitle", True) if project_config else True
         output_format = project_config.get("output_format", "original") if project_config else "original"
+        # v2.2.2 fail-tolerant: 字幕失败时 srt 是空文件, 强制 with_subtitle=False 跳过烧字幕
+        # (用户后续手动配字幕 + rerun 加字幕, 或者就保留无字幕视频)
+        if with_subtitle and srt_path and srt_path.exists() and srt_path.stat().st_size == 0:
+            logger.warning(
+                "字幕文件为空 (step 1 字幕识别失败), 强制 with_subtitle=False — "
+                "继续切无字幕视频, 字幕需人工配"
+            )
+            with_subtitle = False
+            _update_task_progress(
+                task_id,
+                PROGRESS_DICT["cut_start"],
+                "字幕失败 (人工配字幕), 切无字幕视频",
+            )
         _run_step7_cut_clips(
             titled_clips, input_video_path, clips_dir, srt_path, subtitle_config,
             with_subtitle, project_id, output_format, task_id,
@@ -297,7 +310,13 @@ def _run_step1_subtitle(
     task_id: str,
     strategy_config: dict,
 ) -> Path:
-    """Step 1: 字幕生成（含心跳线程）。"""
+    """Step 1: 字幕生成（含心跳线程）。
+
+    v2.2.2 fail-tolerant: 字幕识别失败 (Whisper hallucination / 视频静音 / API 异常)
+    时不再 raise 终止 pipeline, 而是写空 srt + 在 task.current_step 写失败原因,
+    继续 step 7 切视频 (不烧字幕), task 最终 completed 但 subtitle_status='failed'.
+    user 后续可手动配字幕 + rerun 加字幕.
+    """
     from ..services.subtitle_service import generate_subtitle
 
     logger.info("Step 1: 生成字幕")
@@ -309,15 +328,44 @@ def _run_step1_subtitle(
     # 心跳：whisper 跑得慢（30s-3min），每 5s 推一次进度
     heartbeat_stop = _start_subtitle_heartbeat(task_id)
 
+    srt_path = None
     try:
         if with_subtitle:
             srt_path = _generate_or_copy_srt_to_disk(input_video_path, input_srt_path, metadata_dir)
         else:
             srt_path = _generate_or_copy_srt_to_tmp(input_video_path, input_srt_path, project_id, generate_subtitle)
+    except Exception as e:
+        # v2.2.2: 字幕失败 fail-tolerant — 写空 srt + 标 task + 继续 pipeline
+        error_msg = f"字幕识别失败 ({type(e).__name__}): {str(e)[:300]}"
+        logger.warning(f"⚠️ {error_msg} — 继续切视频 (无字幕), 用户需手动配字幕")
+        _update_task_progress(
+            task_id,
+            PROGRESS_DICT["subtitle_done"],
+            f"字幕失败 (人工配字幕): {str(e)[:100]}",
+        )
+        # 写空 srt 文件 (step 7 烧字幕会检测到内容空, 跳过)
+        empty_srt = metadata_dir / "input.srt"
+        empty_srt.parent.mkdir(parents=True, exist_ok=True)
+        empty_srt.write_text("", encoding="utf-8")
+        # 记录到 task.error_message (但不标 failed, 写完后清掉避免 UI 误显示)
+        try:
+            from ..core.database import sync_get_db
+            from ..models.database import Task
+            from sqlalchemy import select
+            with sync_get_db() as db:
+                t = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+                if t:
+                    t.subtitle_status = "failed"  # 标 failed (UI 提示用户)
+                    t.subtitle_error = error_msg    # 具体原因
+                    db.commit()
+        except Exception as db_err:
+            logger.warning(f"subtitle_status 写库失败 (非致命): {db_err}")
+        srt_path = empty_srt
     finally:
         heartbeat_stop.set()
 
-    _update_task_progress(task_id, PROGRESS_DICT["subtitle_done"], "字幕生成完成")
+    if with_subtitle and srt_path and srt_path.exists():
+        _update_task_progress(task_id, PROGRESS_DICT["subtitle_done"], "字幕生成完成")
     return srt_path
 
 
