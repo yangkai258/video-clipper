@@ -1,4 +1,4 @@
-"""混剪项目独立 API (v2.2.3 完全跟切片 API 分开)
+"""混剪项目独立 API (v2.2.5 完全跟切片 API 分开)
 
 跟 backend/api/projects.py 完全分离:
 - 独立 db (mix db) — 通过 backend.core.database_mix.sync_get_mix_db
@@ -12,6 +12,7 @@
   DELETE /api/v1/mix/{id}         软删除
   GET    /api/v1/mix/clips/library  候选素材库 (从切片 db 读 clips)
   GET    /api/v1/mix/videos/{id}  输出视频流 (前端 player 用)
+  POST   /api/v1/mix/ai-help-write  AI 帮写带货脚本 (v2.2.5)
 """
 import logging
 import os
@@ -324,6 +325,40 @@ async def delete_mix_project(
     project.deleted_at = datetime.utcnow()
     await db.commit()
     return {"id": project_id, "deleted": True}
+
+
+# ──────────────────────────── v2.2.5: AI 帮写脚本 ────────────────────────────
+
+@router.post("/ai-help-write")
+async def ai_help_write_script_endpoint(payload: dict = Body(...)):
+    """v2.2.5: AI 帮写带货脚本 (wizard Step 1 ✨ 按钮)
+
+    输入:
+        topic: str (可选) 用户输入的产品/主题方向, 留空时由 LLM 从素材库推断
+        clips_context: [{title, source_project_name?, subtitle_text?}, ...] 候选素材标题片段
+        target_duration_seconds: int (默认 60) 目标时长秒
+
+    输出:
+        {script_text: "...", model: "..."}
+
+    失败 (LLM API key 缺失 / 网络异常 / 空响应) 返回 500 + 中文原因.
+    """
+    from ..services.mix_service import ai_help_write_script
+
+    topic = payload.get("topic") or ""
+    clips_context = payload.get("clips_context") or []
+    target_duration = int(payload.get("target_duration_seconds") or 60)
+
+    try:
+        result = ai_help_write_script(
+            topic=topic,
+            clips_context=clips_context,
+            target_duration=target_duration,
+        )
+        return result
+    except Exception as e:
+        logger.exception(f"AI 帮写脚本失败: {e}")
+        raise HTTPException(status_code=500, detail=f"AI 帮写失败: {str(e)[:300]}")
 
 
 # ──────────────────────────── v2.2.4: 风险词检测 ────────────────────────────

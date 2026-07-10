@@ -1,4 +1,4 @@
-"""混剪服务 v2.2.3 (跟切片项目解耦)
+"""混剪服务 v2.2.5 (跟切片项目解耦)
 
 输入: 直播脚本 + 素材库 (从切片 db 读 clip 库, 不写切片 Project/Clip)
 输出: 按脚本关键词匹配的 source clips 拼接 + 脚本原文本烧字幕
@@ -85,6 +85,76 @@ def parse_script(script_text: str, target_duration: int = 60) -> List[Dict]:
     except json.JSONDecodeError as e:
         logger.error(f"脚本分段 JSON 解析失败: {e}")
         return []
+
+
+# ──────────────────────────── v2.2.5: AI 帮写脚本 ────────────────────────────
+
+
+def ai_help_write_script(
+    topic: Optional[str],
+    clips_context: List[Dict],
+    target_duration: int = 60,
+) -> Dict:
+    """AI 根据用户主题 + 素材库标题, 生成一段带货口播脚本 (v2.2.5)
+
+    Args:
+        topic: 用户输入的产品/主题方向, 可空 (空时让 LLM 自己从素材库推断)
+        clips_context: 前端传的候选素材 [{title, source_project_name?, subtitle_text?}, ...]
+        target_duration: 目标时长秒, 默认 60
+
+    Returns:
+        {"script_text": "...", "model": "..."} 失败时 script_text 为空 + 抛异常
+    """
+    from ..services.llm_service import _call_llm
+    from ..core.config import settings
+
+    topic_str = (topic or "").strip() or "(自动)"
+    titles = []
+    for c in (clips_context or [])[:30]:
+        title = (c.get("title") or "").strip()
+        if title:
+            titles.append(title)
+    if not titles:
+        titles_block = "(素材库为空, 请基于常见直播带货场景自由发挥)"
+    else:
+        titles_block = "\n".join(f"- {t}" for t in titles)
+
+    prompt = f"""你是直播带货脚本撰写专家. 基于提供的素材库标题 + 用户主题, 生成一段 {target_duration} 秒左右的带货口播脚本.
+
+要求:
+- 中文, 适合口播
+- 3-5 段自然语流, 每段包含产品卖点/痛点/解决方案
+- 不要用极限词 (最佳/最好/100%/绝对/根治等)
+- 长度 150-300 字 ({target_duration}s 大约这么多字)
+- 不要用 "点击链接" "加微信" 等引流话术
+- 风格口语化, 像在跟朋友推荐
+
+用户主题: {topic_str}
+素材库 (标题片段, 你只能引用这些):
+{titles_block}
+
+直接输出脚本正文, 不要 markdown 标题或注释.
+"""
+
+    content = _call_llm(prompt)
+    if not content:
+        raise RuntimeError("LLM 调用失败 (空响应), 请检查 API key / 网络")
+
+    script_text = content.strip()
+    # 去掉偶尔被加上的 markdown 代码块包裹
+    if script_text.startswith("```"):
+        parts = script_text.split("```")
+        # parts: ['', 'language', 'content', '', ...]
+        if len(parts) >= 3:
+            script_text = parts[2].strip()
+        else:
+            script_text = script_text.strip("`").strip()
+
+    logger.info(f"AI 帮写脚本完成: {len(script_text)} 字")
+    return {
+        "script_text": script_text,
+        "model": settings.MINIMAX_MODEL,
+    }
 
 
 # ──────────────────────────── 素材库构建 ────────────────────────────
