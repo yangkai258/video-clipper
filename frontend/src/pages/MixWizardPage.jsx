@@ -3,7 +3,7 @@ import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../Icon'
 
-// ponytail: 新建混剪向导 (v2.2.4)
+// ponytail: 新建混剪向导 (v2.2.5)
 // 3 步:
 //   Step 1: 脚本输入 (textarea + AI 帮写 + 风险词实时检测高亮)
 //   Step 2: 素材选择 (从 /mix/clips/library 拉候选 clips, 多选 tabs by project)
@@ -31,6 +31,9 @@ export default function MixWizardPage() {
   const [libraryProject, setLibraryProject] = useState('all')
   const [targetDuration, setTargetDuration] = useState(60)
   const [submitting, setSubmitting] = useState(false)
+  // v2.2.5: AI 帮写脚本 (Step 1)
+  const [generating, setGenerating] = useState(false)
+  const [aiTopic, setAiTopic] = useState('')
 
   // 实时风险词检测 (debounced)
   useEffect(() => {
@@ -56,12 +59,44 @@ export default function MixWizardPage() {
     }
   }, [step])
 
+  // v2.2.5: 进入页面也预加载素材库, 让 Step 1 的 AI 帮写有 clips_context 可传
+  useEffect(() => {
+    loadLibrary()
+  }, [])
+
   const loadLibrary = async () => {
     try {
       const r = await axios.get(`${API_BASE}/mix/clips/library`)
       setCandidates(r.data.clips || [])
     } catch (e) {
       console.error('load library failed:', e)
+    }
+  }
+
+  // v2.2.5: AI 帮写带货脚本 (Step 1 ✨ 按钮)
+  const aiHelpWrite = async () => {
+    setGenerating(true)
+    try {
+      const clips_context = (candidates || []).map(c => ({
+        title: c.title || '',
+        source_project_name: c.source_project_name || '',
+        subtitle_text: c.subtitle_text_preview || '',
+      }))
+      const r = await axios.post(`${API_BASE}/mix/ai-help-write`, {
+        topic: aiTopic,
+        clips_context,
+        target_duration_seconds: targetDuration,
+      })
+      if (r.data && r.data.script_text) {
+        setScriptText(r.data.script_text)
+      } else {
+        alert('AI 帮写返回为空, 请重试')
+      }
+    } catch (e) {
+      const msg = e.response?.data?.detail || e.message
+      alert('AI 帮写失败：' + msg)
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -192,6 +227,29 @@ export default function MixWizardPage() {
 
           <div className="wizard-script-grid">
             <div className="wizard-script-edit">
+              {/* v2.2.5: AI 帮写 - 产品名/主题 + 按钮 */}
+              <div className="ai-help-row">
+                <input
+                  type="text"
+                  className="ai-topic-input"
+                  placeholder="产品名/主题 (可选, 留空 AI 自动从素材库推断)"
+                  value={aiTopic}
+                  onChange={e => setAiTopic(e.target.value)}
+                  disabled={generating}
+                />
+                <button
+                  className="btn btn-ghost"
+                  onClick={aiHelpWrite}
+                  disabled={generating}
+                  title="根据主题 + 素材库, AI 生成带货脚本"
+                >
+                  {generating ? (
+                    <><Icon name="spinner" size={11} /> AI 撰写中...</>
+                  ) : (
+                    <>✨ AI 帮我写</>
+                  )}
+                </button>
+              </div>
               <textarea
                 className="script-textarea"
                 placeholder="例如：这款防水固砂套装, 40+、50+朋友的福音。屋顶、外墙、阳台漏水都能用。"

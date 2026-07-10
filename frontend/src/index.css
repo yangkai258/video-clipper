@@ -2595,6 +2595,32 @@ input[type="color"] {
   flex-direction: column;
 }
 
+/* v2.2.5: AI 帮写脚本 - topic 输入 + 按钮横排 */
+.ai-help-row {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  align-items: center;
+}
+.ai-topic-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  color: var(--text-bright);
+}
+.ai-topic-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.ai-topic-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .script-textarea {
   width: 100%;
   min-height: 240px;
