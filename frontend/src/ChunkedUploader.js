@@ -12,7 +12,7 @@
  */
 const CHUNK_SIZE = 10 * 1024 * 1024   // 10MB (v2.2.1+: 7GB 视频 700 chunk @ 10MB, 局域网 OK; cloudflared trycloudflare 限制单 chunk 30s 内完成, 10MB 在 3MB/s 网络 3.3s 写完 OK)
 
-const MAX_CONCURRENT = 6  // v2.2.1+: 3 -> 6 并发, disk + network 起来 (实测 15MB/s 7GB 提到 ~30MB/s)
+const MAX_CONCURRENT = 4  // v2.2.2: 6 → 4, 实测 6 流并发 wifi airtime 抢资源 + cwnd 反复缩, 4 流稳 30MB/s 不抖 (局域网测 1.5GB/s → wifi 限速 30-60MB/s 范围)
 const MAX_RETRY = 3                   // 单片最多重试 3 次
 
 export class ChunkedUploader {
@@ -44,6 +44,163 @@ export class ChunkedUploader {
   }
 
   async start() {
+    // v2.2.2-hotfix: 临时禁用 WebSocket 上传, 强制走 XHR 4 流 (v2.2.1 行为).
+    // 现象 (2026-07-10 09:48): WS 路径在 vite dev server 下 OPTIONS preflight 200 OK 后,
+    // PUT chunk 0 个被发出去; XHR fallback 也走不通 (vite proxy buffer:false 改动引入的回归).
+    // 早上 5 个 v2.2.1 XHR 上传 OK, 下午 2 个 v2.2.2 WS+XHR fallback 都失败.
+    // TODO: 查清 WS 路径 OPTIONS 后 PUT 卡死 + XHR fallback 失败 的根因后, 重新启用.
+    // 用法: import.meta.env.VITE_FORCE_XHR === '1' 时强制 XHR; 否则走 WS-first (默认).
+    const forceXhr = (typeof import.meta !== 'undefined' &&
+                      import.meta.env &&
+                      import.meta.env.VITE_FORCE_XHR === '1')
+    if (!forceXhr && this._wsSupported()) {
+      try {
+        await this._uploadViaWebSocket()
+        return
+      } catch (e) {
+        console.warn('[uploader] WebSocket failed, fallback to XHR:', e.message)
+        // 清理 WS session, 回退 XHR
+        this._clearProgress()
+        this.uploadId = null
+        this.receivedBytes = 0
+      }
+    }
+    // XHR 路径 (v2.2.1 实现, 4 并发, 局域网稳 7-15MB/s)
+    return this._uploadViaXHR()
+  }
+
+  _wsSupported() {
+    return typeof WebSocket !== 'undefined'
+  }
+
+  async _uploadViaWebSocket() {
+    // v2.2.2: WebSocket 单流上传, 1 个长连接持续 stream
+    this.running = true
+    this.paused = false
+    this.cancelled = false
+    this.lastTickBytes = 0
+    this.lastTickTime = Date.now()
+
+    // 启速度统计
+    this._tickInterval = setInterval(() => this._tickSpeed(), 500)
+    this.setState('uploading', { received: 0 })
+
+    // 1. 计算 ws URL (跟 API_BASE 走相对路径, vite proxy 兜底, 直连也行)
+    const wsScheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const baseUrl = API_BASE.startsWith('http')
+      ? API_BASE.replace(/^https?:/, wsScheme)
+      : `${wsScheme}//${window.location.host}${API_BASE}`
+    const wsUrl = `${baseUrl}/uploads/ws`
+
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl)
+      let sent = 0
+      const CHUNK = 256 * 1024  // 256KB binary frame, 1GB 视频 = 4000 frame
+      let sendError = null
+      let completed = false
+
+      ws.onopen = async () => {
+        // 2. 第一个 text message: init
+        ws.send(JSON.stringify({
+          type: 'init',
+          name: this.file.name.replace(/\.[^/.]+$/, ''),
+          filename: this.file.name,
+          total_size: this.totalSize,
+        }))
+      }
+
+      ws.onmessage = async (event) => {
+        if (typeof event.data !== 'string') return  // 忽略意外 binary
+        let msg
+        try {
+          msg = JSON.parse(event.data)
+        } catch (e) {
+          return
+        }
+        if (msg.type === 'ack') {
+          this.uploadId = msg.upload_id
+          this.receivedBytes = msg.received_bytes
+          this._saveProgress()  // v2.2.2: 存 upload_id (虽然 WS 不真支持断点续传, 给 XHR fallback 用)
+          // 第一个 ack 才标 uploading (之前 init 后立即标)
+          if (sent === 0) {
+            this.setState('uploading', { uploadId: this.uploadId, received: 0 })
+          }
+        } else if (msg.type === 'error') {
+          sendError = new Error(msg.message)
+          ws.close()
+        } else if (msg.type === 'complete_ok') {
+          completed = true
+          this.receivedBytes = msg.project.video_size
+          this._clearProgress()
+          clearInterval(this._tickInterval)
+          this.setState('done', { project: msg.project })
+          ws.close()
+          this.onDone(msg.project)
+          resolve()
+        }
+      }
+
+      ws.onerror = (e) => {
+        if (!completed) {
+          sendError = new Error('WebSocket 错误')
+        }
+      }
+
+      ws.onclose = (e) => {
+        clearInterval(this._tickInterval)
+        if (completed) {
+          resolve()
+        } else if (sendError) {
+          reject(sendError)
+        } else if (e.code !== 1000) {
+          reject(new Error(`WebSocket 关闭 (code=${e.code})`))
+        } else {
+          reject(new Error('WebSocket 关闭 (未完成)'))
+        }
+      }
+
+      // 3. 二进制发送循环 (跟 ack 一起跑, async)
+      ;(async () => {
+        try {
+          while (sent < this.totalSize) {
+            if (this.cancelled) {
+              ws.close(1000)
+              return
+            }
+            if (this.paused) {
+              await new Promise(r => setTimeout(r, 200))
+              continue
+            }
+            // 读 256KB Blob 转 ArrayBuffer (WebSocket 接受 ArrayBuffer / Blob)
+            const blob = this.file.slice(sent, Math.min(sent + CHUNK, this.totalSize))
+            const buffer = await blob.arrayBuffer()
+            if (ws.readyState !== WebSocket.OPEN) {
+              throw new Error('WebSocket 未打开, 中断发送')
+            }
+            ws.send(buffer)  // 浏览器自动用 binary frame
+            sent += buffer.byteLength
+            this.receivedBytes = sent  // 立刻更新本地 received (跟 ack 校准)
+          }
+          // 4. 全部 binary 发完, 发 complete text
+          // 注: server 也会等收到 ack 后才能 complete, 所以这里需要等到 receivedBytes >= totalSize
+          // (server 会发 ack received_bytes = total_size)
+          // 简化: 直接发 complete, server 端 received < total 会返 error
+          // 但实际 ack 到了之后 server received == total, 我们已经知道
+          // 给 server 一点时间 (200ms) ack 完再发 complete
+          await new Promise(r => setTimeout(r, 200))
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'complete', keep_raw: this.keepRaw || false }))
+          }
+        } catch (e) {
+          sendError = e
+          try { ws.close(1000) } catch {}
+        }
+      })()
+    })
+  }
+
+  async _uploadViaXHR() {
+    // v2.2.1: XHR 4 并发分片上传 (legacy / cloudflared fallback)
     // 1. 看看 localStorage 有没有上次的 upload_id（断点续传）
     const saved = this._loadProgress()
     if (saved) {
@@ -57,7 +214,6 @@ export class ChunkedUploader {
           this.setState('resuming', { uploadId: this.uploadId, received: this.receivedBytes })
         }
       } catch (e) {
-        // status 查询失败——重新上传
         this._clearProgress()
       }
     }
@@ -96,10 +252,10 @@ export class ChunkedUploader {
     this._tickInterval = setInterval(() => this._tickSpeed(), 500)
 
     // 4. 启动分片上传（并发）
-    this._uploadAll()
+    return this._uploadAllXHR()
   }
 
-  async _uploadAll() {
+  async _uploadAllXHR() {
     const tasks = []
     for (let offset = this.receivedBytes; offset < this.totalSize; offset += CHUNK_SIZE) {
       // 跳过已传
@@ -281,7 +437,7 @@ export class ChunkedUploader {
       this.running = true
       this.lastTickBytes = this.receivedBytes
       this.lastTickTime = Date.now()
-      this._uploadAll()
+      this._uploadAllXHR()
     }
   }
 
@@ -343,7 +499,17 @@ export class ChunkedUploader {
   }
 }
 
-const API_BASE = '/api/v1'
+// v2.2.2: upload chunk 走绝对 URL 直连 uvicorn (bypass vite dev proxy).
+//   局域网 dev 模式: vite proxy 转发 6 chunk 走 Node event loop, 跟 HMR/ESM transform 抢资源,
+//   速度掉 50% (1.5GB/s → 1.1GB/s localhost) + 抖动幅度增 36% (min 185 → 117 MB/s).
+//   直连 uvicorn 8030/8000 让 Node event loop 只服务 HMR, 1GB 视频稳 30-60MB/s (wifi 限速).
+//   注入路径: vite config `define: { 'import.meta.env.VITE_UPLOAD_API': '...' }` 由 esbuild 替换.
+const UPLOAD_API_BASE = (() => {
+  const v = import.meta.env?.VITE_UPLOAD_API
+  if (v) return `${v}/api/v1`  // dev 局域网直连 uvicorn
+  return '/api/v1'  // prod build / cloudflared 场景走 vite proxy 相对路径
+})()
+const API_BASE = UPLOAD_API_BASE
 
 // ===== 工具函数 =====
 export function formatBytes(n) {
