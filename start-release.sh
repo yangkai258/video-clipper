@@ -36,7 +36,7 @@ export VITE_API_PORT="8000"
 # v2.1.51: 显式传入 version
 # main HEAD 实际没 tag (HEAD 在 v2.0 tag 之后 + 几个 fix), 走 v2.0 + 后续 fix
 # 等下次正式 release 时 bump
-export VITE_APP_VERSION="v2.1.53"  # v2.0->v2.1.53, 跟 beta 同步
+export VITE_APP_VERSION="v2.2.6"  # v2.2.0->v2.2.6, 混剪 v2 + 资源库 + 批量混剪 + AI 帮写脚本
 
 # === Sanity check ===
 echo "============================================"
@@ -69,14 +69,11 @@ echo "✅ 数据库文件存在：$DB_FILE"
 
 echo ""
 echo "🚀 启动正式版后端 (8000)..."
-# v2.2.1+: --workers 1 单 worker (macOS Python 3.10 + fork 偶发 worker 卡死, 1 worker 稳)
-# 4 worker 测试在 upload 上 +30% 但 /process endpoint 偶发 30s+ 不响应
-# 改回 1 worker 保证稳定, upload chunk 走 raw body + asyncio.to_thread 已够稳
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 > logs/backend_release.log 2>&1 &
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 > logs/backend_release.log 2>&1 &
 BACKEND_PID=$!
 
 echo "🚀 启动正式版 Worker..."
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --pool=solo -Q processing > logs/celery_worker.log 2>&1 &
+/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --pool=solo -Q processing > logs/celery_worker.log 2>&1 &
 WORKER_PID=$!
 
 # 等待 Worker 启动完成
