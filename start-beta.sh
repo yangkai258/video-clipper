@@ -68,9 +68,15 @@ echo "✅ 数据库文件存在：$DB_FILE"
 
 echo ""
 echo "🚀 启动测试版后端 (8030)..."
-# v2.2.1+: --workers 1 单 worker (macOS Python 3.10 + fork 偶发 worker 卡死, 1 worker 稳)
-/Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 8030 --workers 1 > logs/backend_beta.log 2>&1 &
+# v2.2.9: 加 --reload 自动监控 .py 改动, 改完自动重启 uvicorn
+# 之前 7-09 加 raw body 优化 + 后续改 .py 都没重启, uvicorn 跑 stale pyc 7 天
+# (user 上传 1GB 走 multipart 老路径, 14MB/s 慢到怀疑人生).
+# trade-off: 多 1 个 watchfiles 进程 + 启动慢 1-2s, dev mode 完全值得.
+# 警告: --reload 中断处理中的 task (in-flight HTTP 请求断), 但我们 --workers 1 dev 模式.
+# 注: --reload 自动忽略 --workers 选项, 强制单进程.
+nohup /Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8030 --reload --reload-dir /Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/backend > logs/backend_beta.log 2>&1 < /dev/null &
 BACKEND_PID=$!
+disown $BACKEND_PID 2>/dev/null || true
 
 echo "🚀 启动测试版 Worker..."
 /Users/zhuobao/.openclaw-rescue4/workspace/video-clipper/.venv/bin/python -m celery -A backend.core.celery_app worker --loglevel=info --pool=solo -Q processing_beta > logs/celery_worker_beta.log 2>&1 &
