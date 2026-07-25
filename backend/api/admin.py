@@ -309,17 +309,41 @@ async def detailed_health_check():
         health_status["checks"]["redis"] = {"status": "unhealthy", "error": str(e)}
         health_status["overall"] = "degraded"
     
-    # 磁盘空间检查
+    # 磁盘空间检查 (v2.2.12: 跨平台用 shutil.disk_usage, 之前 os.stat().f_bavail 在 macOS 不存在)
     try:
+        import shutil
         projects_dir = settings.PROJECTS_DIR
-        stat = projects_dir.stat()
-        free_gb = stat.f_bavail * stat.f_frsize / (1024 ** 3)
+        usage = shutil.disk_usage(projects_dir)
+        free_gb = usage.free / (1024 ** 3)
         if free_gb < 1:
             health_status["checks"]["disk"] = {"status": "warning", "free_gb": f"{free_gb:.2f}"}
             health_status["overall"] = "degraded"
         else:
             health_status["checks"]["disk"] = {"status": "healthy", "free_gb": f"{free_gb:.2f}"}
     except Exception as e:
-        health_status["checks"]["disk"] = {"status": "unknown", "error": str(e)}
-    
+            health_status["checks"]["disk"] = {"status": "unknown", "error": str(e)}
+
     return health_status
+
+
+# v2.2.12: 加 /admin/users 端点 (P2-4 修)
+# admin 想看当前有哪些 user 账号能登 (从 .htpasswd 拿)
+# 不返 password hash, 只返 username + 来源文件
+@router.get("/users", dependencies=[Depends(get_admin_user)])
+async def list_admin_users():
+    """列出 .htpasswd 里的所有 admin 账号 (P2-4)"""
+    try:
+        if not _HTPASSWD_PATH.exists():
+            raise HTTPException(status_code=500, detail=f".htpasswd 不存在: {_HTPASSWD_PATH}")
+        ht = HtpasswdFile(str(_HTPASSWD_PATH))
+        users = sorted(ht.users())
+        return {
+            "users": users,
+            "count": len(users),
+            "source_file": str(_HTPASSWD_PATH),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"list admin users 失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
