@@ -1,6 +1,7 @@
 """应用配置"""
 import os
 from pathlib import Path
+
 from pydantic_settings import BaseSettings
 
 
@@ -79,3 +80,53 @@ settings = Settings()
 settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 settings.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 settings.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# v2.2.22: encrypted secrets 启动集成
+# 流程: data/.env.encrypted 存在 + ENV_MASTER_KEY 在 env → decrypt 写 .env
+# 然后 pydantic_settings 读 .env (跟之前一致)
+# 没 master key → 警告走明文 .env (本地 dev 模式, 不阻塞)
+def _load_encrypted_secrets() -> None:
+    """启动时从 data/.env.encrypted 解密 secrets 写到 .env (如果 .env 还不存在).
+
+    触发条件: data/.env.encrypted 存在 + ENV_MASTER_KEY env 有 + .env 不存在
+    否则跳过 (明文 .env 优先, 走 pydantic_settings 原生读).
+    """
+    import logging as _logging
+    import os as _os
+    from pathlib import Path
+
+    _logger = _logging.getLogger(__name__)
+
+    encrypted_path = settings.DATA_DIR / ".env.encrypted"
+    env_path = Path(__file__).parent.parent.parent / ".env"
+
+    if not encrypted_path.exists():
+        return  # 没 encrypted, 走明文
+
+    if env_path.exists() and env_path.stat().st_size > 0:
+        # 明文 .env 已存在 (本地 dev), 跳过
+        return
+
+    master_key = _os.environ.get("ENV_MASTER_KEY")
+    if not master_key:
+        _logger.warning(
+            "data/.env.encrypted 存在但 ENV_MASTER_KEY 未设, "
+            "跳过解密 — 当前用 .env 或 system env (本地 dev 模式)",
+        )
+        return
+
+    try:
+        from cryptography.fernet import Fernet, InvalidToken
+        content = encrypted_path.read_text(encoding="utf-8")
+        token = "\n".join(l for l in content.splitlines() if not l.startswith("#")).strip()
+        plaintext = Fernet(master_key.encode()).decrypt(token.encode()).decode()
+        env_path.write_text(plaintext, encoding="utf-8")
+        _logger.info(f"已从 {encrypted_path.relative_to(settings.DATA_DIR.parent.parent)} 解密 secrets → {env_path.name}")
+    except InvalidToken:
+        _logger.error("ENV_MASTER_KEY 错, 无法解密 .env.encrypted — 检查 1Password / Keychain")
+    except Exception as e:  # noqa: BLE001 — decrypt 可能 IO/permission 错, 静默警告不阻塞启动
+        _logger.error(f"解密 .env.encrypted 失败: {e}")
+
+
+_load_encrypted_secrets()

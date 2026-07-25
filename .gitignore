@@ -1,5 +1,8 @@
 # Env
+# .env 本地明文, 不提交
 .env
+# .env.encrypted 提交! 团队共享 (v2.2.22+)
+# master key 从 1Password / Keychain / CI secret 取 (不提交)
 .htpasswd
 
 # Python
