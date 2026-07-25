@@ -146,12 +146,21 @@ def test_library_list():
 
 
 def test_library_tags():
-    """GET /library/tags 返 tags + total_resources"""
-    r = requests.get(f"{BASE}/library/tags", timeout=5)
+    """GET /library 返 resources 含 tags 字段 (v2.2.7 LLM 自动 tag 已在 v2.2.7 merge)
+
+    v2.2.15 修正: library router 没有 /tags 独立 endpoint (tags 在每个 resource 里),
+    改测 list endpoint 验 resource.tags 字段存在 + 类型 list[str].
+    """
+    r = requests.get(f"{BASE}/library", timeout=5)
     assert r.status_code == 200
     body = r.json()
-    assert "tags" in body
-    assert "total_resources" in body
+    assert "resources" in body
+    if body["resources"]:
+        for rc in body["resources"]:
+            assert "tags" in rc, f"resource {rc.get('id')} missing tags field"
+            assert isinstance(rc["tags"], list), f"resource {rc.get('id')} tags must be list"
+            for tag in rc["tags"]:
+                assert isinstance(tag, str)
 
 
 # === Mix ===
