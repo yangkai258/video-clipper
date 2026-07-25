@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from passlib.apache import HtpasswdFile
 
 from ..core.database import get_db, AsyncSessionLocal, to_iso_utc
 from ..core.config import settings
@@ -19,11 +21,41 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
+# v2.2.11: 加 basic auth (P1-1 安全修)
+# admin 端点能调 worker restart / database / system 信息, LAN 暴露风险
+# 用 .htpasswd 现有文件 (passlib HtpasswdFile 校验 apr1 hash)
+_HTPASSWD_PATH = Path(__file__).parent.parent.parent / ".htpasswd"
+_security = HTTPBasic()
+
+
+def get_admin_user(creds: HTTPBasicCredentials = Depends(_security)) -> str:
+    """校验 basic auth, 返 username (后续 admin 操作可以 log 谁调的)
+
+    失败: 401 + WWW-Authenticate: Basic 弹浏览器登录框
+    """
+    if not _HTPASSWD_PATH.exists():
+        logger.error(f".htpasswd 不存在: {_HTPASSWD_PATH}")
+        raise HTTPException(status_code=500, detail="admin auth not configured")
+    try:
+        ht = HtpasswdFile(str(_HTPASSWD_PATH))
+        if not ht.check_password(creds.username, creds.password):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid admin credentials",
+                headers={"WWW-Authenticate": "Basic"},
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"admin auth 异常: {e}")
+        raise HTTPException(status_code=500, detail=f"auth error: {e}")
+    return creds.username
+
 # 应用启动时间
 START_TIME = datetime.now()
 
 
-@router.get("/system")
+@router.get("/system", dependencies=[Depends(get_admin_user)])
 async def get_system_info():
     """获取系统信息"""
     uptime = datetime.now() - START_TIME
@@ -39,7 +71,7 @@ async def get_system_info():
     }
 
 
-@router.get("/worker")
+@router.get("/worker", dependencies=[Depends(get_admin_user)])
 async def get_worker_status():
     """获取 Celery Worker 状态"""
     try:
@@ -94,7 +126,7 @@ async def get_worker_status():
         }
 
 
-@router.get("/database")
+@router.get("/database", dependencies=[Depends(get_admin_user)])
 async def get_database_stats():
     """获取数据库统计信息"""
     try:
@@ -201,7 +233,7 @@ async def get_database_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/tasks")
+@router.get("/tasks", dependencies=[Depends(get_admin_user)])
 async def get_tasks(limit: int = 50, status: Optional[str] = None):
     """获取任务列表"""
     try:
@@ -238,7 +270,7 @@ async def get_tasks(limit: int = 50, status: Optional[str] = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/worker/restart")
+@router.post("/worker/restart", dependencies=[Depends(get_admin_user)])
 async def restart_worker():
     """重启 Worker（需要外部脚本配合）"""
     # 这个端点需要配合系统脚本使用

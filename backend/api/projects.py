@@ -255,15 +255,39 @@ async def get_project_file_path(project_id: str, file_path: str, db: AsyncSessio
 
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
-    """软删除（标 deleted_at）"""
+async def delete_project(
+    project_id: str,
+    permanent: bool = Query(default=False, description="强删 (含 processing 项目)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """软删除（标 deleted_at）
+
+    v2.2.11: 加 ?permanent=true 强删 + processing 状态保护 (P1-3 修)
+    - 默认: 仅允许 completed/failed/pending 软删, processing 返 409
+    - ?permanent=true: 硬删 (直接 db.delete), 跳过 status 校验
+    """
     project = await _load_project_basic(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    if project.status == "processing" and not permanent:
+        # 保护 worker 写文件, 处理中项目不能软删
+        # 用 ?permanent=true 强删 (跳过 status check, 直接 db.delete)
+        raise HTTPException(
+            status_code=409,
+            detail=f"项目处理中, 不能删除 (worker 正在写文件). 等完成或用 ?permanent=true 强删",
+        )
+
+    if permanent:
+        # 硬删: 直接从 db 删, 含 raw input.mp4 (if keep_raw=False, 已清; 否则保留)
+        await db.delete(project)
+        await db.commit()
+        return {"message": "项目已强制删除 (含 db record)", "project_id": project_id, "permanent": True}
+
+    # 软删: 标 deleted_at
     project.deleted_at = datetime.utcnow()
     await db.commit()
-    return {"message": "项目已移入回收站", "project_id": project_id}
+    return {"message": "项目已移入回收站", "project_id": project_id, "permanent": False}
 
 
 @router.post("/{project_id}/restore")
