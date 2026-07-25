@@ -1,4 +1,5 @@
 """FastAPI 应用"""
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -9,11 +10,26 @@ from .core.config import settings
 from .core.database import init_db
 from .api import projects, clips, collections, styles, admin, user_preferences, uploads, watch_folders, mix, library
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期"""
-    # 启动时初始化（数据库表已存在则跳过）
+    # v2.2.13: 启动时跑 pending migration (修 8 天 dev 中断 db schema 落后)
+    # 用线程池避免阻塞 event loop (migration 跑在 sync engine)
+    import asyncio
+    from .migrations.runner import run_pending_migrations
+    try:
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(None, run_pending_migrations)
+        if results:
+            logger.info(f"[startup] 跑了 {len(results)} 个 pending migration")
+            for name, ok, msg in results:
+                if not ok:
+                    logger.warning(f"[startup] migration failed: {msg}")
+    except Exception as e:
+        logger.exception(f"[startup] migration runner 异常: {e}")
     yield
     # 关闭时清理
 
