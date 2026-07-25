@@ -25,3 +25,4 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 aiofiles==23.2.1
+passlib==1.7.4  # v2.2.11: admin basic auth 校验 .htpasswd apr1 hash

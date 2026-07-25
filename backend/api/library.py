@@ -234,6 +234,11 @@ async def upload_resource(
     save_name = f"{resource_id}.mp4"  # 统一存 mp4 容器, ffmpeg 友好
     save_path = _resources_dir() / save_name
 
+    # v2.2.11: 上传 size 校验 (P1-2 安全修)
+    # uploads.py 走 init endpoint + chunk 10MB, 5GB 上限在 init 时校验
+    # library.py 走单次 multipart, 之前 0 校验, 用户能传 100GB 撑爆 disk
+    MAX_LIBRARY_SIZE = 5 * 1024 * 1024 * 1024  # 5GB (跟 uploads 一致)
+
     # 流式写盘
     written = 0
     try:
@@ -242,8 +247,18 @@ async def upload_resource(
                 chunk = await file.read(1024 * 1024)  # 1MB
                 if not chunk:
                     break
-                out.write(chunk)
                 written += len(chunk)
+                if written > MAX_LIBRARY_SIZE:
+                    # 提前 break, 避免 100GB 写完再报错
+                    out.close()
+                    save_path.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"文件超过 {MAX_LIBRARY_SIZE // 1024 // 1024 // 1024}GB 上限 (已写 {written // 1024 // 1024}MB)",
+                    )
+                out.write(chunk)
+    except HTTPException:
+        raise
     except Exception as e:
         # 清理半成品
         if save_path.exists():
