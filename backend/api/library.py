@@ -13,24 +13,47 @@
   DELETE /api/v1/library/{id}            软删 (删 mp4 + jpg + 设 deleted_at)
 """
 import logging
-import os
 import shutil
 import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.database import get_db, sync_get_db
 from ..models.database import Clip, Project, ResourceClip
+from ..services.library_tag_service import generate_tags_for_resource
 
 router = APIRouter(tags=["library"])
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────── v2.2.19: auto-tag background helper ────────────────────────────
+
+def _auto_tag_in_thread(resource_id: str) -> None:
+    """BackgroundTask 触发的 auto-tag (跑在 thread pool, 不阻塞 async endpoint).
+
+    失败静默 — 主流程已完成, auto-tag 是 best-effort polish.
+    user 可手动调 POST /library/{id}/auto-tag retry.
+    """
+    try:
+        tags = generate_tags_for_resource(resource_id)
+        logger.info(f"library auto-tag background: id={resource_id} tags={tags}")
+    except Exception as e:
+        logger.warning(f"library auto-tag background 失败 (非致命): id={resource_id} err={e}")
 
 
 # ──────────────────────────── 路径 helper ────────────────────────────
@@ -158,8 +181,8 @@ def _serialize(rc: ResourceClip) -> dict:
 
 @router.get("")
 async def list_resources(
-    search: Optional[str] = None,
-    source_type: Optional[str] = None,
+    search: str | None = None,
+    source_type: str | None = None,
     include_deleted: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
@@ -208,9 +231,10 @@ async def list_resources(
 
 @router.post("/upload")
 async def upload_resource(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    name: Optional[str] = Form(default=None),
-    description: Optional[str] = Form(default=""),
+    name: str | None = Form(default=None),
+    description: str | None = Form(default=""),
     db: AsyncSession = Depends(get_db),
 ):
     """主动上传 mp4 进资源库 (不走切片流程).
@@ -297,11 +321,16 @@ async def upload_resource(
     await db.refresh(rc)
 
     logger.info(f"library upload: id={resource_id} name={base_name} size={written} duration={meta['duration']:.1f}s")
+
+    # v2.2.19: fire-and-forget auto-tag (LLM + keyword fallback)
+    # 失败不影响主流程, 静默
+    background_tasks.add_task(_auto_tag_in_thread, resource_id)
     return _serialize(rc)
 
 
 @router.post("/from-clip")
 async def from_clip_resource(
+    background_tasks: BackgroundTasks,
     payload: dict = Body(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -382,6 +411,9 @@ async def from_clip_resource(
         await db.refresh(rc)
 
         logger.info(f"library from-clip: new_id={new_id} src_clip={source_clip_id} src_proj={source_project_id}")
+
+        # v2.2.19: fire-and-forget auto-tag
+        background_tasks.add_task(_auto_tag_in_thread, new_id)
         return _serialize(rc)
 
 
@@ -448,11 +480,38 @@ async def delete_resource(
     return {"id": rid, "deleted": True}
 
 
+# ──────────────────────────── v2.2.19: auto-tag 手动 retry 端点 ────────────────────────────
+
+
+@router.post("/{resource_id}/auto-tag")
+async def auto_tag_resource_endpoint(
+    resource_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """手动触发 auto-tag (retry / 强制刷新 tags).
+
+    跟 upload/from-clip 异步 background task 一样逻辑, 同步等结果返.
+    适合 user 在前端 ✨ 按钮 retry 场景.
+    """
+    rid = _safe_id(resource_id)
+    result = await db.execute(select(ResourceClip).where(ResourceClip.id == rid))
+    rc = result.scalar_one_or_none()
+    if not rc:
+        raise HTTPException(status_code=404, detail="资源不存在")
+    if rc.deleted_at:
+        raise HTTPException(status_code=410, detail="资源已删除")
+
+    # 调 service (sync, 写 sync db)
+    tags = generate_tags_for_resource(rid)
+    return {"id": rid, "tags": tags, "count": len(tags)}
+
+
 # ──────────────────────────── v2.2.5: 一键从项目批量导入 ────────────────────────────
 
 
 @router.post("/from-project")
 async def from_project_batch_resource(
+    background_tasks: BackgroundTasks,
     payload: dict = Body(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -557,6 +616,10 @@ async def from_project_batch_resource(
                 sdb.add(row)
             sdb.commit()
             logger.info(f"library from-project batch: imported={imported}, skipped={skipped}, errors={len(errors)}")
+
+        # v2.2.19: fire-and-forget auto-tag 每个 imported 资源
+        for row in new_rows:
+            background_tasks.add_task(_auto_tag_in_thread, row.id)
 
     return {
         "source_project_id": source_project_id,
