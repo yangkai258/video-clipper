@@ -47,7 +47,16 @@ MIN_VIDEO_SIZE_BYTES = 1024 * 1024
 # 因为 Starlette 会先精确匹配 "/trash/all" 字面量再 fallback 到 path param)
 @router.delete("/trash")
 async def cleanup_trash(days: int = Query(default=30), db: AsyncSession = Depends(get_db)):
-    """清理 N 天前的已删除项目（软删 → 硬删）"""
+    """清理 N 天前的已删除项目（软删 → 硬删）
+
+    v2.2.12: 加 days 范围校验 1-365, 越界返 422 (test_cleanup_boundary_validation 期望)
+    """
+    # v2.2.12: days 边界校验, 防止 days=0/-1 误清所有 / days=9999 误清未来的
+    if days < 1 or days > 365:
+        raise HTTPException(
+            status_code=422,
+            detail=f"days 必须在 1-365 之间 (当前 {days})",
+        )
     threshold = datetime.utcnow() - timedelta(days=days)
     result = await db.execute(
         select(Project).where(
@@ -76,15 +85,22 @@ async def purge_all_trash(db: AsyncSession = Depends(get_db)):
 @router.get("/")
 async def list_projects(
     include_deleted: bool = Query(default=False),
+    search: Optional[str] = Query(default=None, description="按 name 模糊搜索 (case-insensitive)"),
     db: AsyncSession = Depends(get_db),
 ):
-    """列出项目（默认不含已删除）"""
+    """列出项目（默认不含已删除）
+
+    v2.2.12: 加 ?search= 模糊搜索 (P2-1 修)
+    """
     query = (
         select(Project)
         .options(selectinload(Project.tasks))
     )
     if not include_deleted:
         query = query.where(Project.deleted_at.is_(None))
+    if search:
+        # SQLite 默认 LIKE 不分大小写 (ASCll chars); 中文 LIKE 直接包含
+        query = query.where(Project.name.contains(search))
     query = query.order_by(Project.created_at.desc())
 
     result = await db.execute(query)
