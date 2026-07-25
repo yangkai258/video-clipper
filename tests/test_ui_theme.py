@@ -85,9 +85,23 @@ def test_index_css_has_light_theme():
     assert ":root[data-theme=\"light\"]" in css, \
         "缺少 :root[data-theme=\"light\"] 块"
 
-    # 提取 light 块（从 :root[data-theme="light"] 开始到下一个 }）
+    # v2.2.13: 找 light 块结束 (用括号匹配, 跳过嵌套 selector)
     light_start = css.find(':root[data-theme="light"]')
-    light_block = css[light_start:light_start + 1500]  # 取 1500 字符覆盖整个块
+    # 简单: 找 light 块结束的 `}` (匹配嵌套)
+    i = light_start
+    brace_count = 0
+    found_first_open = False
+    while i < len(css):
+        if css[i] == '{':
+            brace_count += 1
+            found_first_open = True
+        elif css[i] == '}':
+            brace_count -= 1
+            if found_first_open and brace_count == 0:
+                end_pos = i + 1
+                break
+        i += 1
+    light_block = css[light_start:end_pos]
 
     # 浅色主题 accent 应该是暖橙系
     assert "--accent: #ea580c" in light_block or "#ea580c" in light_block, \
@@ -134,7 +148,8 @@ def test_theme_toggle_component_exists():
     assert "useEffect" in code, "ThemeToggle 必须用 useEffect 同步 DOM"
     assert ("Icon" in code and "sun" in code and "moon" in code), "ThemeToggle 应有 SVG icon 切换 (v2.1.43 替代 emoji)"
 
-    # App.jsx 必须 import + 渲染
+    # App.jsx 必须 import ThemeToggle
+    # v2.2.13: App.jsx 只 import 但没渲染 (toggle 移到 Topbar), 改测更宽松
     app_code = APP_JSX.read_text(encoding="utf-8")
     assert "ThemeToggle" in app_code, "App.jsx 必须 import ThemeToggle"
-    assert "<ThemeToggle" in app_code, "App.jsx 必须渲染 <ThemeToggle />"
+    # v2.2.13: <ThemeToggle /> 渲染在 Topbar 内部, 不在 App.jsx, 这里只测 import

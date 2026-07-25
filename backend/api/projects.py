@@ -46,18 +46,25 @@ MIN_VIDEO_SIZE_BYTES = 1024 * 1024
 # 同理 DELETE /trash/all 会被 DELETE /{project_id}/restore 等截胡 (但目前还没踩到,
 # 因为 Starlette 会先精确匹配 "/trash/all" 字面量再 fallback 到 path param)
 @router.delete("/trash")
-async def cleanup_trash(days: int = Query(default=30), db: AsyncSession = Depends(get_db)):
+@router.post("/trash/cleanup")  # v2.2.13: alias for老测试 (test_cleanup_old_trash 用 POST + ?older_than_days)
+async def cleanup_trash(
+    days: int = Query(default=30, alias="days", description="清理 N 天前已删的项目"),
+    older_than_days: int = Query(default=None, description="v2.2.13 alias: days 别名, 跟 test 兼容"),
+    db: AsyncSession = Depends(get_db),
+):
     """清理 N 天前的已删除项目（软删 → 硬删）
 
-    v2.2.12: 加 days 范围校验 1-365, 越界返 422 (test_cleanup_boundary_validation 期望)
+    v2.2.12: 加 days 范围校验 1-365, 越界返 422
+    v2.2.13: 加 POST /trash/cleanup + ?older_than_days alias, 跟老测试兼容
     """
-    # v2.2.12: days 边界校验, 防止 days=0/-1 误清所有 / days=9999 误清未来的
-    if days < 1 or days > 365:
+    # v2.2.13: 兼容 days 跟 older_than_days
+    effective_days = older_than_days if older_than_days is not None else days
+    if effective_days < 1 or effective_days > 365:
         raise HTTPException(
             status_code=422,
-            detail=f"days 必须在 1-365 之间 (当前 {days})",
+            detail=f"days 必须在 1-365 之间 (当前 {effective_days})",
         )
-    threshold = datetime.utcnow() - timedelta(days=days)
+    threshold = datetime.utcnow() - timedelta(days=effective_days)
     result = await db.execute(
         select(Project).where(
             Project.deleted_at.is_not(None),
@@ -68,7 +75,7 @@ async def cleanup_trash(days: int = Query(default=30), db: AsyncSession = Depend
     for p in stale:
         await db.delete(p)
     await db.commit()
-    return {"message": f"已清理 {len(stale)} 个项目", "count": len(stale)}
+    return {"message": f"已清理 {len(stale)} 个项目 (older than {effective_days} days)", "count": len(stale)}
 
 
 @router.delete("/trash/all")
@@ -494,7 +501,12 @@ async def delete_project(
     # 软删: 标 deleted_at
     project.deleted_at = datetime.utcnow()
     await db.commit()
-    return {"message": "项目已移入回收站", "project_id": project_id, "permanent": False}
+    return {
+        "message": "项目已移入回收站",
+        "project_id": project_id,
+        "permanent": False,
+        "deleted_at": to_iso_utc(project.deleted_at),  # v2.2.13: test_soft_delete_completed 期望
+    }
 
 
 @router.post("/{project_id}/restore")
