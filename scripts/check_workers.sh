@@ -119,20 +119,94 @@ restart_group() {
 start_mix_worker() {
     cd "$WORKSPACE" || return 1
     unset DATABASE_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND CELERY_QUEUE_NAME
-    export DATABASE_URL="sqlite+aiosqlite:///./data/video_clipper_mix.db"
+    # v2.2.10: DATABASE_URL 一定要指 切片 db (跟 uvicorn 一致),
+    # 让 database_mix._resolve_mix_db_path() 派生 video_clipper_mix.db.
+    # 之前 (v2.2.8) 直接指 video_clipper_mix.db → 派生 video_clipper_mix_mix.db
+    # → worker 跟 uvicorn 不同 db → 查不到 mix project → RuntimeError.
+    # 同 celery redis db 跟 uvicorn 一致 (release=db 0, beta=db 1).
+    # 看 caller: start_mix_worker 跟 release worker 共用 db 0 (v2.2.3+ 设计)
+    export DATABASE_URL="sqlite+aiosqlite:///./data/video_clipper.db"
     export CELERY_BROKER_URL="redis://localhost:6379/0"
     export CELERY_RESULT_BACKEND="redis://localhost:6379/0"
     export CELERY_QUEUE_NAME="processing_mix"
     nohup ./.venv/bin/celery -A backend.core.celery_app worker --pool=solo -Q processing_mix -n mix1 --max-tasks-per-child=10 >> "$LOG_FILE" 2>&1 < /dev/null &
 }
 
+# v2.2.10: inline 启 release worker (跟 start_mix_worker 同款)
+# 解决: start-release.sh 要切 main + 端口检查, 经常因 uncommitted 改动 / 端口占用 拒绝跑
+# watchdog 调它等于没调. 直接 inline 启 worker (uvicorn --reload 已经在跑不需要重启)
+start_release_workers() {
+    cd "$WORKSPACE" || return 1
+    unset DATABASE_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND CELERY_QUEUE_NAME
+    export DATABASE_URL="sqlite+aiosqlite:///./data/video_clipper.db"
+    export CELERY_BROKER_URL="redis://localhost:6379/0"
+    export CELERY_RESULT_BACKEND="redis://localhost:6379/0"
+    export CELERY_QUEUE_NAME="processing"
+    for n in 1 2 3; do
+        nohup ./.venv/bin/celery -A backend.core.celery_app worker --pool=solo -Q processing -n release$n --max-tasks-per-child=10 >> "$LOG_FILE" 2>&1 < /dev/null &
+    done
+}
+
+start_beta_workers() {
+    cd "$WORKSPACE" || return 1
+    unset DATABASE_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND CELERY_QUEUE_NAME
+    export DATABASE_URL="sqlite+aiosqlite:///./data/video_clipper_beta.db"
+    export CELERY_BROKER_URL="redis://localhost:6379/1"
+    export CELERY_RESULT_BACKEND="redis://localhost:6379/1"
+    export CELERY_QUEUE_NAME="processing_beta"
+    for n in 1 2 3; do
+        nohup ./.venv/bin/celery -A backend.core.celery_app worker --pool=solo -Q processing_beta -n beta$n --max-tasks-per-child=10 >> "$LOG_FILE" 2>&1 < /dev/null &
+    done
+}
+
+# v2.2.10: 端口有 uvicorn 在跑就用 inline 启 worker (避免 start-*.sh 因切 branch/端口冲突 拒绝跑)
+# uvicorn 监听 -> inline 启 worker (uvicorn --reload 已经在跑不需要重启)
+# uvicorn 没监听 -> 调 start-*.sh 完整启动 (大修/第一次启动)
+_should_inline_workers() {
+    local port=$1
+    lsof -nP -iTCP:$port -sTCP:LISTEN -t 2>/dev/null | head -1 | grep -q . && return 0 || return 1
+}
+
 # === 主检查 ===
 
 # 1. Release worker (3 expected)
-restart_group "release" "processing" 3 "$START_SCRIPT_RELEASE"
+#    v2.2.10: 优先 inline 启 (uvicorn :8000 在跑), 否则调 start-release.sh
+release_pids=$(list_workers_by_queue "processing")
+release_count=0
+if [ -n "$release_pids" ]; then
+    release_count=$(echo "$release_pids" | wc -l | tr -d ' ')
+fi
+if [ "$release_count" -lt 3 ]; then
+    if _should_inline_workers 8000; then
+        log "WARN: release workers=$release_count < 3, uvicorn :8000 在跑, inline 启 3 worker"
+        notify "Worker Watchdog" "release worker 不足 ($release_count/3), inline 启 (uvicorn 在跑)"
+        start_release_workers
+    else
+        restart_group "release" "processing" 3 "$START_SCRIPT_RELEASE"
+    fi
+else
+    # count 够, 7d uptime 检查走 restart_group
+    restart_group "release" "processing" 3 "$START_SCRIPT_RELEASE" > /dev/null 2>&1 || true
+fi
 
 # 2. Beta worker (3 expected)
-restart_group "beta" "processing_beta" 3 "$START_SCRIPT_BETA"
+#    v2.2.10: 同样优先 inline 启
+beta_pids=$(list_workers_by_queue "processing_beta")
+beta_count=0
+if [ -n "$beta_pids" ]; then
+    beta_count=$(echo "$beta_pids" | wc -l | tr -d ' ')
+fi
+if [ "$beta_count" -lt 3 ]; then
+    if _should_inline_workers 8030; then
+        log "WARN: beta workers=$beta_count < 3, uvicorn :8030 在跑, inline 启 3 worker"
+        notify "Worker Watchdog" "beta worker 不足 ($beta_count/3), inline 启 (uvicorn 在跑)"
+        start_beta_workers
+    else
+        restart_group "beta" "processing_beta" 3 "$START_SCRIPT_BETA"
+    fi
+else
+    restart_group "beta" "processing_beta" 3 "$START_SCRIPT_BETA" > /dev/null 2>&1 || true
+fi
 
 # 3. Mix worker (1 expected) — 没有 start 脚本, inline 启
 mix_pids=$(list_workers_by_queue "processing_mix")
