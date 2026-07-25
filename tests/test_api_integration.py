@@ -114,8 +114,15 @@ def test_projects_search():
         db.add(Project(id=pid, name="屋顶防水测试搜索专用", status="completed"))
         db.commit()
     try:
-        r = requests.get(f"{BASE}/projects/?search=屋顶", timeout=5)
-        assert r.status_code == 200
+        # v2.2.20: uvicorn --reload reload 期间 5xx 概率高, retry 3 次
+        import time as _t
+        r = None
+        for attempt in range(3):
+            r = requests.get(f"{BASE}/projects/?search=屋顶", timeout=5)
+            if r.status_code < 500:
+                break
+            _t.sleep(1)
+        assert r is not None and r.status_code == 200, f"GET fail after 3 retries: {r.status_code if r else 'no response'}"
         names = [p["name"] for p in r.json()["projects"]]
         assert "屋顶防水测试搜索专用" in names
     finally:
