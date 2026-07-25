@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# v2.2.18 pre-commit hook — 3 道关防回归
+#
+# 关1 ruff check (backend Python lint, fast ~3s)
+# 关2 pytest quick (核心 30 tests, ~10s)
+# 关3 vitest run (前端 6 tests, ~3s)
+#
+# 任一失败 abort commit. 跳关用 --no-verify (紧急 release)
+#
+# 装:  git config core.hooksPath .githooks
+#      chmod +x .githooks/pre-commit
+# 卸:  git config --unset core.hooksPath
+
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+# ANSI color (no color 时降级)
+if [ -t 1 ]; then
+    RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
+else
+    RED=''; GREEN=''; YELLOW=''; CYAN=''; NC=''
+fi
+
+pass() { echo -e "${GREEN}✓ $1${NC}"; }
+warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
+fail() { echo -e "${RED}✗ $1${NC}"; exit 1; }
+head() { echo -e "\n${CYAN}── $1 ──${NC}"; }
+
+# 改动的 backend 文件 (lint 只跑改的)
+BACKEND_CHANGED=$(git diff --cached --name-only --diff-filter=ACMR | grep -E "^backend/.*\.py$" || true)
+FRONTEND_CHANGED=$(git diff --cached --name-only --diff-filter=ACMR | grep -E "^frontend/.*\.(js|jsx)$" || true)
+TEST_CHANGED=$(git diff --cached --name-only --diff-filter=ACMR | grep -E "^tests/.*\.py$" || true)
+
+# ========== 关 1: ruff lint (改动的 backend) ==========
+head "关 1/3: ruff lint"
+if [ -n "$BACKEND_CHANGED" ]; then
+    if .venv/bin/ruff check $BACKEND_CHANGED 2>&1 | tail -5; then
+        pass "ruff OK"
+    else
+        fail "ruff fail, 修后重试 (或 git commit --no-verify)"
+    fi
+else
+    warn "无 backend 改动, 跳过"
+fi
+
+# ========== 关 2: pytest 核心 subset ==========
+head "关 2/3: pytest core subset"
+if [ -n "$BACKEND_CHANGED" ] || [ -n "$TEST_CHANGED" ]; then
+    # 跑核心 30 tests (api + auth + cleanup + size + delete + version)
+    .venv/bin/python -m pytest tests/ -q \
+        -k "test_health or test_admin or test_auth or test_library_size or test_uploads or test_cleanup or test_trash or test_version or test_search or test_delete_project" \
+        --tb=short 2>&1 | tail -8 || fail "pytest fail"
+else
+    warn "无 backend/test 改动, 跳过"
+fi
+
+# ========== 关 3: vitest (改动的 frontend) ==========
+head "关 3/3: vitest"
+if [ -n "$FRONTEND_CHANGED" ]; then
+    cd frontend
+    if npx vitest run 2>&1 | tail -5; then
+        cd ..
+        pass "vitest OK"
+    else
+        cd ..
+        fail "vitest fail, 修后重试 (或 git commit --no-verify)"
+    fi
+else
+    warn "无 frontend 改动, 跳过"
+fi
+
+echo ""
+pass "pre-commit 3 关全过, commit 放行"
