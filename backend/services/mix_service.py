@@ -12,7 +12,6 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────── LLM 脚本分段 ────────────────────────────
 
 
-def parse_script(script_text: str, target_duration: int = 60) -> List[Dict]:
+def parse_script(script_text: str, target_duration: int = 60) -> list[dict]:
     """LLM 把脚本按主题/动作分段
 
     返回 [{position: int, text: str, keywords: [str]}, ...]
@@ -63,8 +62,7 @@ def parse_script(script_text: str, target_duration: int = 60) -> List[Dict]:
     text = content.strip()
     if text.startswith("```"):
         text = text.split("```", 2)[1] if "```" in text[3:] else text
-        if text.startswith("json"):
-            text = text[4:]
+        text = text.removeprefix("json")
         text = text.strip()
 
     try:
@@ -91,10 +89,10 @@ def parse_script(script_text: str, target_duration: int = 60) -> List[Dict]:
 
 
 def ai_help_write_script(
-    topic: Optional[str],
-    clips_context: List[Dict],
+    topic: str | None,
+    clips_context: list[dict],
     target_duration: int = 60,
-) -> Dict:
+) -> dict:
     """AI 根据用户主题 + 素材库标题, 生成一段带货口播脚本 (v2.2.5)
 
     Args:
@@ -105,8 +103,8 @@ def ai_help_write_script(
     Returns:
         {"script_text": "...", "model": "..."} 失败时 script_text 为空 + 抛异常
     """
-    from ..services.llm_service import _call_llm
     from ..core.config import settings
+    from ..services.llm_service import _call_llm
 
     topic_str = (topic or "").strip() or "(自动)"
     titles = []
@@ -161,9 +159,9 @@ def ai_help_write_script(
 
 
 def build_clip_library_from_slice_db(
-    candidate_clip_ids: List[str],
+    candidate_clip_ids: list[str],
     slice_db_session_factory=None,
-) -> List[Dict]:
+) -> list[dict]:
     """从切片 db 读 candidate_clip_ids 的 clip 详情 (不写切片 db)
 
     v2.2.5: candidate_clip_id 可能是 resource_clip (从 /library 来的) 或 clip (从 /clips/library 来的),
@@ -172,8 +170,8 @@ def build_clip_library_from_slice_db(
     返回 [{clip_id, source_project_id, source_project_name, title,
            subtitle_text, video_path, duration, width, height, source_type}, ...]
     """
-    from ..models.database import Clip, Project, ResourceClip
     from ..core.database import sync_get_db
+    from ..models.database import Clip, Project, ResourceClip
 
     library = []
     with sync_get_db() as db:
@@ -228,10 +226,10 @@ def build_clip_library_from_slice_db(
 
 
 def match_clips_for_segments(
-    segments: List[Dict],
-    clip_library: List[Dict],
+    segments: list[dict],
+    clip_library: list[dict],
     target_duration: int = 60,
-) -> List[Dict]:
+) -> list[dict]:
     """为每段 segment 匹配最合适的 clip + 时长分配
 
     返回 [{position, text, keywords, matched_clip_id, source_project_id,
@@ -265,23 +263,17 @@ def match_clips_for_segments(
             search_text = (clip.get("title", "") + " " + clip.get("subtitle_text", "")).strip()
             if not search_text:
                 continue
-            # v2.2.3 改进: keywords 按空格 split (LLM 可能给 "防水套装" 当 1 个 keyword,
-            # 但 clip title 是 "防水 套装", 需要 split 后才命中)
-            expanded_keywords = []
-            for kw in keywords:
-                if not kw:
-                    continue
-                expanded_keywords.append(kw)
-                # 复合词按空格切 (中文不带空格, 但 LLM 可能偶尔加空格)
-                if " " in kw or len(kw) > 4:
-                    expanded_keywords.extend(kw.replace(" ", ""))
-            hits = sum(1 for kw in expanded_keywords if kw in search_text)
-            if hits == 0:
+            # v2.2.21: 改用 hybrid_match_score (0.6 embedding + 0.4 keyword)
+            # embedding 不可用时自动 fallback 到 keyword
+            from .embedding_service import hybrid_match_score
+            score = hybrid_match_score(
+                seg_text=seg["text"],
+                seg_keywords=keywords,
+                clip_title=clip.get("title", ""),
+                clip_subtitle=clip.get("subtitle_text", ""),
+            )
+            if score == 0.0:
                 continue
-            score = hits / max(len(expanded_keywords), 1)
-            # 标题完全命中额外加分 (title 是 LLM 给的核心词)
-            if any(kw and kw in clip.get("title", "") for kw in expanded_keywords):
-                score *= 1.5
             scored.append((score, clip))
 
         if not scored:
@@ -323,7 +315,7 @@ def match_clips_for_segments(
 
 
 def assemble_mix_video(
-    segments: List[Dict],
+    segments: list[dict],
     slice_clips_root: Path,
     output_path: Path,
 ) -> Path:
@@ -393,8 +385,7 @@ def assemble_mix_video(
             raise RuntimeError("所有 part extract 都失败")
 
         with open(concat_list, "w") as f:
-            for pf in part_files:
-                f.write(f"file '{pf.absolute()}'\n")
+            f.writelines(f"file '{pf.absolute()}'\n" for pf in part_files)
 
         # 用 libx264 (稳), 不用 h264_videotoolbox (v2.2.1 merge bug)
         cmd_concat = [
@@ -419,7 +410,7 @@ def assemble_mix_video(
 # ──────────────────────────── SRT 生成 ────────────────────────────
 
 
-def build_script_srt(segments: List[Dict], total_duration: float = None) -> str:
+def build_script_srt(segments: list[dict], total_duration: float = None) -> str:
     """用脚本分段生成 SRT 字幕 (烧字幕用)
 
     按 segments[].clip_duration 比例分配 SRT 时间戳.
@@ -460,7 +451,7 @@ def build_script_srt(segments: List[Dict], total_duration: float = None) -> str:
 def burn_mix_subtitle(
     video_path: Path,
     srt_text: str,
-    subtitle_style: Optional[Dict] = None,
+    subtitle_style: dict | None = None,
     total_duration: float = None,
 ) -> Path:
     """烧脚本原文本字幕到拼接视频
