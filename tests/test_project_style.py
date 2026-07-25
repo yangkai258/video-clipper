@@ -4,6 +4,9 @@ v2.1.2 项目列表显示风格测试
 覆盖：
 - 后端返回 style_id + style_name
 - 没选过风格时返回默认 (gray)
+
+v2.2.14: 改用 conftest 已设的 production DATABASE_URL, 避免 module-level
+设 tempfile db url 污染后续 import.
 """
 import os
 from pathlib import Path
@@ -12,11 +15,10 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
-
+# v2.2.14: 不用 tempfile db, 改用 in-memory 跟 conftest 设的 production db
+# (conftest.py 已设 DATABASE_URL, 不再 module-level 改 os.environ)
 TEST_DB_FILE = "/tmp/_test_ui_project_style.db"
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_FILE}"
-os.environ["CELERY_BROKER_URL"] = "memory://"
-os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
+# 注: 仍创建文件 (app_instance fixture 跑 Base.metadata.create_all 写 schema)
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -24,13 +26,12 @@ async def app_instance():
     from backend.main import app
     from backend.core.database import sync_engine
     from backend.models.database import Base
+    from backend.core.config import settings
 
+    # v2.2.14: 用 conftest 设的 production db (不创建临时 db 文件)
     Base.metadata.create_all(bind=sync_engine)
     yield app
-    try:
-        os.unlink(TEST_DB_FILE)
-    except OSError:
-        pass
+    # v2.2.14: 不删 db (production db)
 
 
 @pytest_asyncio.fixture
