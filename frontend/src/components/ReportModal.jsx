@@ -1,5 +1,5 @@
 import Icon from '../Icon'
-import { getOrientation, orientationLabel, formatTC, formatDate } from '../projectView'
+import { getOrientation, orientationLabel, formatTC, formatDate, statusLabel } from '../projectView'
 import Row from './Row'
 import Section from './Section'
 

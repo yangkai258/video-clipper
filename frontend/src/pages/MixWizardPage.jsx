@@ -137,7 +137,7 @@ export default function MixWizardPage() {
     }).finally(() => {
       setPreviewLoading(false)
     })
-  }, [step, scriptSegments, candidates, targetDuration])  // eslint-disable-line
+  }, [step, scriptSegments, candidates, targetDuration])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadLibrary = async (source = librarySource) => {
     try {

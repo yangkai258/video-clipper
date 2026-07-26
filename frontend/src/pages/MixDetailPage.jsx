@@ -14,7 +14,9 @@ import { statusLabel, formatTC, formatDate } from '../projectView'
 const API_BASE = '/api/v1'
 
 export default function MixDetailPage({ projectId, navigate: navProp }) {
-  const navigate = navProp || useNavigate()
+  // 必须在所有 state 之前无条件 hook,避免 hooks 顺序违规
+  const _navHook = useNavigate()
+  const navigate = navProp || _navHook
   const id = projectId
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)

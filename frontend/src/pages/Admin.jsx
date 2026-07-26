@@ -42,7 +42,7 @@ function Admin() {
 
   useEffect(() => {
     const loadAll = async () => {
-      await Promise.all([loadSystemInfo(), loadWorkerStatus(), loadDatabaseStats()])
+      await Promise.all([loadSystemStatus(), loadWorkerStatus(), loadDatabaseStats()])
       setLoading(false)
     }
     loadAll()
@@ -51,7 +51,7 @@ function Admin() {
   // 刷新状态
   const handleRefresh = () => {
     setLoading(true)
-    Promise.all([loadSystemInfo(), loadWorkerStatus(), loadDatabaseStats()]).then(() => {
+    Promise.all([loadSystemStatus(), loadWorkerStatus(), loadDatabaseStats()]).then(() => {
       setLoading(false)
     })
   }

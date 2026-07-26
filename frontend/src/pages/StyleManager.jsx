@@ -27,14 +27,17 @@ const defaultStyle = {
 }
 
 function StyleManager({ navigate: navProp, location: locProp }) {
+  // 必须在所有 state 之前无条件 hook,避免 hooks 顺序违规
+  const _navHook = useNavigate()
+  const _locHook = useLocation()
   const [styles, setStyles] = useState([])
   const [presets, setPresets] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(defaultStyle)
   const [tab, setTab] = useState('basic')
-  const navigate = navProp || useNavigate()
-  const location = locProp || useLocation()
+  const navigate = navProp || _navHook
+  const location = locProp || _locHook
 
   const loadStyles = async () => {
     try {

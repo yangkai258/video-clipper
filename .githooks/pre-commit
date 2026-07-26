@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# v2.2.18 pre-commit hook — 3 道关防回归
+# v2.2.18 pre-commit hook — 5 道关防回归
 #
 # 关1 ruff check (backend Python lint, fast ~3s)
 # 关2 pytest quick (核心 30 tests, ~10s)
-# 关3 vitest run (前端 6 tests, ~3s)
+# 关3 vitest run (前端 18 tests, ~3s)
+# 关4 APP_VERSION 跟 git tag drift check (v2.2.44)
+# 关5 eslint (前端, 0 error 必过, warning 留 future 修, v2.2.46)
 #
 # 任一失败 abort commit. 跳关用 --no-verify (紧急 release)
 #
@@ -55,7 +57,7 @@ else
 fi
 
 # ========== 关 3: vitest (改动的 frontend) ==========
-head "关 3/3: vitest"
+head "关 3/5: vitest"
 if [ -n "$FRONTEND_CHANGED" ]; then
     cd frontend
     if npx vitest run 2>&1 | tail -5; then
@@ -73,7 +75,7 @@ fi
 # 防 Version drift: APP_VERSION 应等于或大于最近 tag (e.g. config 是 v2.2.45 + 最近 tag v2.2.44 OK,
 # config 是 v2.2.44 + 最近 tag v2.2.44 OK, 但 config 是 v2.2.43 + 最近 tag v2.2.44 → drift fail).
 # 防止 commit 后忘 push tag, 或 VERSION 跟 tag 不一致混乱.
-head "关 4/4: APP_VERSION 跟 git tag 一致"
+head "关 4/5: APP_VERSION 跟 git tag 一致"
 CURRENT_VERSION=$(.venv/bin/python -c "from backend.core.config import settings; print(settings.APP_VERSION)" 2>/dev/null || echo "")
 LATEST_TAG=$(git tag --sort=-v:refname | head -1)
 if [ -n "$CURRENT_VERSION" ] && [ -n "$LATEST_TAG" ]; then
@@ -92,5 +94,27 @@ else
     warn "skip: 无法读 VERSION 或 tag"
 fi
 
+# ========== 关 5: eslint (改动的 frontend, v2.2.46) ==========
+# 0 error 必过, warning 允许 (no-unused-vars 130 留 v2.2.47+ 修)
+head "关 5/5: eslint"
+if [ -n "$FRONTEND_CHANGED" ]; then
+    cd frontend
+    if npx eslint src --max-warnings 999 2>&1 | tail -5; then
+        # 0 error 判定: count errors
+        ERR_COUNT=$(npx eslint src 2>&1 | grep -c "^\s*[0-9]\+:[0-9]\+\s*error" || true)
+        if [ "${ERR_COUNT:-0}" -gt 0 ]; then
+            cd ..
+            fail "eslint 有 $ERR_COUNT 个 error, 修后重试 (或 git commit --no-verify)"
+        fi
+        cd ..
+        pass "eslint OK (0 error, warning 留 future 修)"
+    else
+        cd ..
+        fail "eslint fail, 修后重试 (或 git commit --no-verify)"
+    fi
+else
+    warn "无 frontend 改动, 跳过"
+fi
+
 echo ""
-pass "pre-commit 4 关全过, commit 放行"
+pass "pre-commit 5 关全过, commit 放行"

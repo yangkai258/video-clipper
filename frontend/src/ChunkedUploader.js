@@ -316,7 +316,7 @@ export class ChunkedUploader {
   }
 
   _clearProgress() {
-    try { localStorage.removeItem(this.storageKey) } catch (e) {}
+    try { localStorage.removeItem(this.storageKey) } catch (_e) { void _e }
   }
 
   _authHeaders() {

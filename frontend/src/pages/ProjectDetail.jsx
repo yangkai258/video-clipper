@@ -23,9 +23,12 @@ import ReportModal from '../components/ReportModal'
 
 // ponytail: 主组件仅负责装配 — 状态与业务逻辑都抽到 hooks / sub-components
 export default function ProjectDetail({ projectId, navigate: navProp }) {
-  const navigate = navProp || useNavigate()
+  // 必须在所有 state 之前无条件 hook,避免 hooks 顺序违规
+  const _navHook = useNavigate()
+  const navigate = navProp || _navHook
   const id = projectId
   const [showReport, setShowReport] = useState(false)
+  const [showRerun, setShowRerun] = useState(false)
 
   // ponytail: 必须在所有 hook 之前且无条件执行,避免 hooks 顺序违规
   useEffect(() => {

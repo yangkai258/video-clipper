@@ -57,7 +57,7 @@ export default function MixBatchWizardPage() {
       try {
         const r = await axios.post(`${API_BASE}/mix/script-risk-check`, { script_text: commonScript })
         setRiskResult(r.data)
-      } catch (e) {}
+      } catch (_e) { void _e }
     }, 600)
     return () => clearTimeout(t)
   }, [commonScript])
