@@ -1,5 +1,5 @@
 import Icon from '../Icon'
-import { formatBytes } from '../ChunkedUploader'
+import { formatBytes, formatSpeed } from '../ChunkedUploader'
 
 export default function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel }) {
   const { received, total, speed } = progress
