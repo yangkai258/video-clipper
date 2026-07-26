@@ -50,6 +50,46 @@ list_workers_by_queue() {
     ps aux | grep "celery -A backend.core.celery_app worker" | grep -v grep | awk -v q="$queue" '$18 == q {print $2}'
 }
 
+# v2.2.23: 拿 worker 实际 CELERY_BROKER_URL (从 ps eww 读 env)
+# macOS 没 /proc/PID/environ, 用 ps eww -p PID 拿完整 env
+# 返 broker 字符串 (例 redis://localhost:6379/0), 失败返 ""
+worker_actual_broker() {
+    local pid="$1"
+    if [ -z "$pid" ]; then
+        echo ""
+        return
+    fi
+    # ps eww 输出 "PID ... ENV1=val1 ENV2=val2 ..."
+    # macOS tr 拆空格 (broker url 没空格)
+    ps eww -p "$pid" 2>/dev/null | tr ' ' '\n' | grep "^CELERY_BROKER_URL=" | head -1 | cut -d= -f2-
+}
+
+# v2.2.23: 拿 worker 实际 CELERY_QUEUE_NAME
+worker_actual_queue() {
+    local pid="$1"
+    if [ -z "$pid" ]; then
+        echo ""
+        return
+    fi
+    ps eww -p "$pid" 2>/dev/null | tr ' ' '\n' | grep "^CELERY_QUEUE_NAME=" | head -1 | cut -d= -f2-
+}
+
+# v2.2.23: 检查 worker broker 一致性, 不一致返 0 (need restart), 一致返 1
+# 用法: if worker_broker_mismatch "$pid" "redis://localhost:6379/0" "processing_mix"; then
+worker_broker_mismatch() {
+    local pid="$1"
+    local expected_broker="$2"
+    local expected_queue="$3"
+    local actual_broker
+    local actual_queue
+    actual_broker=$(worker_actual_broker "$pid")
+    actual_queue=$(worker_actual_queue "$pid")
+    if [ "$actual_broker" != "$expected_broker" ] || [ "$actual_queue" != "$expected_queue" ]; then
+        return 0  # 不一致
+    fi
+    return 1  # 一致
+}
+
 # 检查 worker uptime 天数 (ETIMED 格式 "07-02:48:08" = 7天2小时48分, 转天数)
 worker_uptime_days() {
     local pid=$1
@@ -185,8 +225,24 @@ if [ "$release_count" -lt 3 ]; then
         restart_group "release" "processing" 3 "$START_SCRIPT_RELEASE"
     fi
 else
-    # count 够, 7d uptime 检查走 restart_group
-    restart_group "release" "processing" 3 "$START_SCRIPT_RELEASE" > /dev/null 2>&1 || true
+    # v2.2.23: count 够, 验 broker 一致性 (跟 mix worker 同款)
+    if worker_broker_mismatch "$(echo "$release_pids" | head -1)" "redis://localhost:6379/0" "processing"; then
+        for pid in $release_pids; do
+            if worker_broker_mismatch "$pid" "redis://localhost:6379/0" "processing"; then
+                actual_broker=$(worker_actual_broker "$pid")
+                log "WARN: release worker PID=$pid broker 不一致 (actual: $actual_broker, expected: redis://localhost:6379/0) → 杀"
+                notify "Worker Watchdog" "release worker broker 不一致, 自动 restart (v2.2.23 防护)"
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+        done
+        sleep 2
+        if [ -z "$(list_workers_by_queue "processing")" ] && _should_inline_workers 8000; then
+            start_release_workers
+        fi
+    else
+        # count 够 + broker 一致, 7d uptime 检查走 restart_group
+        restart_group "release" "processing" 3 "$START_SCRIPT_RELEASE" > /dev/null 2>&1 || true
+    fi
 fi
 
 # 2. Beta worker (3 expected)
@@ -195,6 +251,28 @@ beta_pids=$(list_workers_by_queue "processing_beta")
 beta_count=0
 if [ -n "$beta_pids" ]; then
     beta_count=$(echo "$beta_pids" | wc -l | tr -d ' ')
+fi
+
+# v2.2.23: beta worker broker 一致性 check
+if [ "$beta_count" -ge 1 ]; then
+    beta_broker_mismatch_pids=""
+    for pid in $beta_pids; do
+        if worker_broker_mismatch "$pid" "redis://localhost:6379/1" "processing_beta"; then
+            actual_broker=$(worker_actual_broker "$pid")
+            log "WARN: beta worker PID=$pid broker 不一致 (actual: $actual_broker, expected: redis://localhost:6379/1) → 杀"
+            beta_broker_mismatch_pids="$beta_broker_mismatch_pids $pid"
+        fi
+    done
+    if [ -n "$beta_broker_mismatch_pids" ]; then
+        notify "Worker Watchdog" "beta worker broker 不一致, 自动 restart (v2.2.23 防护)"
+        for pid in $beta_broker_mismatch_pids; do
+            kill -9 "$pid" 2>/dev/null || true
+        done
+        sleep 2
+        if [ -z "$(list_workers_by_queue "processing_beta")" ] && _should_inline_workers 8030; then
+            start_beta_workers
+        fi
+    fi
 fi
 if [ "$beta_count" -lt 3 ]; then
     if _should_inline_workers 8030; then
@@ -213,6 +291,35 @@ mix_pids=$(list_workers_by_queue "processing_mix")
 mix_count=0
 if [ -n "$mix_pids" ]; then
     mix_count=$(echo "$mix_pids" | wc -l | tr -d ' ')
+fi
+
+# v2.2.23: broker 一致性 check (实际 broker 跟期望 db=0 / queue=processing_mix 对比)
+# 不一致 → 杀 + restart (16h 前实际踩过: 7-10 beta mode 启的 worker 跟 release env 冲突,
+# task 派发到 db=0/processing_mix 但 worker 监听 db=1, 任务堆积 redis 24h TTL 清掉)
+MIX_EXPECTED_BROKER="redis://localhost:6379/0"
+MIX_EXPECTED_QUEUE="processing_mix"
+if [ "$mix_count" -ge 1 ]; then
+    for pid in $mix_pids; do
+        if worker_broker_mismatch "$pid" "$MIX_EXPECTED_BROKER" "$MIX_EXPECTED_QUEUE"; then
+            actual_broker=$(worker_actual_broker "$pid")
+            actual_queue=$(worker_actual_queue "$pid")
+            log "WARN: mix worker PID=$pid broker 不一致 (actual: $actual_broker queue=$actual_queue, expected: $MIX_EXPECTED_BROKER queue=$MIX_EXPECTED_QUEUE) → 杀 + restart"
+            notify "Worker Watchdog" "mix worker broker 不一致 (db 错), 自动 restart (v2.2.23 防护)"
+            kill -9 "$pid" 2>/dev/null || true
+            sleep 2
+            # 杀完再启 (replace in-place)
+            if [ -z "$(list_workers_by_queue "processing_mix")" ]; then
+                start_mix_worker
+            fi
+            # 重设 mix_pids (老 worker 死了, 新的可能还没 ready)
+            mix_pids=$(list_workers_by_queue "processing_mix")
+            mix_count=0
+            if [ -n "$mix_pids" ]; then
+                mix_count=$(echo "$mix_pids" | wc -l | tr -d ' ')
+            fi
+            break
+        fi
+    done
 fi
 
 if [ "$mix_count" -lt 1 ]; then
