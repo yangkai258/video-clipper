@@ -567,6 +567,19 @@ body {
   border-bottom-color: var(--accent);
 }
 
+/* v2.2.56: 一键建 N 变体 (强调色, 区分普通添加) */
+.tab-bulk-add {
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.12), rgba(236, 72, 153, 0.08));
+  border-bottom-color: transparent;
+  color: #fb923c;
+  font-weight: 500;
+  margin-left: 8px;
+}
+.tab-bulk-add:hover {
+  color: #ec4899;
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.2), rgba(236, 72, 153, 0.15));
+}
+
 .tab-count {
   font-family: var(--text-mono);
   font-size: var(--text-xs);

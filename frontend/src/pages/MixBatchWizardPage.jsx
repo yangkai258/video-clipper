@@ -70,6 +70,30 @@ export default function MixBatchWizardPage() {
   const addVariation = () => {
     setVariations(v => [...v, { name: `变体 ${v.length + 1}`, script_text: '', candidate_clip_ids: [] }])
   }
+
+  // v2.2.56: 跨 variation 一键 — 拿当前 filter 的所有 candidate, 每个建 1 变体
+  // 用户场景: 选 source=library + project=all, 资源库 50 个素材, 1 click 50 个变体
+  const bulkAddVariations = () => {
+    // 拿当前 filter 后的 candidates (跟 .library-grid 渲染一致)
+    const filtered = candidates.filter(c => {
+      if (activeSource !== 'all' && c.source_type !== activeSource) return false
+      if (activeSource !== 'library' && activeProject !== 'all' && c.source_project_name !== activeProject) return false
+      return true
+    })
+    if (filtered.length === 0) {
+      alert('当前 filter 没素材, 切到 "全部" 或选其他 source')
+      return
+    }
+    if (filtered.length > 30) {
+      if (!confirm(`将为 ${filtered.length} 个素材创建变体, 可能耗时较长. 继续?`)) return
+    }
+    const newVars = filtered.map((c, idx) => ({
+      name: c.title ? `${c.title.slice(0, 16)}` : `变体 ${variations.length + idx + 1}`,
+      script_text: '',
+      candidate_clip_ids: [c.id],
+    }))
+    setVariations(v => [...v, ...newVars])
+  }
   const removeVariation = (idx) => {
     setVariations(v => v.filter((_, i) => i !== idx))
     if (activeVariationIdx >= variations.length - 1) {
@@ -236,6 +260,14 @@ export default function MixBatchWizardPage() {
             ))}
             <button className="tab" onClick={addVariation}>
               <Icon name="plus" size={11} /> 添加变体
+            </button>
+            {/* v2.2.56: 一键为每个当前 filter 素材建变体 */}
+            <button
+              className="tab tab-bulk-add"
+              onClick={bulkAddVariations}
+              title="为当前 source/project filter 下的每个素材自动建 1 个变体 (含 candidate_clip_ids=[该素材])"
+            >
+              <Icon name="zap" size={11} /> 一键建 N 变体
             </button>
           </div>
 
