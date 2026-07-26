@@ -90,11 +90,20 @@ def _call_embedding(texts: list[str], model: str = "embo-01") -> list[list[float
 
     Returns:
         跟输入同长度的向量列表, 失败返 None.
+
+    v2.2.38: 检测 placeholder key 提前 skip, 不发请求 (避免每次 e2e 跑 100+ 条 warning 噪音).
+    判定: key 长度 < 30 OR key 包含 "empty"/"placeholder"/"test" 等占位符字符串.
     """
     # v2.2.21: MiniMax 走 OpenAI 兼容, base_url 从 settings 读
     api_key = getattr(settings, "MINIMAX_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
     if not api_key:
         logger.debug("embedding 跳过: 无 API key")
+        return None
+
+    # v2.2.38: placeholder key 检测 — 提前 skip, 不打 401 + 不污染 log
+    placeholder_markers = ("empty", "placeholder", "your-key", "<", "test-key", "-test")
+    if len(api_key) < 30 or any(m in api_key.lower() for m in placeholder_markers):
+        logger.debug("embedding 跳过: API key 是 placeholder (length=%d), 走 keyword fallback", len(api_key))
         return None
 
     base_url = getattr(settings, "MINIMAX_BASE_URL", "https://api.minimaxi.com/v1").rstrip("/")
