@@ -19,21 +19,29 @@ def clean_env(monkeypatch):
 
 
 def test_dispatch_broker_is_db0(monkeypatch, clean_env):
-    """dispatch 强制走 db=0 broker, 不受 env 影响"""
+    """v2.2.37: dispatch 跟 env 走 (release=db 0, beta=db 1)
+
+    之前 v2.2.24 写死 db=0, beta 模式混剪 0 match.
+    """
+    from backend.services.mix_dispatch import _resolve_mix_dispatch_broker
+    # 没 env → default release (db=0)
+    monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
+    assert _resolve_mix_dispatch_broker() == "redis://localhost:6379/0"
+    # export env → 跟 env 走
     monkeypatch.setenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
-    from backend.services.mix_dispatch import MIX_DISPATCH_BROKER_URL
-    assert MIX_DISPATCH_BROKER_URL == "redis://localhost:6379/0"
+    assert _resolve_mix_dispatch_broker() == "redis://localhost:6379/1"
 
 
 def test_dispatch_no_env_still_uses_db0(monkeypatch, clean_env):
     """没 env → 仍 db=0 (写死常量)"""
-    from backend.services.mix_dispatch import MIX_DISPATCH_BROKER_URL
-    assert MIX_DISPATCH_BROKER_URL == "redis://localhost:6379/0"
+    from backend.services.mix_dispatch import _resolve_mix_dispatch_broker
+    assert _resolve_mix_dispatch_broker() == "redis://localhost:6379/0"
 
 
 def test_dispatch_uses_explicit_connection(monkeypatch, clean_env):
-    """dispatch_mix_task 显式 create connection to db=0 + 传 celery_app.send_task"""
+    """v2.2.37: dispatch_mix_task 显式 create connection (跟 env 走) + 传 celery_app.send_task"""
     monkeypatch.setenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
+    monkeypatch.setenv("CELERY_QUEUE_NAME", "processing_mix_beta")
 
     with patch("backend.services.mix_dispatch.Connection") as mock_conn_cls:
         with patch("backend.services.mix_dispatch.celery_app") as mock_celery:
@@ -56,12 +64,12 @@ def test_dispatch_uses_explicit_connection(monkeypatch, clean_env):
             )
 
             assert celery_id == "task-123"
-            # Connection 用了 db=0 URL
-            mock_conn_cls.assert_called_once_with("redis://localhost:6379/0")
-            # send_task 用了 connection (强制 db=0)
+            # v2.2.37: Connection 跟 env 走 (beta 模式 db=1)
+            mock_conn_cls.assert_called_once_with("redis://localhost:6379/1")
+            # send_task 用了 connection (强制指定 broker)
             call_kwargs = mock_celery.send_task.call_args
             assert call_kwargs.kwargs["connection"] is mock_conn
-            assert call_kwargs.kwargs["queue"] == "processing_mix"
+            assert call_kwargs.kwargs["queue"] == "processing_mix_beta"
             assert call_kwargs.kwargs["task_id"] == "task-123"
             inner_kwargs = call_kwargs.kwargs["kwargs"]
             assert inner_kwargs["mix_project_id"] == "proj-123"

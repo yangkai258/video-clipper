@@ -157,19 +157,27 @@ restart_group() {
 }
 
 start_mix_worker() {
+    # v2.2.37: 启 release + beta 各 1 个 mix worker (跟 uvicorn 模式一致)
+    # 之前只启 release 1 个 (db=0/processing_mix), beta 模式混剪派发到 db=0 但 uvicorn 8030 在 beta 端,
+    # worker 查 release 切片 db 找不到 beta 资源库 ID → 0 match → fail.
+    # 修: dispatch 跟 env 走 (v2.2.37 mix_dispatch._resolve_*), worker 也按 uvicorn 模式启.
     cd "$WORKSPACE" || return 1
     unset DATABASE_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND CELERY_QUEUE_NAME
-    # v2.2.10: DATABASE_URL 一定要指 切片 db (跟 uvicorn 一致),
-    # 让 database_mix._resolve_mix_db_path() 派生 video_clipper_mix.db.
-    # 之前 (v2.2.8) 直接指 video_clipper_mix.db → 派生 video_clipper_mix_mix.db
-    # → worker 跟 uvicorn 不同 db → 查不到 mix project → RuntimeError.
-    # 同 celery redis db 跟 uvicorn 一致 (release=db 0, beta=db 1).
-    # 看 caller: start_mix_worker 跟 release worker 共用 db 0 (v2.2.3+ 设计)
+
+    # release mix worker (跟 release uvicorn :8000 一致, db=0/processing_mix, 查 release 切片 db)
     export DATABASE_URL="sqlite+aiosqlite:///./data/video_clipper.db"
     export CELERY_BROKER_URL="redis://localhost:6379/0"
     export CELERY_RESULT_BACKEND="redis://localhost:6379/0"
     export CELERY_QUEUE_NAME="processing_mix"
     nohup ./.venv/bin/celery -A backend.core.celery_app worker --pool=solo -Q processing_mix -n mix1 --max-tasks-per-child=10 >> "$LOG_FILE" 2>&1 < /dev/null &
+
+    # beta mix worker (跟 beta uvicorn :8030 一致, db=1/processing_mix_beta, 查 beta 切片 db)
+    unset DATABASE_URL CELERY_BROKER_URL CELERY_RESULT_BACKEND CELERY_QUEUE_NAME
+    export DATABASE_URL="sqlite+aiosqlite:///./data/video_clipper_beta.db"
+    export CELERY_BROKER_URL="redis://localhost:6379/1"
+    export CELERY_RESULT_BACKEND="redis://localhost:6379/1"
+    export CELERY_QUEUE_NAME="processing_mix_beta"
+    nohup ./.venv/bin/celery -A backend.core.celery_app worker --pool=solo -Q processing_mix_beta -n mix_beta1 --max-tasks-per-child=10 >> "$LOG_FILE" 2>&1 < /dev/null &
 }
 
 # v2.2.10: inline 启 release worker (跟 start_mix_worker 同款)
