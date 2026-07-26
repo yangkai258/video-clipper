@@ -69,5 +69,28 @@ else
     warn "无 frontend 改动, 跳过"
 fi
 
+# ========== 关 4: APP_VERSION 跟 git tag drift 检查 (v2.2.44) ==========
+# 防 Version drift: APP_VERSION 应等于或大于最近 tag (e.g. config 是 v2.2.45 + 最近 tag v2.2.44 OK,
+# config 是 v2.2.44 + 最近 tag v2.2.44 OK, 但 config 是 v2.2.43 + 最近 tag v2.2.44 → drift fail).
+# 防止 commit 后忘 push tag, 或 VERSION 跟 tag 不一致混乱.
+head "关 4/4: APP_VERSION 跟 git tag 一致"
+CURRENT_VERSION=$(.venv/bin/python -c "from backend.core.config import settings; print(settings.APP_VERSION)" 2>/dev/null || echo "")
+LATEST_TAG=$(git tag --sort=-v:refname | head -1)
+if [ -n "$CURRENT_VERSION" ] && [ -n "$LATEST_TAG" ]; then
+    # 比 semver: awk split 数字部分
+    CUR_NUM=$(echo "$CURRENT_VERSION" | sed 's/^v//' | awk -F. '{printf "%d%02d%02d", $1, $2, $3}')
+    TAG_NUM=$(echo "$LATEST_TAG" | sed 's/^v//' | awk -F. '{printf "%d%02d%02d", $1, $2, $3}')
+    if [ "$CUR_NUM" -lt "$TAG_NUM" ]; then
+        fail "APP_VERSION ($CURRENT_VERSION) 落后最近 tag ($LATEST_TAG) — bump VERSION 或 push tag"
+    elif [ "$CUR_NUM" -eq "$TAG_NUM" ]; then
+        # 同版本 OK (后续 bump 一下 或 push tag 提示)
+        pass "VERSION ($CURRENT_VERSION) 跟 tag ($LATEST_TAG) 一致"
+    else
+        pass "VERSION ($CURRENT_VERSION) > tag ($LATEST_TAG) — commit 后记得 push tag"
+    fi
+else
+    warn "skip: 无法读 VERSION 或 tag"
+fi
+
 echo ""
-pass "pre-commit 3 关全过, commit 放行"
+pass "pre-commit 4 关全过, commit 放行"
