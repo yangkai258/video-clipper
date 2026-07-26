@@ -94,16 +94,14 @@ async def create_mix_project(
 
     # 3) 派发到 processing_mix queue (跟切片 processing 独立)
     try:
-        from ..tasks.processing_mix import process_mix_pipeline
-        process_mix_pipeline.apply_async(
-            kwargs={
-                "mix_project_id": project_id,
-                "script_text": script_text,
-                "target_duration_seconds": target_duration,
-                "candidate_clip_ids": candidate_clip_ids,
-                "task_id": task_id,
-            },
-            queue="processing_mix",
+        # v2.2.24: 显式走 db=0 broker (跟 mix worker 一致, 跨 release/beta 模式)
+        from ..services.mix_dispatch import dispatch_mix_task
+        dispatch_mix_task(
+            mix_project_id=project_id,
+            script_text=script_text,
+            target_duration_seconds=target_duration,
+            candidate_clip_ids=candidate_clip_ids,
+            task_id=task_id,
         )
         logger.info(f"混剪项目已派发: {project_id}, task_id={task_id}")
     except Exception as e:
@@ -344,19 +342,17 @@ async def create_mix_batch(
     await db.commit()
 
     # 派 celery tasks (依次派, 不并发派避免 Redis pipeline 压力)
-    from ..tasks.processing_mix import process_mix_pipeline
+    # v2.2.24: 用 dispatch_mix_task 走 db=0 broker (跟 mix worker 一致)
+    from ..services.mix_dispatch import dispatch_mix_task
     dispatched = 0
     for p in new_projects:
         try:
-            process_mix_pipeline.apply_async(
-                kwargs={
-                    "mix_project_id": p["id"],
-                    "script_text": p["script"],
-                    "target_duration_seconds": p["duration"],
-                    "candidate_clip_ids": p["clips"],
-                    "task_id": p["task_id"],
-                },
-                queue="processing_mix",
+            dispatch_mix_task(
+                mix_project_id=p["id"],
+                script_text=p["script"],
+                target_duration_seconds=p["duration"],
+                candidate_clip_ids=p["clips"],
+                task_id=p["task_id"],
             )
             dispatched += 1
         except Exception as e:
