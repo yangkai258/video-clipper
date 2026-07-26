@@ -202,6 +202,69 @@ export default function MixWizardPage() {
     )
   }
 
+  // v2.2.54: multi-select UX — 全选当前 filter / 反选 / 清空
+  const [sortBy, setSortBy] = useState('match')  // 'match' / 'duration' / 'name'
+  const [minScore, setMinScore] = useState(0)    // 0-1, 默认 0 全显
+  const [matchScoreMap, setMatchScoreMap] = useState({})  // {clip_id: max_match_score}
+
+  // v2.2.54: previews 拿到后填 matchScoreMap (给 sort 用)
+  useEffect(() => {
+    if (!previews || previews.length === 0) return
+    const newMap = { ...matchScoreMap }
+    for (const p of previews) {
+      for (const tc of p.top_clips || []) {
+        const prev = newMap[tc.clip_id] || 0
+        if ((tc.match_score || 0) > prev) {
+          newMap[tc.clip_id] = tc.match_score
+        }
+      }
+    }
+    setMatchScoreMap(newMap)
+  }, [previews])
+
+  const candidatesWithScore = candidates.map(c => ({
+    ...c,
+    match_score: matchScoreMap[c.id] || c.match_score || 0,
+  }))
+
+  const visibleClips = candidatesWithScore
+    .filter(c => {
+      if (librarySource !== 'all' && c.source_type !== librarySource) return false
+      if (librarySource !== 'library' && libraryProject !== 'all' && c.source_project_name !== libraryProject) return false
+      if (minScore > 0 && (c.match_score || 0) < minScore) return false
+      return true
+    })
+
+  const visibleClipIds = visibleClips.map(c => c.id)
+
+  const selectAllVisible = () => {
+    // 合并: 已有 + 当前可见 (不删已选)
+    const merged = Array.from(new Set([...selectedClipIds, ...visibleClipIds]))
+    setSelectedClipIds(merged)
+  }
+
+  const invertVisible = () => {
+    // 反选当前可见: 已是 selected 的取消, 未选的全选
+    const newSet = new Set(selectedClipIds)
+    for (const id of visibleClipIds) {
+      if (newSet.has(id)) newSet.delete(id)
+      else newSet.add(id)
+    }
+    setSelectedClipIds(Array.from(newSet))
+  }
+
+  const clearAll = () => {
+    setSelectedClipIds([])
+  }
+
+  // 排序可见 clips
+  const sortedClips = [...visibleClips].sort((a, b) => {
+    if (sortBy === 'match') return (b.match_score || 0) - (a.match_score || 0)
+    if (sortBy === 'duration') return (b.duration || 0) - (a.duration || 0)
+    if (sortBy === 'name') return (a.title || '').localeCompare(b.title || '')
+    return 0
+  })
+
   // Step 3 → submit
   const submit = async () => {
     if (!scriptText.trim()) {
@@ -505,6 +568,44 @@ export default function MixWizardPage() {
             </div>
           )}
 
+          {/* v2.2.54: multi-select toolbar (全选 / 反选 / 清空 + 排序 + 最低分) */}
+          <div className="multi-select-toolbar">
+            <div className="multi-select-toolbar-left">
+              <button type="button" className="btn-mini" onClick={selectAllVisible} title="选中所有当前 filter 的素材 (不删已选)">
+                <Icon name="checkSquare" size={11} /> 全选 ({visibleClipIds.length})
+              </button>
+              <button type="button" className="btn-mini" onClick={invertVisible} title="反选当前 filter">
+                <Icon name="refresh" size={11} /> 反选
+              </button>
+              <button type="button" className="btn-mini btn-mini-danger" onClick={clearAll} disabled={selectedClipIds.length === 0} title="清空所有已选">
+                <Icon name="trash" size={11} /> 清空 ({selectedClipIds.length})
+              </button>
+            </div>
+            <div className="multi-select-toolbar-right">
+              <label className="sort-label">
+                排序
+                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="sort-select">
+                  <option value="match">匹配分</option>
+                  <option value="duration">时长</option>
+                  <option value="name">名称</option>
+                </select>
+              </label>
+              <label className="sort-label">
+                最低分
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={minScore}
+                  onChange={(e) => setMinScore(parseFloat(e.target.value))}
+                  className="sort-range"
+                />
+                <span className="sort-range-value">{(minScore * 100).toFixed(0)}%</span>
+              </label>
+            </div>
+          </div>
+
           {/* v2.2.5: 第一层 source 切换 — 切片项目 / 资源库 */}
           <div className="tabs">
             <button
@@ -558,18 +659,13 @@ export default function MixWizardPage() {
           )}
 
           <div className="library-grid">
-            {candidates
-              .filter(c => {
-                if (librarySource !== 'all' && c.source_type !== librarySource) return false
-                if (librarySource !== 'library' && libraryProject !== 'all' && c.source_project_name !== libraryProject) return false
-                return true
-              })
-              .map(c => {
+            {sortedClips.map(c => {
                 const selected = selectedClipIds.includes(c.id)
+                const matchPct = ((c.match_score || 0) * 100).toFixed(0)
                 return (
                   <div
                     key={c.id}
-                    className={`library-card ${selected ? 'selected' : ''}`}
+                    className={`library-card ${selected ? 'selected' : ''} ${c.match_score > 0.5 ? 'high-match' : ''}`}
                     onClick={() => toggleClip(c.id)}
                   >
                     {selected && <div className="library-card-check"><Icon name="check" size={14} /></div>}
@@ -589,6 +685,11 @@ export default function MixWizardPage() {
                     <div className="library-card-sub">
                       <span>{c.source_project_name}</span>
                       {c.duration && <span>· {formatTC(c.duration)}</span>}
+                      {c.match_score > 0 && (
+                        <span className={`library-match-score ${c.match_score > 0.5 ? 'high' : 'low'}`}>
+                          · 匹配 {matchPct}%
+                        </span>
+                      )}
                     </div>
                   </div>
                 )

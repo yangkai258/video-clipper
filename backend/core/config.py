@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Video Clipper"
     # v2.2.12: bump APP_VERSION 跟 git tag 同步 (之前 v1.0.0 卡 1 年)
     # admin/system endpoint 用这个返给前端 (/admin/system → version 字段)
-    APP_VERSION: str = "v2.2.53"
+    APP_VERSION: str = "v2.2.54"
     DEBUG: bool = True
 
     # 路径配置
