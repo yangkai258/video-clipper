@@ -31,7 +31,7 @@ def parse_script(script_text: str, target_duration: int = 60) -> list[dict]:
 任务: 把下面的直播脚本按"主题/位置/动作"切成多个片段 (segment), 每个 segment 应该:
 1. 描述一个独立的视觉场景 (例如"屋顶","外墙","阳台","材料展示","施工动作")
 2. 包含原始脚本中的对应文字 (一字不漏, 保持原顺序)
-3. 提供 2-4 个关键词 (用于从素材库找匹配的视频片段)
+3. 提供 2-4 个**视觉关键词** (用于从素材库找匹配的视频片段)
 
 脚本:
 \"\"\"
@@ -50,7 +50,9 @@ def parse_script(script_text: str, target_duration: int = 60) -> list[dict]:
 - 切片数 3-8 段
 - 总时长约 {target_duration} 秒
 - 每段 text 是脚本连续的一段 (按顺序不重叠)
-- keywords 是名词/动词, 用于匹配视频内容
+- **keywords 必须是"画面/视觉"相关的名词 (如: 屋顶/瓦片/雨/工人/建筑/材料/防水卷材/吊车/室内/室外)**
+  不要"主题/概念"词 (如: 防水/品质/保障/承诺/选择/正确/重要) — 视觉匹配系统靠这些关键词找对应画面
+- 2-4 字中文优先, 逗号分隔
 
 只输出 JSON 数组, 不要任何其他文字.
 """
@@ -168,7 +170,11 @@ def build_clip_library_from_slice_db(
     先查切片 Clip 表, 找不到再查 ResourceClip 表. 两种 source 都加 source_type 字段区分.
 
     返回 [{clip_id, source_project_id, source_project_name, title,
-           subtitle_text, video_path, duration, width, height, source_type}, ...]
+           subtitle_text, video_path, duration, width, height, source_type, tags}, ...]
+
+    v2.2.33: ResourceClip 加 tags 字段, 让 match_clips_for_segments 走视觉 tag overlap (主导 0.7)
+    而不是纯 embed similarity (0.3). ResourceClip.tags 来自 v2.2.19 LLM auto-tag,
+    中文 2-4 字关键词 (如 ["防水", "屋顶"]), 跟 seg.keywords 重叠度高 = 视觉匹配.
     """
     from ..core.database import sync_get_db
     from ..models.database import Clip, Project, ResourceClip
@@ -185,6 +191,14 @@ def build_clip_library_from_slice_db(
                     st = clip.clip_metadata.get("subtitle_text")
                     if st:
                         subtitle_text = st
+                # 切片 Clip 也抽 tags (从 clip_metadata 提取 LLM 评分 tag, fallback to project.processing_config)
+                clip_tags = []
+                if clip.clip_metadata and isinstance(clip.clip_metadata, dict):
+                    for t in (clip.clip_metadata.get("tags") or []):
+                        if isinstance(t, str):
+                            clip_tags.append(t)
+                        elif isinstance(t, dict) and "category" in t:
+                            clip_tags.append(t["category"])
                 library.append({
                     "clip_id": clip.id,
                     "source_project_id": clip.project_id,
@@ -196,6 +210,7 @@ def build_clip_library_from_slice_db(
                     "width": clip.width,
                     "height": clip.height,
                     "source_type": "project",
+                    "tags": clip_tags,  # v2.2.33: tag overlap match
                 })
                 continue
 
@@ -213,6 +228,7 @@ def build_clip_library_from_slice_db(
                     "width": rc.width,
                     "height": rc.height,
                     "source_type": "library",
+                    "tags": list(rc.tags or []) if isinstance(rc.tags, list) else [],  # v2.2.33: tag overlap match
                 })
                 continue
 
@@ -255,24 +271,40 @@ def match_clips_for_segments(
     results = []
     for seg, seg_dur in zip(segments, durations):
         keywords = seg.get("keywords", [])
+        # 关键词归一化 (小写 + 去空格), 跟 clip_tags 对比
+        keywords_norm = {k.strip().lower() for k in keywords if k and k.strip()}
 
         scored = []
         for clip in clip_library:
-            # v2.2.3 改进: 搜索文本 = title + subtitle_text (subtitle_text 经常是空/不命中)
-            # title 是 LLM 评分生成的, 含主题关键词 ("屋顶防水施工" 等), 命中率高
+            clip_tags = clip.get("tags") or []
+            # v2.2.33: tag overlap 主导 (0.7) — user 要"视觉匹配",
+            # 播音稿关键词 vs 资源库 tag 重叠越多越匹配
+            # 例: seg.keywords=["屋顶", "瓦片"] clip.tags=["屋顶", "防水"] → 1/2 = 0.5
+            clip_tags_norm = {t.strip().lower() for t in clip_tags if isinstance(t, str) and t.strip()}
+            tag_overlap = 0.0
+            if keywords_norm and clip_tags_norm:
+                hit = keywords_norm & clip_tags_norm
+                tag_overlap = len(hit) / len(keywords_norm)  # 0.0 - 1.0
+
+            # v2.2.33: embed 降到 0.3 (text-to-text 相似, 当作辅助)
+            # tag 主导是因为: user 明确"画面匹配"而不是"语义匹配"
+            embed_score = 0.0
             search_text = (clip.get("title", "") + " " + clip.get("subtitle_text", "")).strip()
-            if not search_text:
-                continue
-            # v2.2.21: 改用 hybrid_match_score (0.6 embedding + 0.4 keyword)
-            # embedding 不可用时自动 fallback 到 keyword
-            from .embedding_service import hybrid_match_score
-            score = hybrid_match_score(
-                seg_text=seg["text"],
-                seg_keywords=keywords,
-                clip_title=clip.get("title", ""),
-                clip_subtitle=clip.get("subtitle_text", ""),
-            )
-            if score == 0.0:
+            if search_text and keywords_norm:
+                # 走老 hybrid_match_score 但只取 embed 部分 (0.0-1.0)
+                from .embedding_service import hybrid_match_score
+                embed_score = hybrid_match_score(
+                    seg_text=seg["text"],
+                    seg_keywords=keywords,
+                    clip_title=clip.get("title", ""),
+                    clip_subtitle=clip.get("subtitle_text", ""),
+                )
+
+            # 最终 score: tag 主导 (0.7) + embed 辅助 (0.3)
+            score = 0.7 * tag_overlap + 0.3 * embed_score
+
+            # v2.2.33: 0 阈值改成 0.05 (tag_overlap=0 但 embed>0.1 仍进)
+            if score < 0.05:
                 continue
             scored.append((score, clip))
 
