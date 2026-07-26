@@ -1,17 +1,17 @@
 """切片 API 路由"""
+
 import logging
 from pathlib import Path
 from urllib.parse import quote
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.database import get_db, to_iso_utc
 from ..core.config import settings
+from ..core.database import get_db, to_iso_utc
 from ..models.database import Clip
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,10 @@ router = APIRouter()
 
 class ClipUpdate(BaseModel):
     """切片更新请求体"""
-    title: Optional[str] = None
-    description: Optional[str] = None
-    score: Optional[float] = None
+
+    title: str | None = None
+    description: str | None = None
+    score: float | None = None
 
 
 def _serialize_clip(clip: Clip) -> dict:
@@ -44,7 +45,7 @@ def _serialize_clip(clip: Clip) -> dict:
     }
 
 
-def _resolve_clip_video_path(clip: Clip) -> Optional[Path]:
+def _resolve_clip_video_path(clip: Clip) -> Path | None:
     """解析切片的视频文件绝对路径"""
     if not clip.video_path:
         return None
@@ -69,7 +70,7 @@ def _resolve_clip_video_path(clip: Clip) -> Optional[Path]:
 
 @router.get("/")
 async def list_clips(
-    project_id: Optional[str] = Query(None, description="按项目 ID 过滤"),
+    project_id: str | None = Query(None, description="按项目 ID 过滤"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -160,7 +161,5 @@ async def get_clip_video(clip_id: str, db: AsyncSession = Depends(get_db)):
     return FileResponse(
         str(video_path),
         media_type="video/mp4",
-        headers={
-            "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"
-        },
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"},
     )

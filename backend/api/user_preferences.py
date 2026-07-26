@@ -1,6 +1,6 @@
 """用户偏好设置 API"""
+
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -24,16 +24,17 @@ class SubtitleStyle(BaseModel):
 
 class SubtitleStylePatch(BaseModel):
     """PATCH 部分更新：所有字段可选"""
-    font_size: Optional[int] = None
-    txt_color: Optional[str] = None
-    stroke_color: Optional[str] = None
-    stroke_width: Optional[float] = None
-    font: Optional[str] = None
-    position: Optional[float] = None
+
+    font_size: int | None = None
+    txt_color: str | None = None
+    stroke_color: str | None = None
+    stroke_width: float | None = None
+    font: str | None = None
+    position: float | None = None
 
 
 class UserPreferencesResponse(BaseModel):
-    last_used_subtitle_style: Optional[dict] = None
+    last_used_subtitle_style: dict | None = None
 
 
 DEFAULT_SUBTITLE_STYLE = SubtitleStyle().model_dump()
@@ -61,7 +62,9 @@ async def get_user_preferences(db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/preferences/subtitle-style")
-async def update_subtitle_style(style: SubtitleStyle, db: AsyncSession = Depends(get_db)):
+async def update_subtitle_style(
+    style: SubtitleStyle, db: AsyncSession = Depends(get_db)
+):
     """全量替换字幕样式偏好"""
     result = await db.execute(
         select(UserPreference).where(UserPreference.user_id == "default")
@@ -83,7 +86,9 @@ async def update_subtitle_style(style: SubtitleStyle, db: AsyncSession = Depends
 
 
 @router.patch("/preferences/subtitle-style")
-async def patch_subtitle_style(patch: SubtitleStylePatch, db: AsyncSession = Depends(get_db)):
+async def patch_subtitle_style(
+    patch: SubtitleStylePatch, db: AsyncSession = Depends(get_db)
+):
     """部分更新字幕样式（只覆盖 patch 中非 None 的字段）
 
     修复：之前 PUT 是全量替换，传一个字段其他都被 Pydantic default 覆盖。
@@ -93,7 +98,9 @@ async def patch_subtitle_style(patch: SubtitleStylePatch, db: AsyncSession = Dep
         select(UserPreference).where(UserPreference.user_id == "default")
     )
     pref = result.scalar_one_or_none()
-    current = (pref.last_used_subtitle_style if pref else None) or DEFAULT_SUBTITLE_STYLE
+    current = (
+        pref.last_used_subtitle_style if pref else None
+    ) or DEFAULT_SUBTITLE_STYLE
     merged = _merge_patch(current, patch.model_dump(exclude_unset=True))
 
     if pref:

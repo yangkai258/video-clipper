@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """字幕烧录服务 (moviepy 实现，不依赖 FFmpeg libass)
 
 职责：把 SRT 字幕渲染到视频上。生成字幕见 subtitle_service.py。
@@ -8,7 +7,6 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +51,12 @@ def burn_subtitles_with_moviepy(
 
     对外签名与重构前一致，调用方 (cut_clips) 不需要改动。
     """
-    from moviepy import VideoFileClip, TextClip, CompositeVideoClip
+    from moviepy import CompositeVideoClip, VideoFileClip
 
     config = {**DEFAULT_SUBTITLE_CONFIG, **(subtitle_config or {})}
-    logger.info(f"使用 moviepy 烧录字幕：{start}s - {start + duration}s, 配置：{config}")
+    logger.info(
+        f"使用 moviepy 烧录字幕：{start}s - {start + duration}s, 配置：{config}"
+    )
 
     # 加载视频片段
     video = VideoFileClip(str(input_video)).subclipped(start, start + duration)
@@ -70,7 +70,10 @@ def burn_subtitles_with_moviepy(
 
     # 创建字幕片段
     subclips = [
-        make_textclip(text, config).with_start(s).with_end(e).with_position(("center", config["position"]), relative=True)
+        make_textclip(text, config)
+        .with_start(s)
+        .with_end(e)
+        .with_position(("center", config["position"]), relative=True)
         for s, e, text in subtitles
         if text.strip()
     ]
@@ -84,7 +87,9 @@ def burn_subtitles_with_moviepy(
 # ───────────────────────── 内部辅助函数 ─────────────────────────
 
 
-def parse_srt(srt_path: Path, start_offset: float, duration: float) -> List[Tuple[float, float, str]]:
+def parse_srt(
+    srt_path: Path, start_offset: float, duration: float
+) -> list[tuple[float, float, str]]:
     """解析 SRT 文件，返回 (start, end, text) 列表，时间已按 start_offset 偏移并 clip 到 duration。"""
     with open(srt_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -93,7 +98,7 @@ def parse_srt(srt_path: Path, start_offset: float, duration: float) -> List[Tupl
     pattern = r"(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.+?)(?=\n\n|\n*$)"
     matches = re.findall(pattern, content, re.DOTALL)
 
-    subtitles: List[Tuple[float, float, str]] = []
+    subtitles: list[tuple[float, float, str]] = []
     for _, start_time, end_time, text in matches:
         start_sec = _time_to_seconds(start_time) - start_offset
         end_sec = _time_to_seconds(end_time) - start_offset
@@ -133,7 +138,7 @@ def _time_to_seconds(time_str: str) -> float:
     return float(h) * 3600 + float(m) * 60 + float(s)
 
 
-def _split_subtitle(s: float, e: float, text: str) -> List[Tuple[float, float, str]]:
+def _split_subtitle(s: float, e: float, text: str) -> list[tuple[float, float, str]]:
     """把长字幕按标点拆短句，单句过长自动换行，时间窗口均分。"""
     # 1) 去尾部标点
     text = text.strip().rstrip("。！？!?,，;；.!?")
@@ -154,10 +159,10 @@ def _split_subtitle(s: float, e: float, text: str) -> List[Tuple[float, float, s
     ]
 
 
-def _split_by_punctuation(text: str) -> List[str]:
+def _split_by_punctuation(text: str) -> list[str]:
     """按中英文标点切分并保留标点到前一句。"""
     parts = re.split(r"([。！？!?\.？!]+|[，,；;]+)", text)
-    sentences: List[str] = []
+    sentences: list[str] = []
     buf = ""
     for p in parts:
         if not p:
@@ -194,7 +199,7 @@ def _wrap_line(text: str, max_line: int, max_lines: int) -> str:
 def _nearest_punctuation(text: str, mid: int) -> int | None:
     """从 mid 向两侧找最近的标点位置。返回 None 表示没找到。"""
     PUNCT = "，,。. "
-    for off in range(0, mid + 1):
+    for off in range(mid + 1):
         if mid - off >= 0 and text[mid - off] in PUNCT:
             return mid - off
         if mid + off < len(text) and text[mid + off] in PUNCT:
@@ -213,11 +218,22 @@ def _resolve_font(requested: str) -> str:
     return requested  # 让 moviepy 自己处理（可能崩，但保留原行为）
 
 
-def _write_video_no_subs(video, output_path: Path, _codec: str = "h264_videotoolbox") -> None:
+def _write_video_no_subs(
+    video, output_path: Path, _codec: str = "h264_videotoolbox"
+) -> None:
     """写视频到文件，统一 +faststart 优化。"""
     video.write_videofile(
         str(output_path),
         codec=_codec,
         audio_codec="aac",
-        ffmpeg_params=["-movflags", "+faststart", "-g", "60", "-keyint_min", "60", "-b:v", "8M"],
+        ffmpeg_params=[
+            "-movflags",
+            "+faststart",
+            "-g",
+            "60",
+            "-keyint_min",
+            "60",
+            "-b:v",
+            "8M",
+        ],
     )

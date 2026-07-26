@@ -1,9 +1,9 @@
-﻿"""LLM 服务 - 大纲提取、时间线创建等"""
+"""LLM 服务 - 大纲提取、时间线创建等"""
+
 import json
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ def _normalize_min_score(value) -> float:
     return max(0.0, min(1.0, v))
 
 
-def _call_llm(prompt: str, model: Optional[str] = None) -> Optional[str]:
+def _call_llm(prompt: str, model: str | None = None) -> str | None:
     """调用 MiniMax LLM（OpenAI 兼容接口），返回生成的文本内容
 
     Args:
@@ -39,8 +39,9 @@ def _call_llm(prompt: str, model: Optional[str] = None) -> Optional[str]:
     Returns:
         LLM 返回的文本内容；失败返回 None
     """
-    from ..core.config import settings
     import httpx
+
+    from ..core.config import settings
 
     api_key = settings.MINIMAX_API_KEY
     if not api_key:
@@ -69,7 +70,9 @@ def _call_llm(prompt: str, model: Optional[str] = None) -> Optional[str]:
         with httpx.Client(timeout=120.0) as client:
             resp = client.post(url, json=payload, headers=headers)
             if resp.status_code != 200:
-                logger.error(f"MiniMax API 调用失败：{resp.status_code} {resp.text[:200]}")
+                logger.error(
+                    f"MiniMax API 调用失败：{resp.status_code} {resp.text[:200]}"
+                )
                 return None
             data = resp.json()
             return data["choices"][0]["message"]["content"]
@@ -78,7 +81,12 @@ def _call_llm(prompt: str, model: Optional[str] = None) -> Optional[str]:
         return None
 
 
-def extract_outline(srt_path: Path, metadata_dir: Path, strategy_config: dict = None, srt_text: str = None) -> List[Dict]:
+def extract_outline(
+    srt_path: Path,
+    metadata_dir: Path,
+    strategy_config: dict = None,
+    srt_text: str = None,
+) -> list[dict]:
     """从字幕提取大纲
 
     Args:
@@ -115,14 +123,16 @@ def extract_outline(srt_path: Path, metadata_dir: Path, strategy_config: dict = 
     # 构建风格引导 prompt 片段
     style_block = _build_style_prompt_block(strategy_config)
     if style_block:
-        logger.info(f"使用风格化 prompt：style_positioning='{strategy_config.get('style_positioning', '')[:30]}'")
+        logger.info(
+            f"使用风格化 prompt：style_positioning='{strategy_config.get('style_positioning', '')[:30]}'"
+        )
     else:
         logger.info("使用默认 prompt（未配置风格）")
 
     all_outlines = []
 
     for i, chunk in enumerate(chunks):
-        logger.info(f"处理第 {i+1}/{len(chunks)} 块")
+        logger.info(f"处理第 {i + 1}/{len(chunks)} 块")
 
         prompt = f"""你是一位专业的视频内容分析师。请从以下视频字幕文本中提取主要话题大纲。
 {style_block}
@@ -148,18 +158,18 @@ def extract_outline(srt_path: Path, metadata_dir: Path, strategy_config: dict = 
             if content:
                 outlines = _parse_outline_response(content)
                 all_outlines.extend(outlines)
-                logger.info(f"第 {i+1} 块提取到 {len(outlines)} 个话题")
+                logger.info(f"第 {i + 1} 块提取到 {len(outlines)} 个话题")
             else:
-                logger.warning(f"第 {i+1} 块 LLM 调用失败")
+                logger.warning(f"第 {i + 1} 块 LLM 调用失败")
 
         except Exception as e:
-            logger.error(f"处理第 {i+1} 块失败：{e}")
-    
+            logger.error(f"处理第 {i + 1} 块失败：{e}")
+
     # 保存大纲
     outline_path = metadata_dir / "step1_outline.json"
     with open(outline_path, "w", encoding="utf-8") as f:
         json.dump(all_outlines, f, ensure_ascii=False, indent=2)
-    
+
     logger.info(f"大纲提取完成，共 {len(all_outlines)} 个话题")
     return all_outlines
 
@@ -180,12 +190,16 @@ def _build_style_prompt_block(strategy_config: dict) -> str:
 
     style_positioning = strategy_config.get("style_positioning", "").strip()
     if style_positioning:
-        blocks.append(f"【风格定位】{style_positioning}\n（内容应匹配此调性——这是账号/人设的差异化标签）")
+        blocks.append(
+            f"【风格定位】{style_positioning}\n（内容应匹配此调性——这是账号/人设的差异化标签）"
+        )
 
     content_types = strategy_config.get("content_types") or []
     if content_types:
         types_str = "、".join(content_types)
-        blocks.append(f"【内容分类】{types_str}\n（只挑选这些分类下的内容，其他分类的话题不列入大纲）")
+        blocks.append(
+            f"【内容分类】{types_str}\n（只挑选这些分类下的内容，其他分类的话题不列入大纲）"
+        )
 
     content_guidelines = strategy_config.get("content_guidelines", "").strip()
     if content_guidelines:
@@ -193,7 +207,9 @@ def _build_style_prompt_block(strategy_config: dict) -> str:
 
     keep_rules = strategy_config.get("keep_rules", "").strip()
     if keep_rules:
-        blocks.append(f"【保留规则】{keep_rules}\n（符合这些特征的话题优先保留，权重最高）")
+        blocks.append(
+            f"【保留规则】{keep_rules}\n（符合这些特征的话题优先保留，权重最高）"
+        )
 
     remove_rules = strategy_config.get("remove_rules", "").strip()
     if remove_rules:
@@ -206,7 +222,7 @@ def _build_style_prompt_block(strategy_config: dict) -> str:
     return "\n" + "\n\n".join(blocks) + "\n"
 
 
-def _parse_rules_to_keywords(rules_text: str) -> List[str]:
+def _parse_rules_to_keywords(rules_text: str) -> list[str]:
     """把 keep_rules / remove_rules 文本解析成关键词列表
 
     支持分隔符：、, ， ; ； 换行
@@ -216,8 +232,9 @@ def _parse_rules_to_keywords(rules_text: str) -> List[str]:
         return []
 
     import re
+
     # 用多种分隔符拆分
-    parts = re.split(r'[、,，;；\n]+', rules_text)
+    parts = re.split(r"[、,，;；\n]+", rules_text)
     keywords = [p.strip() for p in parts if p.strip() and len(p.strip()) >= 2]
     return keywords
 
@@ -226,19 +243,19 @@ def _extract_text_from_srt(srt_content: str) -> str:
     """从 SRT 提取纯文本"""
     lines = srt_content.strip().split("\n")
     texts = []
-    
+
     for line in lines:
         if "-->" not in line and not line.isdigit() and line.strip():
             texts.append(line.strip())
-    
+
     return " ".join(texts)
 
 
-def _chunk_text(text: str, max_chars: int = 5000) -> List[str]:
+def _chunk_text(text: str, max_chars: int = 5000) -> list[str]:
     """分块文本"""
     chunks = []
     current_chunk = ""
-    
+
     for word in text.split():
         if len(current_chunk) + len(word) + 1 > max_chars:
             if current_chunk:
@@ -246,18 +263,18 @@ def _chunk_text(text: str, max_chars: int = 5000) -> List[str]:
             current_chunk = word + " "
         else:
             current_chunk += word + " "
-    
+
     if current_chunk.strip():
         chunks.append(current_chunk.strip())
-    
+
     return chunks
 
 
-def _parse_outline_response(response: str) -> List[Dict]:
+def _parse_outline_response(response: str) -> list[dict]:
     """解析 LLM 响应"""
     try:
         # 尝试直接解析 JSON
-        match = re.search(r'\[.*\]', response, re.DOTALL)
+        match = re.search(r"\[.*\]", response, re.DOTALL)
         if match:
             json_str = match.group()
             return json.loads(json_str)
@@ -271,17 +288,17 @@ def _parse_outline_response(response: str) -> List[Dict]:
 
     for line in lines:
         line = line.strip()
-        if re.match(r'^\d+\.\s*\*\*', line):
+        if re.match(r"^\d+\.\s*\*\*", line):
             if current_outline:
                 outlines.append(current_outline)
             # 安全提取 topic name（避免 IndexError）
-            if '**' in line:
-                parts = line.split('**')
+            if "**" in line:
+                parts = line.split("**")
                 topic_name = parts[1] if len(parts) > 1 else ""
             else:
-                topic_name = line.split('.', 1)[1].strip() if '.' in line else line
+                topic_name = line.split(".", 1)[1].strip() if "." in line else line
             current_outline = {"title": topic_name, "subtopics": []}
-        elif line.startswith('-') and current_outline:
+        elif line.startswith("-") and current_outline:
             subtopic = line[1:].strip()
             if subtopic:
                 current_outline["subtopics"].append(subtopic)
@@ -292,7 +309,12 @@ def _parse_outline_response(response: str) -> List[Dict]:
     return outlines
 
 
-def create_timeline(outlines: List[Dict], srt_path: Path, metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:
+def create_timeline(
+    outlines: list[dict],
+    srt_path: Path,
+    metadata_dir: Path,
+    strategy_config: dict = None,
+) -> list[dict]:
     """创建时间线 - 让 LLM 把话题大纲映射到字幕中的具体时间段
 
     Args:
@@ -320,12 +342,14 @@ def create_timeline(outlines: List[Dict], srt_path: Path, metadata_dir: Path, st
     logger.info("时间线创建（简化版）- 每话题 5 分钟等分")
     timeline = []
     for i, outline in enumerate(outlines[:10]):
-        timeline.append({
-            "title": outline["title"],
-            "start_time": float(i * 300),
-            "end_time": float((i + 1) * 300),
-            "subtopics": outline.get("subtopics", [])
-        })
+        timeline.append(
+            {
+                "title": outline["title"],
+                "start_time": float(i * 300),
+                "end_time": float((i + 1) * 300),
+                "subtopics": outline.get("subtopics", []),
+            }
+        )
 
     timeline_path = metadata_dir / "step2_timeline.json"
     with open(timeline_path, "w", encoding="utf-8") as f:
@@ -334,7 +358,9 @@ def create_timeline(outlines: List[Dict], srt_path: Path, metadata_dir: Path, st
     return timeline
 
 
-def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_config: dict) -> List[Dict]:
+def _create_timeline_with_llm(
+    outlines: list[dict], srt_path: Path, strategy_config: dict
+) -> list[dict]:
     """用 LLM 把话题映射到字幕中的具体时间戳"""
     # 解析 SRT → 时间戳列表（减少传给 LLM 的 token）
     parsed_segments = parse_srt_for_timeline(srt_path)
@@ -351,15 +377,16 @@ def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_con
     # v2.1.49: 25000 → 50000 让 LLM 看更多字幕 (1GB 阿甘 srt 104181 字符, 之前截到 25k LLM 跳过大半)
     MAX_CHARS = 50000
     if len(srt_compact) > MAX_CHARS:
-        logger.warning(f"SRT 紧凑格式 {len(srt_compact)} 字符超过 {MAX_CHARS}，按比例截取")
+        logger.warning(
+            f"SRT 紧凑格式 {len(srt_compact)} 字符超过 {MAX_CHARS}，按比例截取"
+        )
         # 等比例采样：每 N 条取一条
         # ponytail: 原公式多乘了 len(parsed_segments) -> 1.5GB SRT (~5000 段 / 150k 字符) 算出 step=7651, 几乎全跳过. 正确 stride = 整串字符 / 目标字符.
         # 已知上限: 采样会丢时间轴连续性, 超大 SRT (>>1GB) 仍可能 LLM 截断 -> 真彻底解是 P2#8 改分块
         step = len(srt_compact) // MAX_CHARS + 1
         sampled = parsed_segments[::step]
         srt_compact = "\n".join(
-            f"[{seg['start']:.1f}-{seg['end']:.1f}] {seg['text']}"
-            for seg in sampled
+            f"[{seg['start']:.1f}-{seg['end']:.1f}] {seg['text']}" for seg in sampled
         )
         logger.info(f"采样后 SRT：{len(sampled)} 段，{len(srt_compact)} 字符")
 
@@ -418,21 +445,22 @@ def _create_timeline_with_llm(outlines: List[Dict], srt_path: Path, strategy_con
     return valid
 
 
-def parse_srt_for_timeline(srt_path: Path) -> List[Dict]:
+def parse_srt_for_timeline(srt_path: Path) -> list[dict]:
     """解析 SRT 为 [{start, end, text}, ...]，供 timeline 映射用"""
     # 复用 local_processor.parse_srt 但不依赖其 logger 配置
     try:
         from .local_processor import parse_srt
+
         return parse_srt(srt_path)
     except Exception as e:
         logger.warning(f"解析 SRT 失败：{e}")
         return []
 
 
-def _parse_timeline_response(response: str) -> List[Dict]:
+def _parse_timeline_response(response: str) -> list[dict]:
     """解析 LLM 返回的时间线 JSON"""
     try:
-        match = re.search(r'\[.*\]', response, re.DOTALL)
+        match = re.search(r"\[.*\]", response, re.DOTALL)
         if match:
             return json.loads(match.group())
     except Exception as e:
@@ -440,7 +468,9 @@ def _parse_timeline_response(response: str) -> List[Dict]:
     return []
 
 
-def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:
+def score_clips(
+    timeline: list[dict], metadata_dir: Path, strategy_config: dict = None
+) -> list[dict]:
     """切片评分
 
     Args:
@@ -450,7 +480,9 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
     """
     strategy_config = strategy_config or {}
     # 与 local_processor._score_clip_local 的默认 0.6 保持一致
-    min_score = _normalize_min_score(strategy_config.get("rules", {}).get("min_score", 0.6))
+    min_score = _normalize_min_score(
+        strategy_config.get("rules", {}).get("min_score", 0.6)
+    )
 
     # 解析 keep_rules / remove_rules 关键词
     keep_keywords = _parse_rules_to_keywords(strategy_config.get("keep_rules", ""))
@@ -459,7 +491,9 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
     # 内容分类命中加分（同时匹配分类词 = 这个分类下的话题）
     content_types = strategy_config.get("content_types") or []
 
-    logger.info(f"切片评分 - 阈值:{min_score}, 保留关键词:{len(keep_keywords)}, 删除关键词:{len(remove_keywords)}, 优先关键词:{len(priority_keywords)}, 内容分类:{content_types}")
+    logger.info(
+        f"切片评分 - 阈值:{min_score}, 保留关键词:{len(keep_keywords)}, 删除关键词:{len(remove_keywords)}, 优先关键词:{len(priority_keywords)}, 内容分类:{content_types}"
+    )
 
     scored = []
     dropped_by_remove = 0
@@ -486,7 +520,9 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
         # 2.5) 内容分类命中：加分 (v2.1.24 fix: 从过滤改为加分)
         if content_types and any(ct in title for ct in content_types):
             base_score = min(base_score + 0.1, 1.0)
-            reasons.append(f"内容分类命中:{[ct for ct in content_types if ct in title]}")
+            reasons.append(
+                f"内容分类命中:{[ct for ct in content_types if ct in title]}"
+            )
 
         # 3) 保留关键词命中：加分
         if keep_keywords:
@@ -496,31 +532,44 @@ def score_clips(timeline: List[Dict], metadata_dir: Path, strategy_config: dict 
                 reasons.append(f"保留规则命中:{','.join(matched[:3])}")
 
         # 4) 优先关键词命中：加分
-        if priority_keywords and any(kw.lower() in title_lower for kw in priority_keywords):
+        if priority_keywords and any(
+            kw.lower() in title_lower for kw in priority_keywords
+        ):
             base_score = min(base_score + 0.15, 1.0)
             reasons.append("优先关键词命中")
 
         # 5) 只保留高于阈值的切片
         if base_score >= min_score:
             reason_str = " + ".join(reasons) if reasons else "基础分通过"
-            scored.append({
-                **item,
-                "score": base_score,
-                "score_reason": f"{reason_str} (阈值:{min_score})"
-            })
+            scored.append(
+                {
+                    **item,
+                    "score": base_score,
+                    "score_reason": f"{reason_str} (阈值:{min_score})",
+                }
+            )
         else:
             # v2.1.24 debug: 记录被淘汰的 title + score + 阈值
-            logger.info(f"淘汰 title='{title}' score={base_score:.2f} 阈值={min_score:.2f} reasons={reasons}")
+            logger.info(
+                f"淘汰 title='{title}' score={base_score:.2f} 阈值={min_score:.2f} reasons={reasons}"
+            )
 
     scored_path = metadata_dir / "step3_scored.json"
     with open(scored_path, "w", encoding="utf-8") as f:
         json.dump(scored, f, ensure_ascii=False, indent=2)
 
-    logger.info(f"评分完成：{len(scored)} 个通过 / {dropped_by_remove} 个被删除规则过滤 / {dropped_by_type} 个被内容分类过滤")
+    logger.info(
+        f"评分完成：{len(scored)} 个通过 / {dropped_by_remove} 个被删除规则过滤 / {dropped_by_type} 个被内容分类过滤"
+    )
     return scored
 
 
-def generate_titles(scored_clips: List[Dict], metadata_dir: Path, srt_path: Path = None, strategy_config: dict = None) -> List[Dict]:
+def generate_titles(
+    scored_clips: list[dict],
+    metadata_dir: Path,
+    srt_path: Path = None,
+    strategy_config: dict = None,
+) -> list[dict]:
     """生成标题 - 优先用 LLM 生成吸引人的标题，失败回退简化版
 
     Args:
@@ -535,7 +584,9 @@ def generate_titles(scored_clips: List[Dict], metadata_dir: Path, srt_path: Path
     # 优先尝试 LLM 生成（需要 srt_path 提供文本上下文）
     if srt_path and Path(srt_path).exists():
         try:
-            titled = _generate_titles_with_llm(scored_clips, srt_path, strategy_config or {})
+            titled = _generate_titles_with_llm(
+                scored_clips, srt_path, strategy_config or {}
+            )
             if titled:
                 titled_path = metadata_dir / "step4_titled.json"
                 with open(titled_path, "w", encoding="utf-8") as f:
@@ -549,10 +600,7 @@ def generate_titles(scored_clips: List[Dict], metadata_dir: Path, srt_path: Path
     logger.info("标题生成（简化版）")
     titled = []
     for i, clip in enumerate(scored_clips):
-        titled.append({
-            **clip,
-            "title": f"切片{i+1}: {clip.get('title', '')}"
-        })
+        titled.append({**clip, "title": f"切片{i + 1}: {clip.get('title', '')}"})
 
     titled_path = metadata_dir / "step4_titled.json"
     with open(titled_path, "w", encoding="utf-8") as f:
@@ -561,7 +609,9 @@ def generate_titles(scored_clips: List[Dict], metadata_dir: Path, srt_path: Path
     return titled
 
 
-def _generate_titles_with_llm(scored_clips: List[Dict], srt_path: Path, strategy_config: dict) -> List[Dict]:
+def _generate_titles_with_llm(
+    scored_clips: list[dict], srt_path: Path, strategy_config: dict
+) -> list[dict]:
     """用 LLM 为每个切片生成吸引人的标题"""
     # 解析 SRT
     segments = parse_srt_for_timeline(srt_path)
@@ -576,19 +626,20 @@ def _generate_titles_with_llm(scored_clips: List[Dict], srt_path: Path, strategy
 
         # 找到时间范围内所有字幕段
         overlap_texts = [
-            seg["text"] for seg in segments
-            if seg["end"] > start and seg["start"] < end
+            seg["text"] for seg in segments if seg["end"] > start and seg["start"] < end
         ]
         overlap_text = " ".join(overlap_texts)[:500]  # 限制每个 500 字
 
-        clip_inputs.append({
-            "index": i + 1,
-            "start": start,
-            "end": end,
-            "duration": end - start,
-            "current_title": clip.get("title", ""),
-            "text_preview": overlap_text or "(无字幕)",
-        })
+        clip_inputs.append(
+            {
+                "index": i + 1,
+                "start": start,
+                "end": end,
+                "duration": end - start,
+                "current_title": clip.get("title", ""),
+                "text_preview": overlap_text or "(无字幕)",
+            }
+        )
 
     style_block = _build_style_prompt_block(strategy_config)
 
@@ -623,29 +674,32 @@ def _generate_titles_with_llm(scored_clips: List[Dict], srt_path: Path, strategy
     for i, clip in enumerate(scored_clips):
         idx = i + 1
         new_title = titles_map.get(idx, f"切片{idx}: {clip.get('title', '')}")
-        titled.append({
-            **clip,
-            "title": new_title
-        })
+        titled.append({**clip, "title": new_title})
 
     return titled
 
 
-def _parse_titles_response(response: str) -> Dict[int, str]:
+def _parse_titles_response(response: str) -> dict[int, str]:
     """解析 LLM 返回的标题 JSON 为 {index: title}"""
     try:
-        match = re.search(r'\[.*\]', response, re.DOTALL)
+        match = re.search(r"\[.*\]", response, re.DOTALL)
         if match:
             items = json.loads(match.group())
-            return {int(item["index"]): item["title"] for item in items if "index" in item and "title" in item}
+            return {
+                int(item["index"]): item["title"]
+                for item in items
+                if "index" in item and "title" in item
+            }
     except Exception as e:
         logger.debug(f"解析 titles JSON 失败：{e}")
     return {}
 
 
-def cluster_collections(titled_clips: List[Dict], metadata_dir: Path, strategy_config: dict = None) -> List[Dict]:
+def cluster_collections(
+    titled_clips: list[dict], metadata_dir: Path, strategy_config: dict = None
+) -> list[dict]:
     """主题聚类
-    
+
     Args:
         titled_clips: 带标题的切片数据
         metadata_dir: 元数据目录
@@ -653,31 +707,35 @@ def cluster_collections(titled_clips: List[Dict], metadata_dir: Path, strategy_c
     """
     strategy_config = strategy_config or {}
     max_clips = strategy_config.get("max_clips", 20)
-    
+
     logger.info(f"主题聚类（简化版）- 最大切片数：{max_clips}")
-    
+
     # 根据策略的最大切片数限制
     limited_clips = titled_clips[:max_clips]
     if len(limited_clips) < len(titled_clips):
         logger.info(f"根据策略限制切片数：{len(titled_clips)} → {len(limited_clips)}")
-    
+
     # 计算每组合集的大小（根据目标时长估算）
     target_duration = strategy_config.get("target_duration", 60)
     clips_per_collection = max(3, min(8, target_duration // 15))  # 假设每个切片约 15 秒
-    
+
     collections = []
     for i in range(0, len(limited_clips), clips_per_collection):
-        group = limited_clips[i:i+clips_per_collection]
+        group = limited_clips[i : i + clips_per_collection]
         if group:
-            collections.append({
-                "title": f"合集{len(collections)+1}",
-                "clip_ids": [c.get("title", f"clip_{j}") for j, c in enumerate(group)],
-                "clips": group
-            })
-    
+            collections.append(
+                {
+                    "title": f"合集{len(collections) + 1}",
+                    "clip_ids": [
+                        c.get("title", f"clip_{j}") for j, c in enumerate(group)
+                    ],
+                    "clips": group,
+                }
+            )
+
     collections_path = metadata_dir / "step5_collections.json"
     with open(collections_path, "w", encoding="utf-8") as f:
         json.dump(collections, f, ensure_ascii=False, indent=2)
-    
+
     logger.info(f"聚类完成：{len(collections)} 个合集")
     return collections

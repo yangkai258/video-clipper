@@ -3,6 +3,7 @@
 MixBase.metadata.create_all 不会 ALTER 已有表, 必须手动 ALTER.
 跟之前 add_subtitle_status_to_tasks.py 一样的 idempotent 模式.
 """
+
 import sqlite3
 from pathlib import Path
 
@@ -27,7 +28,7 @@ def migrate_one(db_path: Path) -> None:
 def main():
     base = Path("data")
     targets = [
-        base / "video_clipper_mix.db",       # release
+        base / "video_clipper_mix.db",  # release
         base / "video_clipper_mix_beta.db",  # beta
     ]
     for db_path in targets:

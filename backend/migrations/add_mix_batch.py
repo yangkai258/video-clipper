@@ -2,6 +2,7 @@
 
 复用 add_mix_thumbnail_path.py 风格: 已有列/表 skip, 没有则加.
 """
+
 import sqlite3
 from pathlib import Path
 
@@ -20,7 +21,9 @@ def migrate_one(db_path: Path) -> None:
             print(f"[skip] {db_path.name}.mix_projects 已含 batch_id 列")
         else:
             cur.execute("ALTER TABLE mix_projects ADD COLUMN batch_id VARCHAR(36)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_mix_projects_batch_id ON mix_projects(batch_id)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mix_projects_batch_id ON mix_projects(batch_id)"
+            )
             conn.commit()
             print(f"[ok] {db_path.name}.mix_projects 加 batch_id 列 + idx")
 

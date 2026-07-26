@@ -11,11 +11,19 @@
 db 文件:
   - data/video_clipper_mix.db (release) / video_clipper_mix_beta.db (beta)
 """
+
 import uuid as _uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Text, Integer, Float, ForeignKey, DateTime, JSON,
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -29,6 +37,7 @@ def _uuid_str() -> str:
 
 class MixProject(MixBase):
     """混剪项目"""
+
     __tablename__ = "mix_projects"
 
     id = Column(String(36), primary_key=True, default=_uuid_str)
@@ -69,12 +78,14 @@ class MixProject(MixBase):
 
     # 关系
     source_clips = relationship(
-        "MixSourceClip", back_populates="mix_project",
+        "MixSourceClip",
+        back_populates="mix_project",
         cascade="all, delete-orphan",
         order_by="MixSourceClip.position",
     )
     tasks = relationship(
-        "MixTask", back_populates="mix_project",
+        "MixTask",
+        back_populates="mix_project",
         cascade="all, delete-orphan",
     )
 
@@ -92,6 +103,7 @@ class MixSourceClip(MixBase):
     - match_score: LLM/关键词 匹配分 0-1
     - source_start/source_end/duration: 从 source clip 上截取的起止 + 时长
     """
+
     __tablename__ = "mix_source_clips"
 
     id = Column(String(36), primary_key=True, default=_uuid_str)
@@ -130,6 +142,7 @@ class MixTask(MixBase):
     progress 0-100
     current_step 显示给用户的中文标签
     """
+
     __tablename__ = "mix_tasks"
 
     id = Column(String(36), primary_key=True, default=_uuid_str)
@@ -141,7 +154,9 @@ class MixTask(MixBase):
     description = Column(Text, default="")
 
     # 状态 + 进度
-    status = Column(String(50), default="pending")  # pending / running / completed / failed
+    status = Column(
+        String(50), default="pending"
+    )  # pending / running / completed / failed
     progress = Column(Integer, default=0)
     current_step = Column(String(255), default="")
 
@@ -178,6 +193,7 @@ class MixBatch(MixBase):
       - 单 worker solo pool, N 个 task 串行 (worker_prefetch_multiplier=1)
       - 失败 task 不影响其他, batch 整体 progress 独立计算
     """
+
     __tablename__ = "mix_batches"
 
     id = Column(String(36), primary_key=True, default=_uuid_str)

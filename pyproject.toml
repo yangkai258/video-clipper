@@ -1,0 +1,65 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [
+    ".venv",
+    "frontend",
+    "data",
+    "scripts/migrate*",
+    "node_modules",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+# v2.2.45: lint baseline 收编.
+# 启 E + F (pycodestyle + pyflakes) + W (pycodestyle warnings) + I (isort) + B (bugbear) + UP (pyupgrade).
+# 不启: C901 (complexity, 太严), COM (commas, 自动 fix), PT (pytest style), Q (quote)
+select = ["E", "F", "W", "I", "B", "UP", "DTZ", "S", "PIE", "RET", "SIM", "PL", "RUF"]
+ignore = [
+    # B008: FastAPI Depends() in 默认参数是 idiomatic 写法, 全局禁掉 (会误报 db/Depends)
+    "B008",
+    # S110 / E722: 故意 bare except 静默 (第三方库超时等)
+    "S110",
+    # DTZ005: 项目统一用 naive datetime, 加 tz 是大改
+    "DTZ005",
+    # PLR0913: 多参数 (FastAPI handler 经常 5+ args)
+    "PLR0913",
+    # PLR2004: 不要硬编码 magic value (项目里很多阈值字面量, e.g. 0.7 tag overlap)
+    "PLR2004",
+    # UP007: 用 X | Y 而不是 Union[X, Y] — Python 3.10+ 已经定调, 但部分 file 还是 Union, 不强求
+    "UP007",
+    # UP006 / UP035: dict[str, int] / list[int] — Python 3.9+ 已定调, 不强求
+    "UP006",
+    "UP035",
+    # E501: line too long — line-length=120 但仍有 case 略超 (e.g. URL), 不卡
+    "E501",
+    # F841: local 变量赋了不用 (历史代码, 防 noise)
+    "F841",
+    # PLC0415: import 在函数里 (FastAPI lifespan / lazy import 模式, 全局禁)
+    "PLC0415",
+    # B904: except 后 raise 没 from — 大量, 不卡
+    "B904",
+    # PLC1802: 使用可能为真的值做比较 (e.g. `if x is True`), 噪声
+    "PLC1802",
+    # PLW0603: 使用 global 关键字 (历史代码多)
+    "PLW0603",
+    # RUF012: 用了 mutable default argument (历史代码多)
+    "RUF012",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# tests 里允许 magic value / 复杂 assert / 长 line
+"tests/*" = ["PLR2004", "PLR0915", "E501", "PLR0912", "PLR0913"]
+"scripts/*" = ["E501", "PLR2004", "B008"]
+"**/migrations/*" = ["E501", "F401", "B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend", "tests"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

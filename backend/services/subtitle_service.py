@@ -1,14 +1,16 @@
 """字幕生成服务"""
+
 import logging
 import platform
 import tempfile
 from pathlib import Path
-from typing import Union
 
 logger = logging.getLogger(__name__)
 
 
-def generate_subtitle(video_path: Path, output_path: Path = None, in_memory: bool = False) -> Union[Path, str]:
+def generate_subtitle(
+    video_path: Path, output_path: Path = None, in_memory: bool = False
+) -> Path | str:
     """生成字幕
 
     引擎选择策略：
@@ -25,9 +27,11 @@ def generate_subtitle(video_path: Path, output_path: Path = None, in_memory: boo
         in_memory=False → output_path (Path)
         in_memory=True → SRT 文本字符串（临时文件会被删除）
     """
-    from ..utils.speech_recognizer import SpeechRecognizer, SpeechRecognitionMethod
+    from ..utils.speech_recognizer import SpeechRecognitionMethod, SpeechRecognizer
 
-    logger.info(f"开始为视频生成字幕：{video_path} {'（in_memory 模式，不落盘）' if in_memory else ''}")
+    logger.info(
+        f"开始为视频生成字幕：{video_path} {'（in_memory 模式，不落盘）' if in_memory else ''}"
+    )
 
     recognizer = SpeechRecognizer()
 
@@ -54,7 +58,9 @@ def generate_subtitle(video_path: Path, output_path: Path = None, in_memory: boo
 
     try:
         if use_mlx:
-            logger.info("检测到 Apple Silicon + mlx-whisper 可用，优先使用 mlx-whisper（3-5x 加速）")
+            logger.info(
+                "检测到 Apple Silicon + mlx-whisper 可用，优先使用 mlx-whisper（3-5x 加速）"
+            )
             try:
                 result = recognizer.generate(
                     video_path,

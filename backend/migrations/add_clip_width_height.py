@@ -12,11 +12,12 @@ target DB:
   data/video_clipper.db             release
   data/video_clipper_beta.db        beta
 """
+
 import sqlite3
 from pathlib import Path
 
 DB_PATHS = [
-    Path("data/video_clipper.db"),       # release
+    Path("data/video_clipper.db"),  # release
     Path("data/video_clipper_beta.db"),  # beta
 ]
 

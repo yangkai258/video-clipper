@@ -9,6 +9,7 @@
 2. 部署解耦: 混剪 worker / api 跟切片 worker / api 互不影响
 3. 故障隔离: 混剪 schema 升级 / 数据清理不影响切片
 """
+
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -42,6 +43,7 @@ def _resolve_mix_db_path() -> str:
     """
     # 不分 release/beta, 永远用 video_clipper_mix.db
     from ..core.config import settings as _settings
+
     base = Path(_settings.BASE_DIR) / "data"
     return f"sqlite+aiosqlite:///{base / 'video_clipper_mix.db'}"
 

@@ -1,23 +1,23 @@
 """合集 API 路由"""
+
 import logging
 from pathlib import Path
 from urllib.parse import quote
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
 
-from ..core.database import get_db, to_iso_utc
 from ..core.config import settings
-from ..models.database import Collection, Clip
+from ..core.database import get_db, to_iso_utc
+from ..models.database import Clip, Collection
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _resolve_collection_video_path(collection: Collection) -> Optional[Path]:
+def _resolve_collection_video_path(collection: Collection) -> Path | None:
     """解析合集的视频文件绝对路径"""
     if not collection.video_path:
         return None
@@ -53,16 +53,18 @@ def _serialize_collection(collection: Collection, clips_map: dict = None) -> dic
         # clip_ids 可能是索引（int）或字符串标题——根据实际数据兼容
         clip = clips_map.get(cid)
         if clip:
-            clips_detail.append({
-                "index": cid,
-                "id": clip.id,
-                "title": clip.title,
-                "start_time": clip.start_time,
-                "end_time": clip.end_time,
-                "duration": clip.duration,
-                "score": clip.score,
-                "video_path": clip.video_path,
-            })
+            clips_detail.append(
+                {
+                    "index": cid,
+                    "id": clip.id,
+                    "title": clip.title,
+                    "start_time": clip.start_time,
+                    "end_time": clip.end_time,
+                    "duration": clip.duration,
+                    "score": clip.score,
+                    "video_path": clip.video_path,
+                }
+            )
         else:
             clips_detail.append({"index": cid})
 
@@ -89,9 +91,7 @@ async def _build_clips_map(project_id: str, clip_ids: list, db: AsyncSession) ->
         return {}
 
     # 加载该项目所有 clips
-    result = await db.execute(
-        select(Clip).where(Clip.project_id == project_id)
-    )
+    result = await db.execute(select(Clip).where(Clip.project_id == project_id))
     all_clips = result.scalars().all()
 
     # 构建索引映射（多种方式）
@@ -123,13 +123,18 @@ async def _build_clips_map(project_id: str, clip_ids: list, db: AsyncSession) ->
 
 @router.get("/")
 async def list_collections(
-    project_id: Optional[str] = Query(None, description="按项目 ID 过滤"),
+    project_id: str | None = Query(None, description="按项目 ID 过滤"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     """获取合集列表（可按项目过滤，支持分页）"""
-    stmt = select(Collection).order_by(Collection.created_at.desc()).limit(limit).offset(offset)
+    stmt = (
+        select(Collection)
+        .order_by(Collection.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     if project_id:
         stmt = stmt.where(Collection.project_id == project_id)
 
@@ -194,7 +199,5 @@ async def get_collection_video(collection_id: str, db: AsyncSession = Depends(ge
     return FileResponse(
         str(video_path),
         media_type="video/mp4",
-        headers={
-            "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"
-        },
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"},
     )

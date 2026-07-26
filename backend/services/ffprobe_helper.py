@@ -3,13 +3,13 @@
 用 subprocess 调系统 ffprobe, 返回标准化 dict.
 失败/缺失 ffprobe 时返回 None, 让调用方降级处理.
 """
+
 import json
 import subprocess
 from pathlib import Path
-from typing import Optional, Tuple
 
 
-def get_video_dimensions(video_path: Path) -> Optional[Tuple[int, int]]:
+def get_video_dimensions(video_path: Path) -> tuple[int, int] | None:
     """提取视频宽高 (px)
 
     Returns:
@@ -21,10 +21,14 @@ def get_video_dimensions(video_path: Path) -> Optional[Tuple[int, int]]:
         result = subprocess.run(
             [
                 "ffprobe",
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=width,height",
-                "-of", "json",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "json",
                 str(video_path),
             ],
             capture_output=True,
@@ -43,7 +47,12 @@ def get_video_dimensions(video_path: Path) -> Optional[Tuple[int, int]]:
         if w <= 0 or h <= 0:
             return None
         return (w, h)
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, ValueError, FileNotFoundError):
+    except (
+        subprocess.TimeoutExpired,
+        json.JSONDecodeError,
+        ValueError,
+        FileNotFoundError,
+    ):
         return None
 
 

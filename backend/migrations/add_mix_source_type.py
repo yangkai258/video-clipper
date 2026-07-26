@@ -3,6 +3,7 @@
 区分 project (切片项目 clip) / library (资源库 clip),
 让 mix 详情页能显示 source 来源标签.
 """
+
 import sqlite3
 from pathlib import Path
 
@@ -18,7 +19,9 @@ def migrate_one(db_path: Path) -> None:
     if "source_type" in cols:
         print(f"[skip] {db_path.name} 已含 source_type 列")
     else:
-        cur.execute("ALTER TABLE mix_source_clips ADD COLUMN source_type VARCHAR(20) DEFAULT 'project'")
+        cur.execute(
+            "ALTER TABLE mix_source_clips ADD COLUMN source_type VARCHAR(20) DEFAULT 'project'"
+        )
         conn.commit()
         print(f"[ok] {db_path.name} 加 source_type 列")
     conn.close()

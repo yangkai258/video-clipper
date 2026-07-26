@@ -13,6 +13,7 @@
 ~10 segments × 50 candidate clips = 500 texts (~100KB) = $0.002. 1 美元
 跑 500 个 project, 几乎免费.
 """
+
 import logging
 import os
 from collections import OrderedDict
@@ -29,7 +30,11 @@ logger = logging.getLogger(__name__)
 
 # v2.2.21: 开关, 默认开启 (有 API key 时)
 # 设 MIX_USE_EMBEDDING=0 强制 keyword-only
-_USE_EMBEDDING_ENV = os.getenv("MIX_USE_EMBEDDING", "1").lower() not in ("0", "false", "no")
+_USE_EMBEDDING_ENV = os.getenv("MIX_USE_EMBEDDING", "1").lower() not in (
+    "0",
+    "false",
+    "no",
+)
 
 
 def is_embedding_enabled() -> bool:
@@ -40,7 +45,9 @@ def is_embedding_enabled() -> bool:
     if not _USE_EMBEDDING_ENV:
         return False
     # 检查 API key (MINIMAX_API_KEY 是 MiniMax / OpenAI 兼容, 复用)
-    api_key = getattr(settings, "MINIMAX_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+    api_key = getattr(settings, "MINIMAX_API_KEY", "") or os.getenv(
+        "OPENAI_API_KEY", ""
+    )
     return bool(api_key) and not api_key.startswith("sk-...")
 
 
@@ -81,7 +88,9 @@ def cache_size() -> int:
 # ──────────────────────────── API call ────────────────────────────
 
 
-def _call_embedding(texts: list[str], model: str = "embo-01") -> list[list[float]] | None:
+def _call_embedding(
+    texts: list[str], model: str = "embo-01"
+) -> list[list[float]] | None:
     """调 OpenAI 兼容 /embeddings endpoint.
 
     Args:
@@ -95,7 +104,9 @@ def _call_embedding(texts: list[str], model: str = "embo-01") -> list[list[float
     判定: key 长度 < 30 OR key 包含 "empty"/"placeholder"/"test" 等占位符字符串.
     """
     # v2.2.21: MiniMax 走 OpenAI 兼容, base_url 从 settings 读
-    api_key = getattr(settings, "MINIMAX_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+    api_key = getattr(settings, "MINIMAX_API_KEY", "") or os.getenv(
+        "OPENAI_API_KEY", ""
+    )
     if not api_key:
         logger.debug("embedding 跳过: 无 API key")
         return None
@@ -103,10 +114,15 @@ def _call_embedding(texts: list[str], model: str = "embo-01") -> list[list[float
     # v2.2.38: placeholder key 检测 — 提前 skip, 不打 401 + 不污染 log
     placeholder_markers = ("empty", "placeholder", "your-key", "<", "test-key", "-test")
     if len(api_key) < 30 or any(m in api_key.lower() for m in placeholder_markers):
-        logger.debug("embedding 跳过: API key 是 placeholder (length=%d), 走 keyword fallback", len(api_key))
+        logger.debug(
+            "embedding 跳过: API key 是 placeholder (length=%d), 走 keyword fallback",
+            len(api_key),
+        )
         return None
 
-    base_url = getattr(settings, "MINIMAX_BASE_URL", "https://api.minimaxi.com/v1").rstrip("/")
+    base_url = getattr(
+        settings, "MINIMAX_BASE_URL", "https://api.minimaxi.com/v1"
+    ).rstrip("/")
     if "minimaxi" in base_url and model == "embo-01":
         pass  # MiniMax 默认 embo-01
     elif "openai.com" in base_url and model == "embo-01":
@@ -122,7 +138,9 @@ def _call_embedding(texts: list[str], model: str = "embo-01") -> list[list[float
     try:
         r = httpx.post(url, json=payload, headers=headers, timeout=30.0)
         if r.status_code != 200:
-            logger.warning(f"embedding API 失败: status={r.status_code} body={r.text[:200]}")
+            logger.warning(
+                f"embedding API 失败: status={r.status_code} body={r.text[:200]}"
+            )
             return None
         data = r.json()
         return [item["embedding"] for item in data["data"]]

@@ -1,7 +1,7 @@
 """切片策略管理 API"""
+
 import uuid
 from datetime import datetime
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,8 +26,8 @@ PRESET_STRATEGIES = [
         "rules": {
             "min_score": 0.8,
             "priority_keywords": ["我觉得", "我认为", "最重要的是", "记住", "关键"],
-            "avoid_silence": True
-        }
+            "avoid_silence": True,
+        },
     },
     {
         "id": "preset_complete_segments",
@@ -39,8 +39,8 @@ PRESET_STRATEGIES = [
         "rules": {
             "min_score": 0.6,
             "prefer_continuity": True,
-            "min_segment_duration": 300
-        }
+            "min_segment_duration": 300,
+        },
     },
     {
         "id": "preset_even_distribution",
@@ -49,10 +49,7 @@ PRESET_STRATEGIES = [
         "target_duration": 60,
         "max_clips": 20,
         "content_types": ["讲解", "演示", "知识点"],
-        "rules": {
-            "even_split": True,
-            "min_score": 0.5
-        }
+        "rules": {"even_split": True, "min_score": 0.5},
     },
     {
         "id": "preset_highlights",
@@ -61,12 +58,8 @@ PRESET_STRATEGIES = [
         "target_duration": 30,
         "max_clips": 40,
         "content_types": ["高潮", "笑点", "冲突"],
-        "rules": {
-            "min_score": 0.85,
-            "fast_pace": True,
-            "quick_transitions": True
-        }
-    }
+        "rules": {"min_score": 0.85, "fast_pace": True, "quick_transitions": True},
+    },
 ]
 
 
@@ -91,34 +84,38 @@ def _style_to_dict(s: Style) -> dict:
 
 class StyleCreate(BaseModel):
     name: str
-    description: Optional[str] = ""
+    description: str | None = ""
     target_duration: int = 60
     max_clips: int = 20
-    content_types: List[str] = ["金句", "观点"]
+    content_types: list[str] = ["金句", "观点"]
     rules: dict = {}
     # 新增：风格规则详情（用于前端展示和编辑）
-    content_guidelines: Optional[str] = ""  # 内容识别规则（如"经济时事/创业故事/连麦互动"）
-    keep_rules: Optional[str] = ""  # 保留规则（如"保留金句、总结、方法论"）
-    remove_rules: Optional[str] = ""  # 删除规则（如"删除沉默、重复、跑题"）
-    style_positioning: Optional[str] = ""  # 风格定位（如"沉稳、务实、有阅历"）
+    content_guidelines: str | None = (
+        ""  # 内容识别规则（如"经济时事/创业故事/连麦互动"）
+    )
+    keep_rules: str | None = ""  # 保留规则（如"保留金句、总结、方法论"）
+    remove_rules: str | None = ""  # 删除规则（如"删除沉默、重复、跑题"）
+    style_positioning: str | None = ""  # 风格定位（如"沉稳、务实、有阅历"）
     # 新增：字幕配置
-    subtitle_config: Optional[dict] = None  # {font_size, txt_color, stroke_color, stroke_width, font, position}
+    subtitle_config: dict | None = (
+        None  # {font_size, txt_color, stroke_color, stroke_width, font, position}
+    )
 
 
 class StyleUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    target_duration: Optional[int] = None
-    max_clips: Optional[int] = None
-    content_types: Optional[List[str]] = None
-    rules: Optional[dict] = None
+    name: str | None = None
+    description: str | None = None
+    target_duration: int | None = None
+    max_clips: int | None = None
+    content_types: list[str] | None = None
+    rules: dict | None = None
     # 新增：风格规则详情
-    content_guidelines: Optional[str] = None
-    keep_rules: Optional[str] = None
-    remove_rules: Optional[str] = None
-    style_positioning: Optional[str] = None
+    content_guidelines: str | None = None
+    keep_rules: str | None = None
+    remove_rules: str | None = None
+    style_positioning: str | None = None
     # 新增：字幕配置
-    subtitle_config: Optional[dict] = None
+    subtitle_config: dict | None = None
 
 
 class StyleResponse(BaseModel):
@@ -127,17 +124,17 @@ class StyleResponse(BaseModel):
     description: str
     target_duration: int
     max_clips: int
-    content_types: List[str]
+    content_types: list[str]
     rules: dict
     created_at: str
     updated_at: str
     # 新增：风格规则详情
-    content_guidelines: Optional[str] = ""
-    keep_rules: Optional[str] = ""
-    remove_rules: Optional[str] = ""
-    style_positioning: Optional[str] = ""
+    content_guidelines: str | None = ""
+    keep_rules: str | None = ""
+    remove_rules: str | None = ""
+    style_positioning: str | None = ""
     # 新增：字幕配置
-    subtitle_config: Optional[dict] = None
+    subtitle_config: dict | None = None
 
 
 @router.get("/strategies/presets")
@@ -146,7 +143,7 @@ async def list_preset_strategies():
     return {"strategies": PRESET_STRATEGIES}
 
 
-@router.get("/styles", response_model=List[StyleResponse])
+@router.get("/styles", response_model=list[StyleResponse])
 async def list_styles(db: AsyncSession = Depends(get_db)):
     """获取所有切片风格（ORM，走当前 db session）"""
     result = await db.execute(select(Style).order_by(Style.created_at.desc()))
@@ -190,13 +187,16 @@ async def create_style(style: StyleCreate, db: AsyncSession = Depends(get_db)):
     # 同步字幕配置到用户偏好
     if style.subtitle_config:
         from .projects import _sync_subtitle_style_to_preferences
+
         await _sync_subtitle_style_to_preferences(db, style.subtitle_config)
 
     return _style_to_dict(s)
 
 
 @router.put("/styles/{style_id}", response_model=StyleResponse)
-async def update_style(style_id: str, style: StyleUpdate, db: AsyncSession = Depends(get_db)):
+async def update_style(
+    style_id: str, style: StyleUpdate, db: AsyncSession = Depends(get_db)
+):
     """更新风格（ORM）"""
     result = await db.execute(select(Style).where(Style.id == style_id))
     s = result.scalar_one_or_none()
@@ -213,6 +213,7 @@ async def update_style(style_id: str, style: StyleUpdate, db: AsyncSession = Dep
     # 同步字幕配置到用户偏好（自动复用）
     if style.subtitle_config is not None:
         from .projects import _sync_subtitle_style_to_preferences
+
         await _sync_subtitle_style_to_preferences(db, style.subtitle_config)
 
     return _style_to_dict(s)

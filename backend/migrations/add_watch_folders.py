@@ -11,6 +11,7 @@ target DB:
   data/video_clipper.db             release
   data/video_clipper_beta.db        beta
 """
+
 import sys
 from pathlib import Path
 
@@ -30,7 +31,9 @@ def migrate_one(db_path: Path) -> None:
         print(f"[skip] {db_path} 不存在")
         return
 
-    engine = create_engine(_engine_url_for_sqlite(db_path), connect_args={"check_same_thread": False})
+    engine = create_engine(
+        _engine_url_for_sqlite(db_path), connect_args={"check_same_thread": False}
+    )
     try:
         inspector = inspect(engine)
         if "watch_folders" in inspector.get_table_names():
@@ -39,7 +42,10 @@ def migrate_one(db_path: Path) -> None:
     finally:
         engine.dispose()
 
-    eng = create_engine(_engine_url_for_sqlite(db_path), connect_args={"check_same_thread": False, "timeout": 30})
+    eng = create_engine(
+        _engine_url_for_sqlite(db_path),
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
     try:
         Base.metadata.create_all(eng, tables=[WatchFolder.__table__])
         print(f"[ok] {db_path.name} 创建 watch_folders 表")
@@ -50,7 +56,7 @@ def migrate_one(db_path: Path) -> None:
 def main():
     base = Path("data")
     targets = [
-        base / "video_clipper.db",       # release
+        base / "video_clipper.db",  # release
         base / "video_clipper_beta.db",  # beta
     ]
     for db_path in targets:

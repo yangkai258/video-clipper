@@ -12,6 +12,7 @@
   GET    /api/v1/library/thumbnails/{id} 缩略图 (有就返, 没有 404)
   DELETE /api/v1/library/{id}            软删 (删 mp4 + jpg + 设 deleted_at)
 """
+
 import logging
 import shutil
 import subprocess
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 # ──────────────────────────── v2.2.19: auto-tag background helper ────────────────────────────
 
+
 def _auto_tag_in_thread(resource_id: str) -> None:
     """BackgroundTask 触发的 auto-tag (跑在 thread pool, 不阻塞 async endpoint).
 
@@ -53,14 +55,18 @@ def _auto_tag_in_thread(resource_id: str) -> None:
         tags = generate_tags_for_resource(resource_id)
         logger.info(f"library auto-tag background: id={resource_id} tags={tags}")
     except Exception as e:
-        logger.warning(f"library auto-tag background 失败 (非致命): id={resource_id} err={e}")
+        logger.warning(
+            f"library auto-tag background 失败 (非致命): id={resource_id} err={e}"
+        )
 
 
 # ──────────────────────────── 路径 helper ────────────────────────────
 
+
 def _resources_dir() -> Path:
     """资源库存储目录 (跟切片项目 output 完全分离)"""
     from ..core.config import settings
+
     base = Path(settings.DATA_DIR) if hasattr(settings, "DATA_DIR") else Path("data")
     d = base / "resources"
     d.mkdir(parents=True, exist_ok=True)
@@ -79,6 +85,7 @@ def _safe_id(resource_id: str) -> str:
 
 # ──────────────────────────── ffprobe / ffmpeg ────────────────────────────
 
+
 def _probe_video_metadata(video_path: Path) -> dict:
     """ffprobe 抽 duration + width/height
 
@@ -89,9 +96,19 @@ def _probe_video_metadata(video_path: Path) -> dict:
     try:
         # duration
         p = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=nw=1:nk=1", str(video_path)],
-            capture_output=True, text=True, timeout=30,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if p.returncode == 0 and p.stdout.strip():
             try:
@@ -106,9 +123,21 @@ def _probe_video_metadata(video_path: Path) -> dict:
     try:
         # dimensions
         p = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=width,height", "-of", "csv=p=0", str(video_path)],
-            capture_output=True, text=True, timeout=30,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=p=0",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if p.returncode == 0 and p.stdout.strip():
             parts = p.stdout.strip().split(",")
@@ -126,17 +155,25 @@ def _probe_video_metadata(video_path: Path) -> dict:
     return result
 
 
-def _generate_thumbnail(video_path: Path, thumbnail_path: Path, t_seconds: float = 1.0) -> bool:
+def _generate_thumbnail(
+    video_path: Path, thumbnail_path: Path, t_seconds: float = 1.0
+) -> bool:
     """从视频抽 1s 帧生成 jpg 缩略图. 失败返回 False (不影响主流程)."""
     try:
         # 时长 < t 时 ffmpeg 会报错, fallback 到 0s
         cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(t_seconds),
-            "-i", str(video_path),
-            "-frames:v", "1",
-            "-vf", "scale=720:-2",
-            "-q:v", "3",
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(t_seconds),
+            "-i",
+            str(video_path),
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=720:-2",
+            "-q:v",
+            "3",
             str(thumbnail_path),
         ]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -154,6 +191,7 @@ def _generate_thumbnail(video_path: Path, thumbnail_path: Path, t_seconds: float
 
 
 # ──────────────────────────── 序列化 ────────────────────────────
+
 
 def _serialize(rc: ResourceClip) -> dict:
     """跟 mix API 风格保持一致 — 列表轻量, 详情再扩展"""
@@ -178,6 +216,7 @@ def _serialize(rc: ResourceClip) -> dict:
 
 
 # ──────────────────────────── 端点 ────────────────────────────
+
 
 @router.get("")
 async def list_resources(
@@ -208,7 +247,8 @@ async def list_resources(
     if search:
         q = search.lower()
         items = [
-            it for it in items
+            it
+            for it in items
             if q in (it["name"] or "").lower()
             or q in (it["description"] or "").lower()
             or q in (it["source_project_name"] or "").lower()
@@ -249,12 +289,14 @@ async def upload_resource(
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="缺少 file")
 
-    ext = (file.filename.split(".")[-1].lower() if "." in file.filename else "")
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
     if ext and ext not in ("mp4", "mov", "m4v", "webm", "mkv", "avi", "flv"):
         raise HTTPException(status_code=400, detail=f"不支持的格式: .{ext}")
 
     resource_id = str(uuid.uuid4())
-    base_name = name or (file.filename.rsplit(".", 1)[0] if "." in file.filename else file.filename)
+    base_name = name or (
+        file.filename.rsplit(".", 1)[0] if "." in file.filename else file.filename
+    )
     save_name = f"{resource_id}.mp4"  # 统一存 mp4 容器, ffmpeg 友好
     save_path = _resources_dir() / save_name
 
@@ -320,7 +362,9 @@ async def upload_resource(
     await db.commit()
     await db.refresh(rc)
 
-    logger.info(f"library upload: id={resource_id} name={base_name} size={written} duration={meta['duration']:.1f}s")
+    logger.info(
+        f"library upload: id={resource_id} name={base_name} size={written} duration={meta['duration']:.1f}s"
+    )
 
     # v2.2.38: auto-tag 默认关闭 (user 反馈: 抽过来的规则不准, 暂时不用)
     # 留 _auto_tag_in_thread + POST /library/{id}/auto-tag manual endpoint, 想用时手跑
@@ -344,26 +388,39 @@ async def from_clip_resource(
     source_project_id = payload.get("source_project_id")
     source_clip_id = payload.get("source_clip_id")
     if not source_project_id or not source_clip_id:
-        raise HTTPException(status_code=400, detail="source_project_id 和 source_clip_id 必填")
+        raise HTTPException(
+            status_code=400, detail="source_project_id 和 source_clip_id 必填"
+        )
 
     # 同步查 source clip (clip 表用同步 session)
     with sync_get_db() as sdb:
         sc = sdb.query(Clip).filter(Clip.id == source_clip_id).first()
         if not sc:
-            raise HTTPException(status_code=404, detail=f"source clip {source_clip_id} 不存在")
+            raise HTTPException(
+                status_code=404, detail=f"source clip {source_clip_id} 不存在"
+            )
         sp = sdb.query(Project).filter(Project.id == source_project_id).first()
         if not sp:
-            raise HTTPException(status_code=404, detail=f"source project {source_project_id} 不存在")
+            raise HTTPException(
+                status_code=404, detail=f"source project {source_project_id} 不存在"
+            )
 
         # 防路径穿越 + 存在性
         source_video_path = Path(sc.video_path) if sc.video_path else None
         if not source_video_path:
-            raise HTTPException(status_code=404, detail=f"source clip video_path 空: {source_clip_id}")
+            raise HTTPException(
+                status_code=404, detail=f"source clip video_path 空: {source_clip_id}"
+            )
         if not source_video_path.is_absolute():
             # 跟 from-project 保持一致: 拼 data/projects/<project_id>/<video_path>
-            source_video_path = (Path("data/projects") / source_project_id / sc.video_path).resolve()
+            source_video_path = (
+                Path("data/projects") / source_project_id / sc.video_path
+            ).resolve()
         if not source_video_path.exists():
-            raise HTTPException(status_code=404, detail=f"source clip 视频文件不存在: {source_video_path}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"source clip 视频文件不存在: {source_video_path}",
+            )
 
         source_project_name = sp.name or ""
         clip_title = sc.title or f"clip-{source_clip_id[:8]}"
@@ -372,7 +429,7 @@ async def from_clip_resource(
         # 没 tags 就空 list (auto-tag 默认关闭, user 不想用)
         clip_tags = []
         if sc.clip_metadata and isinstance(sc.clip_metadata, dict):
-            for t in (sc.clip_metadata.get("tags") or []):
+            for t in sc.clip_metadata.get("tags") or []:
                 if isinstance(t, str):
                     clip_tags.append(t)
                 elif isinstance(t, dict) and "category" in t:
@@ -389,7 +446,9 @@ async def from_clip_resource(
             src_thumb = Path(sc.thumbnail_path)
             if not src_thumb.is_absolute():
                 # 跟 mp4 保持一致: 拼 data/projects/<project_id>/<thumbnail_path>
-                src_thumb = (Path("data/projects") / source_project_id / sc.thumbnail_path).resolve()
+                src_thumb = (
+                    Path("data/projects") / source_project_id / sc.thumbnail_path
+                ).resolve()
             if src_thumb.exists():
                 new_thumb_path = _resources_dir() / f"{new_id}.jpg"
                 try:
@@ -429,7 +488,9 @@ async def from_clip_resource(
         await db.commit()
         await db.refresh(rc)
 
-        logger.info(f"library from-clip: new_id={new_id} src_clip={source_clip_id} src_proj={source_project_id}")
+        logger.info(
+            f"library from-clip: new_id={new_id} src_clip={source_clip_id} src_proj={source_project_id}"
+        )
 
         # v2.2.38: auto-tag 默认关闭 (user 反馈: 规则不准, 暂时不用)
         # 想用时手跑 POST /library/{id}/auto-tag
@@ -551,23 +612,34 @@ async def from_project_batch_resource(
     with sync_get_db() as sdb:
         sp = sdb.query(Project).filter(Project.id == source_project_id).first()
         if not sp:
-            raise HTTPException(status_code=404, detail=f"source project {source_project_id} 不存在")
+            raise HTTPException(
+                status_code=404, detail=f"source project {source_project_id} 不存在"
+            )
         source_project_name = sp.name or ""
 
         # 查这个项目的全部 clip
-        clips = sdb.query(Clip).filter(
-            Clip.project_id == source_project_id,
-        ).order_by(Clip.created_at).all()
+        clips = (
+            sdb.query(Clip)
+            .filter(
+                Clip.project_id == source_project_id,
+            )
+            .order_by(Clip.created_at)
+            .all()
+        )
 
     if not clips:
         raise HTTPException(status_code=404, detail="该项目没有任何 clip")
 
     # 查重: 已经导入过这个 source_clip_id 的就跳过
     with sync_get_db() as sdb:
-        existing = sdb.query(ResourceClip).filter(
-            ResourceClip.source_project_id == source_project_id,
-            ResourceClip.deleted_at.is_(None),
-        ).all()
+        existing = (
+            sdb.query(ResourceClip)
+            .filter(
+                ResourceClip.source_project_id == source_project_id,
+                ResourceClip.deleted_at.is_(None),
+            )
+            .all()
+        )
         existing_clip_ids = {rc.source_clip_id for rc in existing if rc.source_clip_id}
 
     imported = 0
@@ -584,13 +656,19 @@ async def from_project_batch_resource(
             # 复制 mp4 — clip.video_path 是相对路径 (output/clips/xxx.mp4),
             # 必须拼上 data/projects/<source_project_id>/ 中间层
             if not sc.video_path:
-                errors.append({"clip_id": sc.id, "title": sc.title, "error": "video_path 空"})
+                errors.append(
+                    {"clip_id": sc.id, "title": sc.title, "error": "video_path 空"}
+                )
                 continue
             src_p = Path(sc.video_path)
             if not src_p.is_absolute():
-                src_p = (Path("data/projects") / source_project_id / sc.video_path).resolve()
+                src_p = (
+                    Path("data/projects") / source_project_id / sc.video_path
+                ).resolve()
             if not src_p.exists():
-                errors.append({"clip_id": sc.id, "title": sc.title, "error": f"mp4 缺失: {src_p}"})
+                errors.append(
+                    {"clip_id": sc.id, "title": sc.title, "error": f"mp4 缺失: {src_p}"}
+                )
                 continue
 
             new_id = str(uuid.uuid4())
@@ -602,7 +680,9 @@ async def from_project_batch_resource(
             if sc.thumbnail_path:
                 src_thumb = Path(sc.thumbnail_path)
                 if not src_thumb.is_absolute():
-                    src_thumb = (Path("data/projects") / source_project_id / sc.thumbnail_path).resolve()
+                    src_thumb = (
+                        Path("data/projects") / source_project_id / sc.thumbnail_path
+                    ).resolve()
                 if src_thumb.exists():
                     new_thumb = _resources_dir() / f"{new_id}.jpg"
                     try:
@@ -635,7 +715,9 @@ async def from_project_batch_resource(
             for row in new_rows:
                 sdb.add(row)
             sdb.commit()
-            logger.info(f"library from-project batch: imported={imported}, skipped={skipped}, errors={len(errors)}")
+            logger.info(
+                f"library from-project batch: imported={imported}, skipped={skipped}, errors={len(errors)}"
+            )
 
         # v2.2.38: auto-tag 默认关闭 (user 反馈: 规则不准, 暂时不用)
         # 想用时手跑 POST /library/{id}/auto-tag (循环每个)

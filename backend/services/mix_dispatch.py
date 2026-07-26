@@ -21,10 +21,10 @@ fix: 之前 mix router 调 `process_mix_pipeline.apply_async(queue="processing_m
         task_id=...,
     )
 """
+
 import logging
 import os
 import uuid
-from typing import List
 
 from kombu import Connection
 
@@ -64,7 +64,7 @@ def dispatch_mix_task(
     mix_project_id: str,
     script_text: str,
     target_duration_seconds: int,
-    candidate_clip_ids: List[str],
+    candidate_clip_ids: list[str],
     task_id: str,
 ) -> str:
     """派发混剪 task, 走跟 uvicorn 模式一致的 broker (v2.2.37 跨 release/beta)

@@ -6,6 +6,7 @@
 3. GET  /uploads/{uid}/status → 查已传 offset（断点续传时调用）
 4. POST /uploads/{uid}/complete → 合并 + 创建 project
 """
+
 import json
 import logging
 import shutil
@@ -13,13 +14,9 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Form
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from fastapi import Depends
 
 from ..core.config import settings
 from ..core.database import get_db
@@ -54,23 +51,32 @@ def _meta_path(upload_id: str) -> Path:
 
 def _part_path(upload_id: str, offset: int) -> Path:
     return _upload_dir(upload_id) / f"{offset:012d}{PART_SUFFIX}"
+
+
 def _resolve_upload_session(upload_id):
     # load upload session meta and verify chunks are complete
     mpath = _meta_path(upload_id)
     if not mpath.exists():
-        raise HTTPException(status_code=404, detail="upload session not found or expired")
+        raise HTTPException(
+            status_code=404, detail="upload session not found or expired"
+        )
     meta = json.loads(mpath.read_text(encoding="utf-8"))
     if meta.get("completed"):
         raise HTTPException(status_code=400, detail="upload already completed")
     received = _count_received_bytes(upload_id)
     if received != meta["total_size"]:
         expected = meta["total_size"]
-        raise HTTPException(status_code=400, detail=f"incomplete chunks: {received}/{expected} bytes")
+        raise HTTPException(
+            status_code=400, detail=f"incomplete chunks: {received}/{expected} bytes"
+        )
     return meta
+
 
 def _merge_chunks_to_file(udir, video_path, expected_size):
     # concat all part files in offset order; raise on size mismatch
-    parts = sorted(udir.glob(f"*{PART_SUFFIX}"), key=lambda p: int(p.name.split(".")[0]))
+    parts = sorted(
+        udir.glob(f"*{PART_SUFFIX}"), key=lambda p: int(p.name.split(".")[0])
+    )
     written = 0
     with open(video_path, "wb") as out:
         for p in parts:
@@ -78,25 +84,40 @@ def _merge_chunks_to_file(udir, video_path, expected_size):
                 shutil.copyfileobj(inp, out, length=1024 * 1024)
             written += p.stat().st_size
     if written != expected_size:
-        raise HTTPException(status_code=500, detail=f"merge size mismatch: {written}/{expected_size}")
+        raise HTTPException(
+            status_code=500, detail=f"merge size mismatch: {written}/{expected_size}"
+        )
+
 
 def _probe_video_duration(video_path):
     # use ffprobe to read duration; raise HTTPException(400) on invalid file
     try:
         probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=nw=1:nk=1", str(video_path)],
-            capture_output=True, text=True, timeout=30,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         duration_str = probe.stdout.strip()
         if not duration_str or float(duration_str) <= 0:
-            raise HTTPException(status_code=400, detail="invalid file: ffprobe cannot read duration (truncated or missing moov atom)")
+            raise HTTPException(
+                status_code=400,
+                detail="invalid file: ffprobe cannot read duration (truncated or missing moov atom)",
+            )
         return float(duration_str)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"file validation failed: {e}")
-
 
 
 @router.post("/uploads/init")
@@ -118,13 +139,19 @@ async def init_upload(
     if not settings.is_allowed_video_ext(ext):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的视频格式：{ext}。支持的格式：{[e.lstrip('.') for e in settings.ALLOWED_VIDEO_EXTENSIONS]}"
+            detail=f"不支持的视频格式：{ext}。支持的格式：{[e.lstrip('.') for e in settings.ALLOWED_VIDEO_EXTENSIONS]}",
         )
 
     # 验证 total_size（用 settings.MAX_UPLOAD_SIZE，未配则 fallback 到 5GB）
-    max_size = getattr(settings, "MAX_UPLOAD_SIZE", DEFAULT_MAX_UPLOAD_SIZE) or DEFAULT_MAX_UPLOAD_SIZE
+    max_size = (
+        getattr(settings, "MAX_UPLOAD_SIZE", DEFAULT_MAX_UPLOAD_SIZE)
+        or DEFAULT_MAX_UPLOAD_SIZE
+    )
     if total_size <= 0 or total_size > max_size:
-        raise HTTPException(status_code=400, detail=f"无效的文件大小：{total_size}（上限 {max_size // 1024 // 1024} MB）")
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的文件大小：{total_size}（上限 {max_size // 1024 // 1024} MB）",
+        )
 
     upload_id = f"up_{uuid.uuid4().hex[:16]}"
     udir = _upload_dir(upload_id)
@@ -140,9 +167,13 @@ async def init_upload(
         "created_at": time.time(),
         "completed": False,
     }
-    _meta_path(upload_id).write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    _meta_path(upload_id).write_text(
+        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+    )
 
-    logger.info(f"init_upload: {upload_id} name={name} filename={filename} total={total_size}")
+    logger.info(
+        f"init_upload: {upload_id} name={name} filename={filename} total={total_size}"
+    )
     return {
         "upload_id": upload_id,
         "chunk_size": DEFAULT_CHUNK_SIZE,
@@ -181,7 +212,9 @@ def _count_received_bytes(upload_id: str) -> int:
         return 0
 
     # 文件名格式：{offset:012d}.part → split(".")[0] 拿 offset
-    parts = sorted(udir.glob(f"*{PART_SUFFIX}"), key=lambda p: int(p.name.split(".")[0]))
+    parts = sorted(
+        udir.glob(f"*{PART_SUFFIX}"), key=lambda p: int(p.name.split(".")[0])
+    )
     if not parts:
         return 0
 
@@ -220,7 +253,10 @@ async def upload_chunk(
     # offset 校验：offset 必须在 [0, total_size) 范围内
     # 防止恶意客户端声明 offset=total_size 然后写 0 字节造成混乱
     if offset < 0 or offset >= meta["total_size"]:
-        raise HTTPException(status_code=400, detail=f"offset 超出文件大小：{offset} >= {meta['total_size']}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"offset 超出文件大小：{offset} >= {meta['total_size']}",
+        )
 
     # 写 part 文件（直接读完，避免 while 循环的隐藏 bug）
     part_file = _part_path(upload_id, offset)
@@ -235,7 +271,9 @@ async def upload_chunk(
         await chunk.close()
 
     received = _count_received_bytes(upload_id)
-    logger.info(f"chunk {upload_id}: offset={offset} size={bytes_written} received={received}/{meta['total_size']}")
+    logger.info(
+        f"chunk {upload_id}: offset={offset} size={bytes_written} received={received}/{meta['total_size']}"
+    )
     return {
         "upload_id": upload_id,
         "chunk_offset": offset,
@@ -272,7 +310,9 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
     meta["completed"] = True
     meta["completed_at"] = time.time()
     meta["project_id"] = project_id
-    _meta_path(upload_id).write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    _meta_path(upload_id).write_text(
+        json.dumps(meta, ensure_ascii=False), encoding="utf-8"
+    )
 
     # cleanup part files (keep meta for status queries)
     for p in _upload_dir(upload_id).glob(f"*{PART_SUFFIX}"):
@@ -284,6 +324,7 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
     # create project record (v2.1.26: ffprobe width/height for orientation)
     subtitle_style = await get_last_subtitle_style(db)
     from ..services.ffprobe_helper import get_video_dimensions
+
     dims = get_video_dimensions(video_path)
     project = Project(
         id=project_id,
@@ -301,13 +342,17 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(project)
 
-    logger.info(f"complete_upload: {upload_id} project={project_id} size={meta['total_size']}")
+    logger.info(
+        f"complete_upload: {upload_id} project={project_id} size={meta['total_size']}"
+    )
     return {
         "message": "project created",
         "project_id": project_id,
         "name": project.name,
         "video_size": meta["total_size"],
     }
+
+
 @router.delete("/uploads/{upload_id}")
 async def cancel_upload(upload_id: str):
     """取消上传 + 清理临时文件"""

@@ -1,9 +1,9 @@
 """本地视频处理 - 不依赖外部 API 的备用方案"""
+
 import json
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict
 
 # 复用 llm_service 的 min_score 归一化 (v2.1.25 统一数据契约)
 from .llm_service import _normalize_min_score
@@ -11,9 +11,11 @@ from .llm_service import _normalize_min_score
 logger = logging.getLogger(__name__)
 
 
-def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_config: dict = None) -> Dict:
+def generate_clips_from_subtitle(
+    srt_path: Path, metadata_dir: Path, strategy_config: dict = None
+) -> dict:
     """从字幕生成本地切片方案（不依赖 AI）
-    
+
     Args:
         srt_path: 字幕文件路径
         metadata_dir: 元数据目录
@@ -26,7 +28,9 @@ def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_co
     even_split = rules.get("even_split", False)
     avoid_silence = rules.get("avoid_silence", False)
 
-    logger.info(f"本地处理 - 目标时长：{target_duration}s, 最大切片数：{max_clips}, even_split={even_split}, avoid_silence={avoid_silence}")
+    logger.info(
+        f"本地处理 - 目标时长：{target_duration}s, 最大切片数：{max_clips}, even_split={even_split}, avoid_silence={avoid_silence}"
+    )
 
     # 解析字幕
     segments = parse_srt(srt_path)
@@ -72,97 +76,106 @@ def generate_clips_from_subtitle(srt_path: Path, metadata_dir: Path, strategy_co
         clips = clips[:max_clips]
 
     # 生成简单标题（传 all_segments 让标题取自覆盖该 clip 最长的段 + strategy_config 用于本地评分）
-    titled_clips = generate_simple_titles(clips, all_segments=segments, strategy_config=strategy_config)
-    
+    titled_clips = generate_simple_titles(
+        clips, all_segments=segments, strategy_config=strategy_config
+    )
+
     # 按时间分组为合集（根据策略的目标时长计算每组大小）
     # 假设每个切片约 15 秒，目标时长 60 秒 → 每组 4 个切片
     clips_per_collection = max(3, min(8, int(target_duration) // 15))
     collections = group_into_collections(titled_clips, group_size=clips_per_collection)
-    logger.info(f"分组为 {len(collections)} 个合集 (每组约{clips_per_collection}个切片)")
-    
+    logger.info(
+        f"分组为 {len(collections)} 个合集 (每组约{clips_per_collection}个切片)"
+    )
+
     # 生成大纲（简单版）
     outlines = [
         {
-            "title": f"合集 {i+1}: {c['title']}",
-            "subtopics": [clip["title"] for clip in c["clips"]]
+            "title": f"合集 {i + 1}: {c['title']}",
+            "subtopics": [clip["title"] for clip in c["clips"]],
         }
         for i, c in enumerate(collections)
     ]
-    
+
     # 保存结果
     result = {
         "outlines": outlines,
         "clips": titled_clips,
         "collections": collections,
     }
-    
+
     outline_path = metadata_dir / "step1_outline.json"
     with open(outline_path, "w", encoding="utf-8") as f:
         json.dump(outlines, f, ensure_ascii=False, indent=2)
-    
+
     clips_path = metadata_dir / "step2_clips.json"
     with open(clips_path, "w", encoding="utf-8") as f:
         json.dump(titled_clips, f, ensure_ascii=False, indent=2)
-    
+
     collections_path = metadata_dir / "step3_collections.json"
     with open(collections_path, "w", encoding="utf-8") as f:
         json.dump(collections, f, ensure_ascii=False, indent=2)
-    
+
     logger.info(f"本地处理完成：{len(titled_clips)} 切片，{len(collections)} 合集")
-    
+
     return result
 
 
-def parse_srt(srt_path: Path) -> List[Dict]:
+def parse_srt(srt_path: Path) -> list[dict]:
     """解析 SRT 文件"""
     with open(srt_path, "r", encoding="utf-8") as f:
         content = f.read()
-    
+
     segments = []
-    blocks = re.split(r'\n\n+', content.strip())
-    
+    blocks = re.split(r"\n\n+", content.strip())
+
     for block in blocks:
-        lines = block.strip().split('\n')
+        lines = block.strip().split("\n")
         if len(lines) < 3:
             continue
-        
+
         try:
             # 序号
             index = int(lines[0])
-            
+
             # 时间轴
-            time_match = re.match(r'(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})', lines[1])
+            time_match = re.match(
+                r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})",
+                lines[1],
+            )
             if not time_match:
                 continue
-            
+
             h1, m1, s1, ms1, h2, m2, s2, ms2 = time_match.groups()
-            start = int(h1)*3600 + int(m1)*60 + int(s1) + int(ms1)/1000
-            end = int(h2)*3600 + int(m2)*60 + int(s2) + int(ms2)/1000
-            
+            start = int(h1) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000
+            end = int(h2) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000
+
             # 文本
-            text = '\n'.join(lines[2:]).strip()
-            
-            segments.append({
-                "index": index,
-                "start": start,
-                "end": end,
-                "duration": end - start,
-                "text": text,
-            })
+            text = "\n".join(lines[2:]).strip()
+
+            segments.append(
+                {
+                    "index": index,
+                    "start": start,
+                    "end": end,
+                    "duration": end - start,
+                    "text": text,
+                }
+            )
         except (ValueError, IndexError) as e:
             logger.debug(f"解析失败：{e}")
             continue
-    
+
     return segments
 
 
-def merge_short_segments(segments: List[Dict], min_duration: float = 3.0) -> List[Dict]:
+def merge_short_segments(segments: list[dict], min_duration: float = 3.0) -> list[dict]:
     """合并短段落"""
     if not segments:
         return []
-    
+
     merged = [segments[0].copy()]
-    
+
     for seg in segments[1:]:
         last = merged[-1]
         if last["duration"] < min_duration:
@@ -172,11 +185,11 @@ def merge_short_segments(segments: List[Dict], min_duration: float = 3.0) -> Lis
             last["text"] += " " + seg["text"]
         else:
             merged.append(seg.copy())
-    
+
     return merged
 
 
-def generate_clips(segments: List[Dict], target_duration: float = 45.0) -> List[Dict]:
+def generate_clips(segments: list[dict], target_duration: float = 45.0) -> list[dict]:
     """按语义边界分组生成切片（不再按时间等分）
 
     规则（按优先级）：
@@ -194,7 +207,10 @@ def generate_clips(segments: List[Dict], target_duration: float = 45.0) -> List[
     silence_gap_threshold = target_duration / 2.0
 
     # 单段就超长 → 直接硬切（不进循环）
-    if len(segments) == 1 and (segments[0]["end"] - segments[0]["start"]) > target_duration:
+    if (
+        len(segments) == 1
+        and (segments[0]["end"] - segments[0]["start"]) > target_duration
+    ):
         return [
             {
                 "start": p["start"],
@@ -224,11 +240,13 @@ def generate_clips(segments: List[Dict], target_duration: float = 45.0) -> List[
             if current["segments"]:
                 clips.append(current)
             for part in _split_long_segment(seg, target_duration):
-                clips.append({
-                    "start": part["start"],
-                    "end": part["end"],
-                    "segments": [part],
-                })
+                clips.append(
+                    {
+                        "start": part["start"],
+                        "end": part["end"],
+                        "segments": [part],
+                    }
+                )
             current = {"start": seg["start"], "end": seg["end"], "segments": []}
             continue
 
@@ -258,7 +276,7 @@ def generate_clips(segments: List[Dict], target_duration: float = 45.0) -> List[
     return clips
 
 
-def _split_long_segment(seg: Dict, target_duration: float) -> List[Dict]:
+def _split_long_segment(seg: dict, target_duration: float) -> list[dict]:
     """把一个超长字幕段硬切成多个 ≤ target_duration 的段（保留 text）"""
     duration = seg["end"] - seg["start"]
     if duration <= target_duration:
@@ -267,15 +285,22 @@ def _split_long_segment(seg: Dict, target_duration: float) -> List[Dict]:
     piece = duration / n
     parts = []
     for i in range(n):
-        parts.append({
-            "start": seg["start"] + i * piece,
-            "end": seg["start"] + (i + 1) * piece if i < n - 1 else seg["end"],
-            "text": seg.get("text", ""),
-        })
+        parts.append(
+            {
+                "start": seg["start"] + i * piece,
+                "end": seg["start"] + (i + 1) * piece if i < n - 1 else seg["end"],
+                "text": seg.get("text", ""),
+            }
+        )
     return parts
 
 
-def _apply_buffers(clips: List[Dict], pre_roll: float = 1.0, post_roll: float = 1.0, video_end: float = None) -> List[Dict]:
+def _apply_buffers(
+    clips: list[dict],
+    pre_roll: float = 1.0,
+    post_roll: float = 1.0,
+    video_end: float = None,
+) -> list[dict]:
     """给每个 clip 加前置 1s + 退出 1s 缓冲
 
     避免与上一个 clip 重叠（clip[i].start = max(clip[i].start - pre, clip[i-1].end)）
@@ -304,7 +329,9 @@ def _apply_buffers(clips: List[Dict], pre_roll: float = 1.0, post_roll: float = 
     return clips
 
 
-def generate_clips_even_split(video_end: float, target_duration: float, segments: List[Dict] = None) -> List[Dict]:
+def generate_clips_even_split(
+    video_end: float, target_duration: float, segments: list[dict] = None
+) -> list[dict]:
     """even_split 路径：按 target_duration 均匀切视频（教学/课程类内容）"""
     if video_end <= 0 or target_duration <= 0:
         return []
@@ -323,18 +350,22 @@ def generate_clips_even_split(video_end: float, target_duration: float, segments
         overlaps.sort(key=lambda x: -x[0])
         seg = overlaps[0][1] if overlaps else None
         text = seg.get("text", "") if seg else ""
-        clips.append({
-            "start": s,
-            "end": e,
-            "duration": e - s,
-            "index": i + 1,
-            "segments": [seg] if seg else [],
-            "_title_text": text,
-        })
+        clips.append(
+            {
+                "start": s,
+                "end": e,
+                "duration": e - s,
+                "index": i + 1,
+                "segments": [seg] if seg else [],
+                "_title_text": text,
+            }
+        )
     return clips
 
 
-def filter_silent_clips(clips: List[Dict], segments: List[Dict], silence_threshold: float = 0.5) -> List[Dict]:
+def filter_silent_clips(
+    clips: list[dict], segments: list[dict], silence_threshold: float = 0.5
+) -> list[dict]:
     """avoid_silence 路径：丢弃静默占比超过阈值的切片
 
     静默判定：切片时段内没有字幕段覆盖的时长 / 切片总时长 > silence_threshold
@@ -354,11 +385,13 @@ def filter_silent_clips(clips: List[Dict], segments: List[Dict], silence_thresho
         if silence_ratio <= silence_threshold:
             out.append(c)
         else:
-            logger.info(f"avoid_silence 丢弃: [{c['start']:.1f}, {c['end']:.1f}] 静默占比 {silence_ratio:.0%}")
+            logger.info(
+                f"avoid_silence 丢弃: [{c['start']:.1f}, {c['end']:.1f}] 静默占比 {silence_ratio:.0%}"
+            )
     return out
 
 
-def _pick_representative_text(clip: Dict, all_segments: List[Dict]) -> str:
+def _pick_representative_text(clip: dict, all_segments: list[dict]) -> str:
     """挑一个能代表该 clip 内容的字幕段（覆盖时长最长的段）
 
     之前用 segments[0]：可能首段很短或不典型 → 标题错
@@ -369,28 +402,32 @@ def _pick_representative_text(clip: Dict, all_segments: List[Dict]) -> str:
     best_text = ""
     best_overlap = 0.0
     for seg in all_segments:
-        overlap = max(0.0, min(clip["end"], seg["end"]) - max(clip["start"], seg["start"]))
+        overlap = max(
+            0.0, min(clip["end"], seg["end"]) - max(clip["start"], seg["start"])
+        )
         if overlap > best_overlap:
             best_overlap = overlap
             best_text = seg.get("text", "")
     return best_text
 
 
-def _clip_subtitle_text(clip: Dict, all_segments: List[Dict]) -> str:
+def _clip_subtitle_text(clip: dict, all_segments: list[dict]) -> str:
     """收集该 clip 时间范围内所有字幕段的全文（用于评分）"""
     parts = []
-    for seg in (all_segments or []):
+    for seg in all_segments or []:
         if seg["end"] > clip["start"] and seg["start"] < clip["end"]:
             parts.append(seg.get("text", ""))
     return " ".join(parts)
 
 
-def _parse_keywords(text: str) -> List[str]:
+def _parse_keywords(text: str) -> list[str]:
     """把 '保留规则' / '删除规则' 文本解析成关键词列表（按行 / 标点）"""
     if not text:
         return []
     keywords = []
-    for line in text.replace("，", ",").replace("、", ",").replace("；", ",").split("\n"):
+    for line in (
+        text.replace("，", ",").replace("、", ",").replace("；", ",").split("\n")
+    ):
         for part in line.split(","):
             part = part.strip()
             if part and len(part) >= 2:
@@ -398,7 +435,9 @@ def _parse_keywords(text: str) -> List[str]:
     return keywords
 
 
-def _score_clip_local(clip: Dict, all_segments: List[Dict], strategy_config: Dict) -> float:
+def _score_clip_local(
+    clip: dict, all_segments: list[dict], strategy_config: dict
+) -> float:
     """本地兜底方案的真评分（基于字幕密度 + 时长匹配 + 关键词命中）
 
     比 AI 路径粗糙，但比"全给 50"有用得多
@@ -434,7 +473,7 @@ def _score_clip_local(clip: Dict, all_segments: List[Dict], strategy_config: Dic
         return -1.0  # 标记丢弃
 
     # 2. 字幕密度（按字数估算，1 字 ≈ 1 token）
-    char_count = len(re.sub(r'\s', '', text))
+    char_count = len(re.sub(r"\s", "", text))
     if 60 <= char_count <= 300:
         score += 0.10
         reasons.append(f"字数{char_count}")
@@ -449,7 +488,10 @@ def _score_clip_local(clip: Dict, all_segments: List[Dict], strategy_config: Dic
     duration = clip.get("duration", 0) or 0
     if duration <= 0:
         score -= 0.10
-    elif 5 <= duration <= 120 and 0.5 * target_duration <= duration <= 1.5 * target_duration:
+    elif (
+        5 <= duration <= 120
+        and 0.5 * target_duration <= duration <= 1.5 * target_duration
+    ):
         score += 0.10
         reasons.append(f"时长{duration:.0f}s匹配")
     elif duration < 5:
@@ -480,8 +522,9 @@ def _score_clip_local(clip: Dict, all_segments: List[Dict], strategy_config: Dic
     return max(0.0, min(1.0, score))
 
 
-def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None,
-                            strategy_config: Dict = None) -> List[Dict]:
+def generate_simple_titles(
+    clips: list[dict], all_segments: list[dict] = None, strategy_config: dict = None
+) -> list[dict]:
     """生成简单标题（从该 clip 时间范围覆盖最长的字幕段提取）+ 本地评分
 
     Args:
@@ -490,7 +533,9 @@ def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None,
         strategy_config: 策略配置（用于本地评分：keep_rules / remove_rules / target_duration 等）
     """
     config = strategy_config or {}
-    min_score = _normalize_min_score((config.get("rules") or {}).get("min_score", 0.6))  # 本地默认 0.6（比 AI 路径 0.7 略低，扣分项多）
+    min_score = _normalize_min_score(
+        (config.get("rules") or {}).get("min_score", 0.6)
+    )  # 本地默认 0.6（比 AI 路径 0.7 略低，扣分项多）
 
     titled = []
 
@@ -508,7 +553,7 @@ def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None,
             text = ""
 
         # 清理标点
-        text_clean = re.sub(r'[^\w\s\u4e00-\u9fff]', '', text)
+        text_clean = re.sub(r"[^\w\s\u4e00-\u9fff]", "", text)
         title = text_clean[:30] + "..." if len(text_clean) > 30 else text_clean
 
         # 本地评分
@@ -520,32 +565,38 @@ def generate_simple_titles(clips: List[Dict], all_segments: List[Dict] = None,
             # 低于阈值 → 也跳过（不写库）
             continue
 
-        titled.append({
-            "index": clip["index"],
-            "start": clip["start"],
-            "end": clip["end"],
-            "duration": clip["duration"],
-            "title": f"片段 {clip['index']}: {title}" if title else f"片段 {clip['index']}",
-            "score": round(score, 2),
-        })
+        titled.append(
+            {
+                "index": clip["index"],
+                "start": clip["start"],
+                "end": clip["end"],
+                "duration": clip["duration"],
+                "title": f"片段 {clip['index']}: {title}"
+                if title
+                else f"片段 {clip['index']}",
+                "score": round(score, 2),
+            }
+        )
 
     return titled
 
 
-def group_into_collections(clips: List[Dict], group_size: int = 8) -> List[Dict]:
+def group_into_collections(clips: list[dict], group_size: int = 8) -> list[dict]:
     """分组为合集"""
     if not clips:
         return []
-    
+
     collections = []
-    
+
     for i in range(0, len(clips), group_size):
-        group = clips[i:i+group_size]
-        collections.append({
-            "index": len(collections) + 1,
-            "title": f"合集 {len(collections) + 1}",
-            "clip_ids": [c["index"] for c in group],
-            "clips": group,  # 保留完整信息用于合并
-        })
-    
+        group = clips[i : i + group_size]
+        collections.append(
+            {
+                "index": len(collections) + 1,
+                "title": f"合集 {len(collections) + 1}",
+                "clip_ids": [c["index"] for c in group],
+                "clips": group,  # 保留完整信息用于合并
+            }
+        )
+
     return collections

@@ -4,32 +4,32 @@
 - 扫描触发: /api/v1/watch-folders/{id}/scan (手动)
 - 后台扫描: celery beat 任务，每 30s 触发一次，自动扫所有 enabled folders
 """
+
 import logging
 import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings  # 用于 BASE_DIR
 from ..core.database import get_db
-from ..models.database import WatchFolder, Project
+from ..models.database import Project, WatchFolder
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-ALLOWED_VIDEO_EXT = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.m4v'}
+ALLOWED_VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".m4v"}
 
 
-def _to_iso_utc(dt: Optional[datetime]) -> Optional[str]:
+def _to_iso_utc(dt: datetime | None) -> str | None:
     """datetime → ISO 字符串（UTC，带 Z 后缀）"""
-    return dt.isoformat() + 'Z' if dt else None
+    return dt.isoformat() + "Z" if dt else None
 
 
 def _to_dict(wf: WatchFolder) -> dict:
@@ -54,8 +54,8 @@ def _to_dict(wf: WatchFolder) -> dict:
 class WatchFolderCreate(BaseModel):
     name: str
     path: str
-    style_id: Optional[str] = None
-    style_config: Optional[dict] = None
+    style_id: str | None = None
+    style_config: dict | None = None
     with_subtitle: bool = True
     scan_interval_seconds: int = 60
     source_action: str = "delete"  # delete / keep / move_done
@@ -63,21 +63,23 @@ class WatchFolderCreate(BaseModel):
 
 
 class WatchFolderUpdate(BaseModel):
-    name: Optional[str] = None
-    path: Optional[str] = None
-    style_id: Optional[str] = None
-    style_config: Optional[dict] = None
-    with_subtitle: Optional[bool] = None
-    scan_interval_seconds: Optional[int] = None
-    source_action: Optional[str] = None
-    enabled: Optional[bool] = None
+    name: str | None = None
+    path: str | None = None
+    style_id: str | None = None
+    style_config: dict | None = None
+    with_subtitle: bool | None = None
+    scan_interval_seconds: int | None = None
+    source_action: str | None = None
+    enabled: bool | None = None
 
 
 # ============== CRUD ==============
 @router.get("/watch-folders")
 async def list_watch_folders(
-    include_disabled: bool = Query(default=False, description="是否包含已停用的 watch folder"),
-    db: AsyncSession = Depends(get_db)
+    include_disabled: bool = Query(
+        default=False, description="是否包含已停用的 watch folder"
+    ),
+    db: AsyncSession = Depends(get_db),
 ):
     """列出所有 watch folder（默认只显示启用的）"""
     query = select(WatchFolder).order_by(WatchFolder.created_at.desc())
@@ -89,7 +91,9 @@ async def list_watch_folders(
 
 
 @router.post("/watch-folders")
-async def create_watch_folder(folder: WatchFolderCreate, db: AsyncSession = Depends(get_db)):
+async def create_watch_folder(
+    folder: WatchFolderCreate, db: AsyncSession = Depends(get_db)
+):
     """创建 watch folder"""
     p = Path(folder.path)
     if not p.is_absolute():
@@ -99,7 +103,9 @@ async def create_watch_folder(folder: WatchFolderCreate, db: AsyncSession = Depe
     if not p.is_dir():
         raise HTTPException(status_code=400, detail=f"不是文件夹：{folder.path}")
     if folder.source_action not in ("delete", "keep", "move_done"):
-        raise HTTPException(status_code=400, detail="source_action 必须是 delete/keep/move_done")
+        raise HTTPException(
+            status_code=400, detail="source_action 必须是 delete/keep/move_done"
+        )
 
     fid = f"wf_{uuid.uuid4().hex[:8]}"
     wf = WatchFolder(
@@ -123,7 +129,9 @@ async def create_watch_folder(folder: WatchFolderCreate, db: AsyncSession = Depe
 
 
 @router.put("/watch-folders/{folder_id}")
-async def update_watch_folder(folder_id: str, folder: WatchFolderUpdate, db: AsyncSession = Depends(get_db)):
+async def update_watch_folder(
+    folder_id: str, folder: WatchFolderUpdate, db: AsyncSession = Depends(get_db)
+):
     """更新 watch folder"""
     result = await db.execute(select(WatchFolder).where(WatchFolder.id == folder_id))
     wf = result.scalar_one_or_none()
@@ -131,16 +139,26 @@ async def update_watch_folder(folder_id: str, folder: WatchFolderUpdate, db: Asy
         raise HTTPException(status_code=404, detail="watch folder 不存在")
 
     update_data = folder.dict(exclude_unset=True)
-    if 'path' in update_data:
-        np = Path(update_data['path'])
+    if "path" in update_data:
+        np = Path(update_data["path"])
         if not np.is_absolute():
             raise HTTPException(status_code=400, detail="路径必须是绝对路径")
         if not np.exists() or not np.is_dir():
-            raise HTTPException(status_code=400, detail=f"路径无效：{update_data['path']}")
-    if 'source_action' in update_data and update_data['source_action'] not in ("delete", "keep", "move_done"):
-        raise HTTPException(status_code=400, detail="source_action 必须是 delete/keep/move_done")
-    if 'scan_interval_seconds' in update_data:
-        update_data['scan_interval_seconds'] = max(10, update_data['scan_interval_seconds'])
+            raise HTTPException(
+                status_code=400, detail=f"路径无效：{update_data['path']}"
+            )
+    if "source_action" in update_data and update_data["source_action"] not in (
+        "delete",
+        "keep",
+        "move_done",
+    ):
+        raise HTTPException(
+            status_code=400, detail="source_action 必须是 delete/keep/move_done"
+        )
+    if "scan_interval_seconds" in update_data:
+        update_data["scan_interval_seconds"] = max(
+            10, update_data["scan_interval_seconds"]
+        )
 
     for k, v in update_data.items():
         setattr(wf, k, v)
@@ -196,7 +214,8 @@ async def _scan_folder(db: AsyncSession, wf: WatchFolder) -> int:
 
     # 列出顶层视频文件（不递归，避免扫 done/ 子目录）
     files = [
-        f for f in folder_path.iterdir()
+        f
+        for f in folder_path.iterdir()
         if f.is_file()
         and f.suffix.lower() in ALLOWED_VIDEO_EXT
         and not f.name.startswith("._")  # 排除 macOS 隐藏文件
@@ -259,6 +278,7 @@ async def _process_file(db: AsyncSession, wf: WatchFolder, file_path: Path):
     # 触发 celery（异步）
     try:
         from ..core.celery_app import celery_app
+
         celery_app.send_task(
             "backend.tasks.processing.process_video_pipeline",
             args=[project_id, str(target), None, None],
@@ -333,7 +353,8 @@ def _sync_scan_folder(db, wf: WatchFolder) -> int:
     processed = dict(wf.processed_files or {})
 
     files = [
-        f for f in folder_path.iterdir()
+        f
+        for f in folder_path.iterdir()
         if f.is_file()
         and f.suffix.lower() in ALLOWED_VIDEO_EXT
         and not f.name.startswith("._")
@@ -393,6 +414,7 @@ def _sync_process_file(db, wf: WatchFolder, file_path: Path):
     # 触发 celery
     try:
         from ..core.celery_app import celery_app
+
         celery_app.send_task(
             "backend.tasks.processing.process_video_pipeline",
             args=[project_id, str(target), None, None],

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """字幕样式偏好（user preferences）持久化服务。
 
 负责将用户在某次项目中使用的字幕样式写入 UserPreference 表，
@@ -40,7 +39,9 @@ async def get_last_subtitle_style(db: AsyncSession) -> dict | None:
     return pref.last_used_subtitle_style
 
 
-async def sync_subtitle_style_to_preferences(db: AsyncSession, subtitle_style: dict) -> None:
+async def sync_subtitle_style_to_preferences(
+    db: AsyncSession, subtitle_style: dict
+) -> None:
     """把字幕样式同步到用户偏好（upsert）。
 
     失败仅 warn，不抛异常——偏好同步不应阻塞项目配置更新。
@@ -69,10 +70,18 @@ async def sync_subtitle_style_to_preferences(db: AsyncSession, subtitle_style: d
 def _normalize_subtitle_style(subtitle_style: dict) -> dict:
     """归一化字幕样式 dict：缺失字段填默认值。"""
     return {
-        "font_size": subtitle_style.get("font_size", DEFAULT_SUBTITLE_STYLE["font_size"]),
-        "txt_color": subtitle_style.get("txt_color", DEFAULT_SUBTITLE_STYLE["txt_color"]),
-        "stroke_color": subtitle_style.get("stroke_color", DEFAULT_SUBTITLE_STYLE["stroke_color"]),
-        "stroke_width": subtitle_style.get("stroke_width", DEFAULT_SUBTITLE_STYLE["stroke_width"]),
+        "font_size": subtitle_style.get(
+            "font_size", DEFAULT_SUBTITLE_STYLE["font_size"]
+        ),
+        "txt_color": subtitle_style.get(
+            "txt_color", DEFAULT_SUBTITLE_STYLE["txt_color"]
+        ),
+        "stroke_color": subtitle_style.get(
+            "stroke_color", DEFAULT_SUBTITLE_STYLE["stroke_color"]
+        ),
+        "stroke_width": subtitle_style.get(
+            "stroke_width", DEFAULT_SUBTITLE_STYLE["stroke_width"]
+        ),
         "font": subtitle_style.get("font", DEFAULT_SUBTITLE_STYLE["font"]),
         "position": subtitle_style.get("position", DEFAULT_SUBTITLE_STYLE["position"]),
     }

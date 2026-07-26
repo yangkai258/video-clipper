@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """视频处理 Celery 任务
 
 流水线分 10 个 step，每个 step 一个独立函数：
@@ -23,12 +22,9 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
 
 from celery import shared_task
 from sqlalchemy import select
-
-from ..core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +56,11 @@ TEMP_SRT_DIR = "/tmp"
 # 临时音频/中间文件
 TEMP_AUDIO_FILES = ("temp_audio.wav", "temp_audio.m4a", "extracted_audio.wav")
 INTERMEDIATE_JSON_FILES = (
-    "step1_outline.json", "step2_clips.json",
-    "step3_scored.json", "step4_titled.json", "step5_collections.json",
+    "step1_outline.json",
+    "step2_clips.json",
+    "step3_scored.json",
+    "step4_titled.json",
+    "step5_collections.json",
 )
 
 # 0-clip guard 错误信息
@@ -83,33 +82,65 @@ def process_video_pipeline(
     logger.info(f"开始处理项目：{project_id}")
 
     _mark_task_running(task_id)
-    project_config, subtitle_config, project_dir, metadata_dir, output_dir, clips_dir, collections_dir = _prepare_directories(project_id, input_video_path)
+    (
+        project_config,
+        subtitle_config,
+        project_dir,
+        metadata_dir,
+        output_dir,
+        clips_dir,
+        collections_dir,
+    ) = _prepare_directories(project_id, input_video_path)
 
     try:
         input_path = _validate_input(input_video_path)
 
         # Step 1: 字幕生成
-        srt_path = _run_step1_subtitle(input_video_path, input_srt_path, metadata_dir, project_id, task_id, project_config)
+        srt_path = _run_step1_subtitle(
+            input_video_path,
+            input_srt_path,
+            metadata_dir,
+            project_id,
+            task_id,
+            project_config,
+        )
         if not srt_path or not srt_path.exists():
             raise Exception("字幕生成失败")
         gc.collect()
 
         # Step 2-6: 大纲/时间线/评分/标题/聚类
-        titled_clips, collections, outlines = _run_step2_to_6(srt_path, metadata_dir, project_config, task_id)
+        titled_clips, collections, outlines = _run_step2_to_6(
+            srt_path, metadata_dir, project_config, task_id
+        )
 
         # Step 7: 切割视频（cut_clips 内部维护 70%-90% 进度）
-        with_subtitle = project_config.get("with_subtitle", True) if project_config else True
-        output_format = project_config.get("output_format", "original") if project_config else "original"
+        with_subtitle = (
+            project_config.get("with_subtitle", True) if project_config else True
+        )
+        output_format = (
+            project_config.get("output_format", "original")
+            if project_config
+            else "original"
+        )
         _run_step7_cut_clips(
-            titled_clips, input_video_path, clips_dir, srt_path, subtitle_config,
-            with_subtitle, project_id, output_format, task_id,
+            titled_clips,
+            input_video_path,
+            clips_dir,
+            srt_path,
+            subtitle_config,
+            with_subtitle,
+            project_id,
+            output_format,
+            task_id,
         )
 
         # Step 8: 合并合集（merge_collections 内部维护 90%-99% 进度）
         _run_step8_merge_collections(collections, clips_dir, collections_dir, task_id)
 
         # Step 9: 文件完整性验证
-        _verify_files(titled_clips, collections, project_dir, clips_dir, collections_dir)
+        _verify_files(
+            titled_clips, collections, project_dir, clips_dir, collections_dir
+        )
 
         # 清理临时 SRT（Y 方案：with_subtitle=False 时使用 /tmp）
         _cleanup_temp_srt(with_subtitle, srt_path)
@@ -164,7 +195,9 @@ def _mark_task_running(task_id: str) -> None:
         from ..models.database import Task
 
         with sync_get_db() as db:
-            task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+            task = db.execute(
+                select(Task).where(Task.id == task_id)
+            ).scalar_one_or_none()
             if task:
                 task.status = "running"
                 if not task.started_at:
@@ -178,10 +211,8 @@ def _mark_task_running(task_id: str) -> None:
 
 def _prepare_directories(
     project_id: str, input_video_path: str
-) -> Tuple[dict, dict, Path, Path, Path, Path, Path]:
+) -> tuple[dict, dict, Path, Path, Path, Path, Path]:
     """读项目配置 + 准备输出目录。"""
-    from ..core.database import sync_get_db
-    from ..models.database import Project
 
     strategy_config, subtitle_config = _load_project_config(project_id)
 
@@ -193,16 +224,26 @@ def _prepare_directories(
     for d in (metadata_dir, clips_dir, collections_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    return strategy_config, subtitle_config, project_dir, metadata_dir, output_dir, clips_dir, collections_dir
+    return (
+        strategy_config,
+        subtitle_config,
+        project_dir,
+        metadata_dir,
+        output_dir,
+        clips_dir,
+        collections_dir,
+    )
 
 
-def _load_project_config(project_id: str) -> Tuple[dict, dict]:
+def _load_project_config(project_id: str) -> tuple[dict, dict]:
     """从 DB 读项目处理配置。返回 (strategy_config, subtitle_config)。"""
     from ..core.database import sync_get_db
     from ..models.database import Project
 
     with sync_get_db() as db:
-        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
+        project = db.execute(
+            select(Project).where(Project.id == project_id)
+        ).scalar_one_or_none()
         if not project:
             logger.warning("项目配置不存在，使用默认策略")
             return {}, {}
@@ -214,7 +255,9 @@ def _load_project_config(project_id: str) -> Tuple[dict, dict]:
             or {}
         )
         logger.info(f"使用切片策略：{strategy_config.get('strategy_name', '默认')}")
-        logger.info(f"策略参数：target_duration={strategy_config.get('target_duration', 60)}s, max_clips={strategy_config.get('max_clips', 20)}")
+        logger.info(
+            f"策略参数：target_duration={strategy_config.get('target_duration', 60)}s, max_clips={strategy_config.get('max_clips', 20)}"
+        )
         logger.info(f"字幕配置：{subtitle_config}")
         return strategy_config, subtitle_config
 
@@ -226,7 +269,9 @@ def _validate_input(input_video_path: str) -> Path:
         raise FileNotFoundError(f"视频文件不存在: {input_video_path}")
     input_size = input_path.stat().st_size
     if input_size < 1024:  # 小于 1KB 视作无效
-        raise ValueError(f"视频文件过小 ({input_size} bytes), 上传可能未完成. 请重新上传.")
+        raise ValueError(
+            f"视频文件过小 ({input_size} bytes), 上传可能未完成. 请重新上传."
+        )
     return input_path
 
 
@@ -247,17 +292,25 @@ def _run_step1_subtitle(
     logger.info("Step 1: 生成字幕")
     _update_task_progress(task_id, PROGRESS_DICT["subtitle_prepare"], "准备生成字幕")
 
-    with_subtitle = strategy_config.get("with_subtitle", True) if strategy_config else True
-    logger.info(f"字幕模式：{'落盘到项目目录' if with_subtitle else 'in_memory 模式（不写项目目录，用完即删）'}")
+    with_subtitle = (
+        strategy_config.get("with_subtitle", True) if strategy_config else True
+    )
+    logger.info(
+        f"字幕模式：{'落盘到项目目录' if with_subtitle else 'in_memory 模式（不写项目目录，用完即删）'}"
+    )
 
     # 心跳：whisper 跑得慢（30s-3min），每 5s 推一次进度
     heartbeat_stop = _start_subtitle_heartbeat(task_id)
 
     try:
         if with_subtitle:
-            srt_path = _generate_or_copy_srt_to_disk(input_video_path, input_srt_path, metadata_dir)
+            srt_path = _generate_or_copy_srt_to_disk(
+                input_video_path, input_srt_path, metadata_dir
+            )
         else:
-            srt_path = _generate_or_copy_srt_to_tmp(input_video_path, input_srt_path, project_id, generate_subtitle)
+            srt_path = _generate_or_copy_srt_to_tmp(
+                input_video_path, input_srt_path, project_id, generate_subtitle
+            )
     finally:
         heartbeat_stop.set()
 
@@ -337,10 +390,10 @@ def _run_step2_to_6(
     metadata_dir: Path,
     strategy_config: dict,
     task_id: str,
-) -> Tuple[list, list, list]:
+) -> tuple[list, list, list]:
     """Step 2-6: 大纲提取 → 时间线 → 评分 → 标题 → 聚类。"""
     from ..services.llm_service import (
-        extract_outline, create_timeline, score_clips, generate_titles, cluster_collections
+        extract_outline,
     )
 
     _update_task_progress(task_id, PROGRESS_DICT["outline_start"], "提取内容大纲")
@@ -358,7 +411,7 @@ def _run_step2_to_6(
 
 def _run_local_fallback(
     srt_path: Path, metadata_dir: Path, strategy_config: dict, task_id: str
-) -> Tuple[list, list, list]:
+) -> tuple[list, list, list]:
     """AI 大纲失败 → 本地方案直接基于字幕段落切片。"""
     from ..services.local_processor import generate_clips_from_subtitle
 
@@ -372,11 +425,18 @@ def _run_local_fallback(
 
 
 def _run_ai_pipeline(
-    outlines: list, srt_path: Path, metadata_dir: Path, strategy_config: dict, task_id: str
-) -> Tuple[list, list, list]:
+    outlines: list,
+    srt_path: Path,
+    metadata_dir: Path,
+    strategy_config: dict,
+    task_id: str,
+) -> tuple[list, list, list]:
     """正常 AI 流水线：timeline → score → titles → collections。"""
     from ..services.llm_service import (
-        create_timeline, score_clips, generate_titles, cluster_collections
+        cluster_collections,
+        create_timeline,
+        generate_titles,
+        score_clips,
     )
 
     logger.info("Step 3: 创建时间线")
@@ -389,7 +449,9 @@ def _run_ai_pipeline(
 
     logger.info("Step 5: 生成标题")
     _update_task_progress(task_id, PROGRESS_DICT["title_done"], "生成片段标题")
-    titled_clips = generate_titles(scored_clips, metadata_dir, srt_path=srt_path, strategy_config=strategy_config)
+    titled_clips = generate_titles(
+        scored_clips, metadata_dir, srt_path=srt_path, strategy_config=strategy_config
+    )
 
     logger.info("Step 6: 主题聚类")
     _update_task_progress(task_id, PROGRESS_DICT["cluster_done"], "主题聚类")
@@ -464,10 +526,14 @@ def _verify_files(
     missing_collections = _find_missing_collections(collections, collections_dir)
 
     if missing_collections:
-        logger.warning(f"合集生成失败 {len(missing_collections)} 个，但切片正常，继续完成：{missing_collections[:3]}")
+        logger.warning(
+            f"合集生成失败 {len(missing_collections)} 个，但切片正常，继续完成：{missing_collections[:3]}"
+        )
 
     if missing_files:
-        logger.error(f"文件生成不完整，缺失 {len(missing_files)} 个文件：{missing_files[:5]}...")
+        logger.error(
+            f"文件生成不完整，缺失 {len(missing_files)} 个文件：{missing_files[:5]}..."
+        )
         raise Exception(f"文件生成失败，缺失：{missing_files[:3]}")
 
     logger.info(
@@ -485,7 +551,11 @@ def _find_missing_clips(titled_clips: list, project_dir: Path, clips_dir: Path) 
         if video_path and (project_dir / video_path).exists():
             continue
         # fallback: 用 index 构造预期路径
-        safe_title = "".join(c for c in clip.get("title", f"clip_{clip.get('index', 1)}") if c not in '<>:"/\\|？*')
+        safe_title = "".join(
+            c
+            for c in clip.get("title", f"clip_{clip.get('index', 1)}")
+            if c not in '<>:"/\\|？*'
+        )
         expected_path = clips_dir / f"{clip.get('index', 1)}_{safe_title[:50]}.mp4"
         if not expected_path.exists():
             missing.append(str(expected_path))
@@ -607,7 +677,7 @@ def _cleanup_temp_files(project_dir: Path) -> None:
         if raw_video.exists():
             raw_size = raw_video.stat().st_size
             raw_video.unlink()
-            logger.info(f"清理：删除 raw/input.mp4 ({raw_size/1024/1024:.1f} MB)")
+            logger.info(f"清理：删除 raw/input.mp4 ({raw_size / 1024 / 1024:.1f} MB)")
             try:
                 (project_dir / "raw").rmdir()
             except OSError:
@@ -675,7 +745,9 @@ def _mark_zero_output_failed(project_id: str, task_id: str, reason: str) -> None
                     task_row.status = "failed"
                     task_row.error_message = reason
             db.commit()
-            logger.warning(f"0-clip guard: project {project_id} 跑完 10 步但 0 产物, 改标 failed")
+            logger.warning(
+                f"0-clip guard: project {project_id} 跑完 10 步但 0 产物, 改标 failed"
+            )
     except Exception as guard_err:
         logger.warning(f"0-clip guard 写库失败: {guard_err}")
 
@@ -698,7 +770,9 @@ def _update_task_progress(task_id: str, progress: int, current_step: str) -> Non
         from ..models.database import Task
 
         with sync_get_db() as db:
-            task = db.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+            task = db.execute(
+                select(Task).where(Task.id == task_id)
+            ).scalar_one_or_none()
             if task:
                 task.progress = max(0, min(100, progress))
                 task.current_step = current_step[:255]

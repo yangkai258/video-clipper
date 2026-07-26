@@ -1,14 +1,16 @@
 """Celery 配置"""
-import os
-from celery import Celery
-from .config import settings
 
+import os
+
+from celery import Celery
 
 # 从环境变量获取配置（支持版本隔离）
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0")
 # 队列名: 兼容两种 env 变量名 (CELERY_TASK_DEFAULT_QUEUE 是新版, CELERY_QUEUE_NAME 是老版)
-CELERY_QUEUE_NAME = os.getenv("CELERY_TASK_DEFAULT_QUEUE") or os.getenv("CELERY_QUEUE_NAME", "processing")
+CELERY_QUEUE_NAME = os.getenv("CELERY_TASK_DEFAULT_QUEUE") or os.getenv(
+    "CELERY_QUEUE_NAME", "processing"
+)
 
 # 创建 Celery 应用
 celery_app = Celery(
@@ -16,9 +18,9 @@ celery_app = Celery(
     broker=CELERY_BROKER_URL,
     backend=CELERY_RESULT_BACKEND,
     include=[
-        "backend.tasks.processing",       # 切片项目 task (process_video_pipeline)
-        "backend.tasks.processing_mix",   # v2.2.3: 混剪项目 task (process_mix_pipeline)
-    ]
+        "backend.tasks.processing",  # 切片项目 task (process_video_pipeline)
+        "backend.tasks.processing_mix",  # v2.2.3: 混剪项目 task (process_mix_pipeline)
+    ],
 )
 
 # Celery 配置

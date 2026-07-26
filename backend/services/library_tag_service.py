@@ -7,6 +7,7 @@
 - 不阻塞主流程: upload / from-clip 用 BackgroundTasks 加任务
 - manual retry: 端点 POST /library/{id}/auto-tag
 """
+
 import logging
 import re
 
@@ -18,16 +19,101 @@ logger = logging.getLogger(__name__)
 
 # 中文停用词 (auto-tag 不当 keyword)
 STOP_WORDS = {
-    "的", "了", "是", "在", "和", "与", "或", "我", "你", "他", "她", "它",
-    "我们", "你们", "他们", "这个", "那个", "这", "那", "一个", "一些",
-    "上", "下", "里", "外", "前", "后", "中", "大", "小", "多", "少",
-    "好", "坏", "新", "老", "高", "低", "长", "短", "快", "慢",
-    "啊", "嗯", "哦", "呀", "吧", "呢", "吗", "嘛", "哈",
-    "今天", "明天", "昨天", "现在", "刚才", "已经", "正在", "会", "能",
-    "什么", "怎么", "为什么", "哪里", "哪个", "多少",
-    "from", "to", "of", "in", "the", "a", "an", "and", "or", "is", "are",
-    "this", "that", "it", "we", "you", "he", "she", "they", "with",
-    "for", "on", "at", "by", "as", "be", "have", "has", "had",
+    "的",
+    "了",
+    "是",
+    "在",
+    "和",
+    "与",
+    "或",
+    "我",
+    "你",
+    "他",
+    "她",
+    "它",
+    "我们",
+    "你们",
+    "他们",
+    "这个",
+    "那个",
+    "这",
+    "那",
+    "一个",
+    "一些",
+    "上",
+    "下",
+    "里",
+    "外",
+    "前",
+    "后",
+    "中",
+    "大",
+    "小",
+    "多",
+    "少",
+    "好",
+    "坏",
+    "新",
+    "老",
+    "高",
+    "低",
+    "长",
+    "短",
+    "快",
+    "慢",
+    "啊",
+    "嗯",
+    "哦",
+    "呀",
+    "吧",
+    "呢",
+    "吗",
+    "嘛",
+    "哈",
+    "今天",
+    "明天",
+    "昨天",
+    "现在",
+    "刚才",
+    "已经",
+    "正在",
+    "会",
+    "能",
+    "什么",
+    "怎么",
+    "为什么",
+    "哪里",
+    "哪个",
+    "多少",
+    "from",
+    "to",
+    "of",
+    "in",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "is",
+    "are",
+    "this",
+    "that",
+    "it",
+    "we",
+    "you",
+    "he",
+    "she",
+    "they",
+    "with",
+    "for",
+    "on",
+    "at",
+    "by",
+    "as",
+    "be",
+    "have",
+    "has",
+    "had",
 }
 
 
@@ -70,7 +156,9 @@ def _keyword_fallback(name: str, project_name: str, description: str = "") -> li
     return tags[:5]
 
 
-def _call_llm_for_tags(name: str, project_name: str, description: str = "") -> list[str] | None:
+def _call_llm_for_tags(
+    name: str, project_name: str, description: str = ""
+) -> list[str] | None:
     """调 LLM 给资源生成 1-3 个 tag. 失败返 None (走 fallback)."""
     try:
         from .llm_service import _call_llm

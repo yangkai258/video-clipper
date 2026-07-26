@@ -18,9 +18,9 @@ _update_task_progress and on _mark_task_running.
 Trigger: independent of list_projects.  Run from cron / launchd plist every
 5min, e.g. via scripts/check_task_health.sh.
 """
+
 import logging
 from datetime import datetime, timedelta
-from typing import List
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,62 +29,78 @@ from ..models.database import Project, Task
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_STUCK_AFTER_MINUTES = 5   # created_at 超过这个时间但 started_at 仍空
-DEFAULT_IDLE_AFTER_MINUTES = 30   # progress_changed_at 超过这个时间没动
+DEFAULT_STUCK_AFTER_MINUTES = 5  # created_at 超过这个时间但 started_at 仍空
+DEFAULT_IDLE_AFTER_MINUTES = 30  # progress_changed_at 超过这个时间没动
 
 
 async def find_stuck_tasks(
     db: AsyncSession,
     stuck_after_min: int = DEFAULT_STUCK_AFTER_MINUTES,
     idle_after_min: int = DEFAULT_IDLE_AFTER_MINUTES,
-) -> List[dict]:
+) -> list[dict]:
     """Return list of stuck-task dicts: {task_id, project_id, reason, stuck_for_min}."""
     now = datetime.utcnow()
     stuck_cutoff = now - timedelta(minutes=stuck_after_min)
     idle_cutoff = now - timedelta(minutes=idle_after_min)
 
     # Mode 1: status=running, no started_at, created_at too old
-    no_pickup = (await db.execute(
-        select(Task).where(
-            Task.status == "running",
-            Task.started_at.is_(None),
-            Task.created_at < stuck_cutoff,
+    no_pickup = (
+        (
+            await db.execute(
+                select(Task).where(
+                    Task.status == "running",
+                    Task.started_at.is_(None),
+                    Task.created_at < stuck_cutoff,
+                )
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
 
     # Mode 2: started, but progress_changed_at (or started_at as fallback) is stale
-    no_progress = (await db.execute(
-        select(Task).where(
-            Task.status == "running",
-            Task.started_at.isnot(None),
-            Task.started_at < idle_cutoff,
+    no_progress = (
+        (
+            await db.execute(
+                select(Task).where(
+                    Task.status == "running",
+                    Task.started_at.isnot(None),
+                    Task.started_at < idle_cutoff,
+                )
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
 
-    stuck: List[dict] = []
+    stuck: list[dict] = []
     for task in no_pickup:
-        stuck.append({
-            "task_id": task.id,
-            "project_id": task.project_id,
-            "reason": "no_worker_pickup",
-            "stuck_for_min": int((now - task.created_at).total_seconds() / 60),
-        })
+        stuck.append(
+            {
+                "task_id": task.id,
+                "project_id": task.project_id,
+                "reason": "no_worker_pickup",
+                "stuck_for_min": int((now - task.created_at).total_seconds() / 60),
+            }
+        )
     for task in no_progress:
         # ponytail: 老 task 没有 progress_changed_at, 用 started_at 当 fallback.
         # 升级路径: 历史 task 跑过一次 worker 就被写上 progress_changed_at 了.
         last_change = task.progress_changed_at or task.started_at
-        stuck.append({
-            "task_id": task.id,
-            "project_id": task.project_id,
-            "reason": "no_progress_update",
-            "stuck_for_min": int((now - last_change).total_seconds() / 60),
-        })
+        stuck.append(
+            {
+                "task_id": task.id,
+                "project_id": task.project_id,
+                "reason": "no_progress_update",
+                "stuck_for_min": int((now - last_change).total_seconds() / 60),
+            }
+        )
     return stuck
 
 
 async def mark_stuck_tasks_as_failed(
     db: AsyncSession,
-    stuck_tasks: List[dict],
+    stuck_tasks: list[dict],
 ) -> int:
     """Mark stuck tasks as failed; set their project back to pending so user can retry.
 
@@ -116,7 +132,9 @@ async def mark_stuck_tasks_as_failed(
         cleaned += 1
         logger.warning(
             "task_health: task %s (%s, %dmin) -> failed, project -> pending",
-            s["task_id"], reason, minutes,
+            s["task_id"],
+            reason,
+            minutes,
         )
 
     await db.commit()
@@ -134,6 +152,7 @@ async def check_stuck_tasks(db: AsyncSession) -> int:
 if __name__ == "__main__":
     # ponytail: 让 cron 跟运维都能直接 python -m backend.services.task_health 跑.
     import asyncio
+
     from ..core.database import get_db
 
     async def _main():

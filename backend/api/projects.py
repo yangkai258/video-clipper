@@ -1,27 +1,25 @@
-# -*- coding: utf-8 -*-
 """项目 API 路由"""
 
 import logging
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy import func, select
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, select as sa_select
 from sqlalchemy.orm import selectinload
 
-from ..core.database import get_db, to_iso_utc
 from ..core.config import settings
-from ..models.database import Project, Task, Clip, Collection, UserPreference, Style
+from ..core.database import get_db, to_iso_utc
+from ..models.database import Clip, Collection, Project, Style, Task
 from ..services.subtitle_preferences import (
     DEFAULT_SUBTITLE_STYLE,
     get_last_subtitle_style,
     sync_subtitle_style_to_preferences,
 )
-
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -46,10 +44,14 @@ MIN_VIDEO_SIZE_BYTES = 1024 * 1024
 # 同理 DELETE /trash/all 会被 DELETE /{project_id}/restore 等截胡 (但目前还没踩到,
 # 因为 Starlette 会先精确匹配 "/trash/all" 字面量再 fallback 到 path param)
 @router.delete("/trash")
-@router.post("/trash/cleanup")  # v2.2.13: alias for老测试 (test_cleanup_old_trash 用 POST + ?older_than_days)
+@router.post(
+    "/trash/cleanup"
+)  # v2.2.13: alias for老测试 (test_cleanup_old_trash 用 POST + ?older_than_days)
 async def cleanup_trash(
     days: int = Query(default=30, alias="days", description="清理 N 天前已删的项目"),
-    older_than_days: int = Query(default=None, description="v2.2.13 alias: days 别名, 跟 test 兼容"),
+    older_than_days: int = Query(
+        default=None, description="v2.2.13 alias: days 别名, 跟 test 兼容"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """清理 N 天前的已删除项目（软删 → 硬删）
@@ -75,7 +77,10 @@ async def cleanup_trash(
     for p in stale:
         await db.delete(p)
     await db.commit()
-    return {"message": f"已清理 {len(stale)} 个项目 (older than {effective_days} days)", "count": len(stale)}
+    return {
+        "message": f"已清理 {len(stale)} 个项目 (older than {effective_days} days)",
+        "count": len(stale),
+    }
 
 
 @router.delete("/trash/all")
@@ -92,17 +97,16 @@ async def purge_all_trash(db: AsyncSession = Depends(get_db)):
 @router.get("/")
 async def list_projects(
     include_deleted: bool = Query(default=False),
-    search: Optional[str] = Query(default=None, description="按 name 模糊搜索 (case-insensitive)"),
+    search: str | None = Query(
+        default=None, description="按 name 模糊搜索 (case-insensitive)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """列出项目（默认不含已删除）
 
     v2.2.12: 加 ?search= 模糊搜索 (P2-1 修)
     """
-    query = (
-        select(Project)
-        .options(selectinload(Project.tasks))
-    )
+    query = select(Project).options(selectinload(Project.tasks))
     if not include_deleted:
         query = query.where(Project.deleted_at.is_(None))
     if search:
@@ -118,7 +122,12 @@ async def list_projects(
     # 老项目可能 processing_config 里存了 style_id 但没存 strategy_name (老 config 模板),
     # 查 Style 表补上
     from ..models.database import Style
-    style_ids = {cfg.get("style_id") for cfg in (p.processing_config or {} for p in projects) if cfg.get("style_id")}
+
+    style_ids = {
+        cfg.get("style_id")
+        for cfg in (p.processing_config or {} for p in projects)
+        if cfg.get("style_id")
+    }
     style_map = {}
     if style_ids:
         result = await db.execute(select(Style).where(Style.id.in_(style_ids)))
@@ -128,7 +137,7 @@ async def list_projects(
     # v2.2.2: 批量查 clip_count (group by project_id), 避免 N+1
     # ProjectCard 显示 "切片 N" 用这个字段 (之前 list_projects 没返, UI 永远 0)
     from ..models.database import Clip
-    from sqlalchemy import func
+
     project_ids = [p.id for p in projects]
     clip_counts: dict = {}
     if project_ids:
@@ -150,7 +159,9 @@ async def list_projects(
                 "progress": td.get("progress", 0),
                 "current_step": td.get("current_step"),
                 # v2.2.1: 预估/实际归集字段透出, 后续做更好预估模型
-                "estimated_total_at_start_seconds": td.get("estimated_total_at_start_seconds"),
+                "estimated_total_at_start_seconds": td.get(
+                    "estimated_total_at_start_seconds"
+                ),
                 "actual_total_seconds": td.get("actual_total_seconds"),
                 "timing": {
                     "elapsed_seconds": td.get("elapsed_seconds", 0),
@@ -165,29 +176,31 @@ async def list_projects(
         style_id = cfg.get("style_id")
         # 老 config 可能只存 style_id 没存 strategy_name, 用 style_map 补
         style_name = cfg.get("strategy_name") or style_map.get(style_id)
-        project_list.append({
-            "id": p.id,
-            "name": p.name,
-            "status": p.status,
-            "video_size": p.video_size,
-            "video_duration": p.video_duration,
-            "created_at": to_iso_utc(p.created_at),
-            "deleted_at": to_iso_utc(p.deleted_at),
-            # v2.2.2: clip_count (clips 表 group by count) — ProjectCard 显示用
-            "clip_count": clip_counts.get(p.id, 0),
-            # 风格信息 (ProjectCard 显示用)
-            "style_id": style_id,
-            "style_name": style_name,
-            "target_duration": cfg.get("target_duration"),
-            "max_clips": cfg.get("max_clips"),
-            # 字幕 + 输出格式
-            "has_subtitle": cfg.get("with_subtitle", False),
-            "output_format": cfg.get("output_format"),
-            # v2.2.1: 前/后置 padding (cut_clips 时给每个 clip 边界外扩几秒)
-            "pre_padding_seconds": cfg.get("pre_padding_seconds", 0),
-            "post_padding_seconds": cfg.get("post_padding_seconds", 0),
-            **task_fields,
-        })
+        project_list.append(
+            {
+                "id": p.id,
+                "name": p.name,
+                "status": p.status,
+                "video_size": p.video_size,
+                "video_duration": p.video_duration,
+                "created_at": to_iso_utc(p.created_at),
+                "deleted_at": to_iso_utc(p.deleted_at),
+                # v2.2.2: clip_count (clips 表 group by count) — ProjectCard 显示用
+                "clip_count": clip_counts.get(p.id, 0),
+                # 风格信息 (ProjectCard 显示用)
+                "style_id": style_id,
+                "style_name": style_name,
+                "target_duration": cfg.get("target_duration"),
+                "max_clips": cfg.get("max_clips"),
+                # 字幕 + 输出格式
+                "has_subtitle": cfg.get("with_subtitle", False),
+                "output_format": cfg.get("output_format"),
+                # v2.2.1: 前/后置 padding (cut_clips 时给每个 clip 边界外扩几秒)
+                "pre_padding_seconds": cfg.get("pre_padding_seconds", 0),
+                "post_padding_seconds": cfg.get("post_padding_seconds", 0),
+                **task_fields,
+            }
+        )
     return {"projects": project_list}
 
 
@@ -205,7 +218,9 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
         "project": {
             **_project_summary(project),
             **style_overrides,
-            "task": _task_to_dict(latest_task, project.video_duration) if latest_task else None,
+            "task": _task_to_dict(latest_task, project.video_duration)
+            if latest_task
+            else None,
             "clips": [_clip_to_dict(c) for c in project.clips],
             "collections": [_collection_to_dict(col) for col in project.collections],
         }
@@ -224,7 +239,9 @@ async def create_project(
     project_id = str(uuid.uuid4())
     video_size = await _save_uploaded_video(project_id, video)
     subtitle_style = await get_last_subtitle_style(db)
-    project = await _create_project_record(db, project_id, name, description, video_size, subtitle_style)
+    project = await _create_project_record(
+        db, project_id, name, description, video_size, subtitle_style
+    )
     return {
         "message": "项目创建成功",
         "project_id": project.id,
@@ -259,7 +276,9 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     task = await _create_processing_task(db, project_id)
-    celery_task_id = _dispatch_celery_task(project_id, video_path, project.subtitle_path, task.id)
+    celery_task_id = _dispatch_celery_task(
+        project_id, video_path, project.subtitle_path, task.id
+    )
     task.celery_task_id = celery_task_id
     task.status = "running"
     await db.commit()
@@ -297,7 +316,7 @@ async def rerun_project(
         # v2.2.1: 友好提示 — raw 没保留就要重传
         raise HTTPException(
             status_code=422,
-            detail=f"原视频已清理（未启用「保留 raw」），无法重新处理。请重新上传视频。",
+            detail="原视频已清理（未启用「保留 raw」），无法重新处理。请重新上传视频。",
         )
 
     # 应用 config overrides (跟 update_project_config 一样, 但不强制 style_id 触发 padding snapshot)
@@ -306,7 +325,9 @@ async def rerun_project(
     current_cfg.update(overrides)
     # style_id override 时, 从 Style 表 snapshot 当前 padding (跟 update_project_config 一致)
     if overrides.get("style_id"):
-        style_result = await db.execute(select(Style).where(Style.id == overrides["style_id"]))
+        style_result = await db.execute(
+            select(Style).where(Style.id == overrides["style_id"])
+        )
         s = style_result.scalar_one_or_none()
         if s:
             if "pre_padding_seconds" not in overrides:
@@ -323,6 +344,7 @@ async def rerun_project(
         target = project_dir / sub
         if target.exists():
             import shutil
+
             if target.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
             else:
@@ -354,7 +376,9 @@ async def rerun_project(
     await db.commit()
 
     task = await _create_processing_task(db, project_id)
-    celery_task_id = _dispatch_celery_task(project_id, video_path, project.subtitle_path, task.id)
+    celery_task_id = _dispatch_celery_task(
+        project_id, video_path, project.subtitle_path, task.id
+    )
     task.celery_task_id = celery_task_id
     task.status = "running"
     await db.commit()
@@ -375,6 +399,7 @@ async def update_project_config(
 ):
     """更新项目处理配置（如切片策略）"""
     from ..models.database import Style
+
     project = await _load_project_basic(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -384,7 +409,9 @@ async def update_project_config(
     # (用户改 style padding 不会影响已经在跑的 task)
     merged_config = {**project.processing_config, **config}
     if config.get("style_id"):
-        style_result = await db.execute(select(Style).where(Style.id == config["style_id"]))
+        style_result = await db.execute(
+            select(Style).where(Style.id == config["style_id"])
+        )
         s = style_result.scalar_one_or_none()
         if s:
             # 只在 client 没显式传 padding 时才覆盖 (避免 client 显式 override 时被吞)
@@ -421,7 +448,9 @@ async def get_project_file(project_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{project_id}/files/{file_path:path}")
-async def get_project_file_path(project_id: str, file_path: str, db: AsyncSession = Depends(get_db)):
+async def get_project_file_path(
+    project_id: str, file_path: str, db: AsyncSession = Depends(get_db)
+):
     """获取项目内任意文件 (clips, subtitles, thumbnails)。
 
     v2.1.53: 4afb777 refactor 漏掉了这个 endpoint, 导致前端
@@ -441,7 +470,9 @@ async def get_project_file_path(project_id: str, file_path: str, db: AsyncSessio
     try:
         full_path.relative_to(project_dir)
     except ValueError:
-        raise HTTPException(status_code=403, detail="Forbidden: path outside project directory")
+        raise HTTPException(
+            status_code=403, detail="Forbidden: path outside project directory"
+        )
 
     if not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
@@ -489,14 +520,18 @@ async def delete_project(
         # 用 ?permanent=true 强删 (跳过 status check, 直接 db.delete)
         raise HTTPException(
             status_code=409,
-            detail=f"项目处理中, 不能删除 (worker 正在写文件). 等完成或用 ?permanent=true 强删",
+            detail="项目处理中, 不能删除 (worker 正在写文件). 等完成或用 ?permanent=true 强删",
         )
 
     if permanent:
         # 硬删: 直接从 db 删, 含 raw input.mp4 (if keep_raw=False, 已清; 否则保留)
         await db.delete(project)
         await db.commit()
-        return {"message": "项目已强制删除 (含 db record)", "project_id": project_id, "permanent": True}
+        return {
+            "message": "项目已强制删除 (含 db record)",
+            "project_id": project_id,
+            "permanent": True,
+        }
 
     # 软删: 标 deleted_at
     project.deleted_at = datetime.utcnow()
@@ -505,7 +540,9 @@ async def delete_project(
         "message": "项目已移入回收站",
         "project_id": project_id,
         "permanent": False,
-        "deleted_at": to_iso_utc(project.deleted_at),  # v2.2.13: test_soft_delete_completed 期望
+        "deleted_at": to_iso_utc(
+            project.deleted_at
+        ),  # v2.2.13: test_soft_delete_completed 期望
     }
 
 
@@ -529,14 +566,26 @@ async def restore_project(project_id: str, db: AsyncSession = Depends(get_db)):
 def _build_timing_info(task: Task, video_duration_seconds: float = None) -> dict:
     """从 task 状态推算 elapsed / total / eta 秒数。"""
     if not task.started_at:
-        return {"elapsed_seconds": 0, "eta_seconds": None, "total_estimated_seconds": None}
+        return {
+            "elapsed_seconds": 0,
+            "eta_seconds": None,
+            "total_estimated_seconds": None,
+        }
 
     now = datetime.utcnow()
     elapsed = (now - task.started_at).total_seconds()
 
     if task.status == "completed":
-        total = (task.completed_at - task.started_at).total_seconds() if task.completed_at else elapsed
-        return {"elapsed_seconds": int(elapsed), "eta_seconds": 0, "total_estimated_seconds": int(total)}
+        total = (
+            (task.completed_at - task.started_at).total_seconds()
+            if task.completed_at
+            else elapsed
+        )
+        return {
+            "elapsed_seconds": int(elapsed),
+            "eta_seconds": 0,
+            "total_estimated_seconds": int(total),
+        }
 
     if task.status == "running" and task.progress and task.progress > 0:
         total_estimated = elapsed / (task.progress / 100)
@@ -608,13 +657,17 @@ async def _revoke_existing_tasks(db: AsyncSession, project_id: str) -> None:
     from ..core.celery_app import celery_app  # 局部导入：celery 启动慢
 
     old_tasks = (
-        await db.execute(
-            sa_select(Task).where(
-                Task.project_id == project_id,
-                Task.status.in_(["pending", "running"]),
+        (
+            await db.execute(
+                sa_select(Task).where(
+                    Task.project_id == project_id,
+                    Task.status.in_(["pending", "running"]),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     for old in old_tasks:
         if old.celery_task_id:
@@ -677,7 +730,7 @@ async def _create_processing_task(db: AsyncSession, project_id: str) -> Task:
 def _dispatch_celery_task(
     project_id: str,
     video_path: Path,
-    subtitle_path: Optional[str],
+    subtitle_path: str | None,
     task_id: str,
 ) -> str:
     """提交 celery 任务，返回 celery_task_id。"""
@@ -782,7 +835,9 @@ def _task_to_dict(task: Task, video_duration_seconds: float = None) -> dict:
         "completed_at": to_iso_utc(task.completed_at),
         # v2.2.1: 预估 vs 实际归集 — v2.2.28 fix: task 表没这俩字段, 用 getattr 兜底
         # (v2.2.x 删了 Task 字段但 router 没改, 500 错). 后续做预估模型时加回字段.
-        "estimated_total_at_start_seconds": getattr(task, "estimated_total_at_start_seconds", None),
+        "estimated_total_at_start_seconds": getattr(
+            task, "estimated_total_at_start_seconds", None
+        ),
         "actual_total_seconds": getattr(task, "actual_total_seconds", None),
         **_build_timing_info(task, video_duration_seconds),
     }
@@ -814,6 +869,6 @@ def _collection_to_dict(col: Collection) -> dict:
     }
 
 
-def _latest_task(tasks: List[Task]) -> Task | None:
+def _latest_task(tasks: list[Task]) -> Task | None:
     """取最近的 task（按 created_at 最大的）。"""
     return max(tasks, key=lambda t: t.created_at, default=None) if tasks else None

@@ -8,6 +8,7 @@
 - 现在: 混剪 db 完全独立 (mix_projects + mix_source_clips + mix_tasks),
         mix 启动时只读切片 db 的 Clip 表, 不写切片 db
 """
+
 import json
 import logging
 import subprocess
@@ -185,7 +186,9 @@ def build_clip_library_from_slice_db(
             # 先查切片 Clip 表
             clip = db.query(Clip).filter(Clip.id == clip_id).first()
             if clip:
-                project = db.query(Project).filter(Project.id == clip.project_id).first()
+                project = (
+                    db.query(Project).filter(Project.id == clip.project_id).first()
+                )
                 subtitle_text = (clip.description or clip.title or "").strip()
                 if clip.clip_metadata and isinstance(clip.clip_metadata, dict):
                     st = clip.clip_metadata.get("subtitle_text")
@@ -194,47 +197,63 @@ def build_clip_library_from_slice_db(
                 # 切片 Clip 也抽 tags (从 clip_metadata 提取 LLM 评分 tag, fallback to project.processing_config)
                 clip_tags = []
                 if clip.clip_metadata and isinstance(clip.clip_metadata, dict):
-                    for t in (clip.clip_metadata.get("tags") or []):
+                    for t in clip.clip_metadata.get("tags") or []:
                         if isinstance(t, str):
                             clip_tags.append(t)
                         elif isinstance(t, dict) and "category" in t:
                             clip_tags.append(t["category"])
-                library.append({
-                    "clip_id": clip.id,
-                    "source_project_id": clip.project_id,
-                    "source_project_name": project.name if project else "",
-                    "title": clip.title or "",
-                    "subtitle_text": subtitle_text,
-                    "video_path": clip.video_path or "",
-                    "duration": clip.duration or 0,
-                    "width": clip.width,
-                    "height": clip.height,
-                    "source_type": "project",
-                    "tags": clip_tags,  # v2.2.33: tag overlap match
-                })
+                library.append(
+                    {
+                        "clip_id": clip.id,
+                        "source_project_id": clip.project_id,
+                        "source_project_name": project.name if project else "",
+                        "title": clip.title or "",
+                        "subtitle_text": subtitle_text,
+                        "video_path": clip.video_path or "",
+                        "duration": clip.duration or 0,
+                        "width": clip.width,
+                        "height": clip.height,
+                        "source_type": "project",
+                        "tags": clip_tags,  # v2.2.33: tag overlap match
+                    }
+                )
                 continue
 
             # 再查 ResourceClip (资源库)
-            rc = db.query(ResourceClip).filter(ResourceClip.id == clip_id, ResourceClip.deleted_at.is_(None)).first()
+            rc = (
+                db.query(ResourceClip)
+                .filter(ResourceClip.id == clip_id, ResourceClip.deleted_at.is_(None))
+                .first()
+            )
             if rc:
-                library.append({
-                    "clip_id": rc.id,
-                    "source_project_id": rc.source_project_id or rc.id,  # 资源库没源项目时用自身 id
-                    "source_project_name": rc.source_project_name or "资源库",
-                    "title": rc.name or "",
-                    "subtitle_text": "",  # 资源库没存 subtitle_text
-                    "video_path": rc.file_path or "",  # 资源库 file_path 是绝对路径 (data/resources/<id>.mp4)
-                    "duration": rc.duration or 0,
-                    "width": rc.width,
-                    "height": rc.height,
-                    "source_type": "library",
-                    "tags": list(rc.tags or []) if isinstance(rc.tags, list) else [],  # v2.2.33: tag overlap match
-                })
+                library.append(
+                    {
+                        "clip_id": rc.id,
+                        "source_project_id": rc.source_project_id
+                        or rc.id,  # 资源库没源项目时用自身 id
+                        "source_project_name": rc.source_project_name or "资源库",
+                        "title": rc.name or "",
+                        "subtitle_text": "",  # 资源库没存 subtitle_text
+                        "video_path": rc.file_path
+                        or "",  # 资源库 file_path 是绝对路径 (data/resources/<id>.mp4)
+                        "duration": rc.duration or 0,
+                        "width": rc.width,
+                        "height": rc.height,
+                        "source_type": "library",
+                        "tags": list(rc.tags or [])
+                        if isinstance(rc.tags, list)
+                        else [],  # v2.2.33: tag overlap match
+                    }
+                )
                 continue
 
-            logger.warning(f"candidate_clip_id 不存在 (Clip 或 ResourceClip 都查不到): {clip_id}")
+            logger.warning(
+                f"candidate_clip_id 不存在 (Clip 或 ResourceClip 都查不到): {clip_id}"
+            )
 
-    logger.info(f"从切片 db + 资源库加载 {len(library)} 个 clip (project: {sum(1 for x in library if x['source_type']=='project')}, library: {sum(1 for x in library if x['source_type']=='library')})")
+    logger.info(
+        f"从切片 db + 资源库加载 {len(library)} 个 clip (project: {sum(1 for x in library if x['source_type'] == 'project')}, library: {sum(1 for x in library if x['source_type'] == 'library')})"
+    )
     return library
 
 
@@ -264,7 +283,13 @@ def match_clips_for_segments(
         if i == len(segments) - 1:
             seg_duration = max(5, remaining)
         else:
-            seg_duration = max(5, min(int(target_duration * ratio), remaining - 5 * (len(segments) - i - 1)))
+            seg_duration = max(
+                5,
+                min(
+                    int(target_duration * ratio),
+                    remaining - 5 * (len(segments) - i - 1),
+                ),
+            )
             remaining -= seg_duration
         durations.append(seg_duration)
 
@@ -280,7 +305,9 @@ def match_clips_for_segments(
             # v2.2.33: tag overlap 主导 (0.7) — user 要"视觉匹配",
             # 播音稿关键词 vs 资源库 tag 重叠越多越匹配
             # 例: seg.keywords=["屋顶", "瓦片"] clip.tags=["屋顶", "防水"] → 1/2 = 0.5
-            clip_tags_norm = {t.strip().lower() for t in clip_tags if isinstance(t, str) and t.strip()}
+            clip_tags_norm = {
+                t.strip().lower() for t in clip_tags if isinstance(t, str) and t.strip()
+            }
             tag_overlap = 0.0
             if keywords_norm and clip_tags_norm:
                 # v2.2.36: 严格相等 + substring 都算命中
@@ -297,10 +324,13 @@ def match_clips_for_segments(
             # v2.2.33: embed 降到 0.3 (text-to-text 相似, 当作辅助)
             # tag 主导是因为: user 明确"画面匹配"而不是"语义匹配"
             embed_score = 0.0
-            search_text = (clip.get("title", "") + " " + clip.get("subtitle_text", "")).strip()
+            search_text = (
+                clip.get("title", "") + " " + clip.get("subtitle_text", "")
+            ).strip()
             if search_text and keywords_norm:
                 # 走老 hybrid_match_score 但只取 embed 部分 (0.0-1.0)
                 from .embedding_service import hybrid_match_score
+
                 embed_score = hybrid_match_score(
                     seg_text=seg["text"],
                     seg_keywords=keywords,
@@ -317,35 +347,41 @@ def match_clips_for_segments(
             scored.append((score, clip))
 
         if not scored:
-            logger.warning(f"segment {seg['position']} 没匹配到任何 clip (keywords={keywords})")
+            logger.warning(
+                f"segment {seg['position']} 没匹配到任何 clip (keywords={keywords})"
+            )
             # v2.2.42: 0 match fallback — round-robin 选, 不再用 clip_library[0] 固定
             # 之前 v2.2.26/v2.2.36 永远用第一个 candidate, 多段 fallback 全用同一个 clip,
             # user 看到 "选了多个视频但只有一个在循环" (root cause: bc65f840 14:32 阿甘
             # 8 段 7 段都 fallback 到同一 clip "从迷茫到成熟").
             # 现在: round-robin 按 segment position % len(clip_library) 选, 每个段不同 clip.
             if clip_library:
-                fallback_idx = seg['position'] % len(clip_library)
+                fallback_idx = seg["position"] % len(clip_library)
                 fallback_clip = clip_library[fallback_idx]
                 fallback_dur = fallback_clip.get("duration", 0) or 10
                 use_dur = min(seg_dur, fallback_dur)
                 start = 0 if fallback_dur <= use_dur else (fallback_dur - use_dur) / 2
                 end = start + use_dur
-                results.append({
-                    "position": seg["position"],
-                    "text": seg["text"],
-                    "keywords": keywords,
-                    "matched_clip_id": fallback_clip["clip_id"],
-                    "source_project_id": fallback_clip.get("source_project_id"),
-                    "source_project_name": fallback_clip.get("source_project_name", ""),
-                    "source_clip_title": fallback_clip.get("title", ""),
-                    "matched_video_path": fallback_clip["video_path"],
-                    "source_type": fallback_clip.get("source_type", "project"),
-                    "source_start": float(start),
-                    "source_end": float(end),
-                    "clip_duration": use_dur,
-                    "match_score": 0.0,  # 0 分, 标低质量 fallback
-                    "fallback": True,  # 标 fallback 区分真匹配
-                })
+                results.append(
+                    {
+                        "position": seg["position"],
+                        "text": seg["text"],
+                        "keywords": keywords,
+                        "matched_clip_id": fallback_clip["clip_id"],
+                        "source_project_id": fallback_clip.get("source_project_id"),
+                        "source_project_name": fallback_clip.get(
+                            "source_project_name", ""
+                        ),
+                        "source_clip_title": fallback_clip.get("title", ""),
+                        "matched_video_path": fallback_clip["video_path"],
+                        "source_type": fallback_clip.get("source_type", "project"),
+                        "source_start": float(start),
+                        "source_end": float(end),
+                        "clip_duration": use_dur,
+                        "match_score": 0.0,  # 0 分, 标低质量 fallback
+                        "fallback": True,  # 标 fallback 区分真匹配
+                    }
+                )
                 logger.info(
                     f"segment {seg['position']} 用 fallback clip "
                     f"({fallback_clip.get('title', '?')!r}) 兜底, 实际匹配度低"
@@ -365,21 +401,25 @@ def match_clips_for_segments(
             start = 0
         end = start + use_dur
 
-        results.append({
-            "position": seg["position"],
-            "text": seg["text"],
-            "keywords": keywords,
-            "matched_clip_id": best_clip["clip_id"],
-            "source_project_id": best_clip["source_project_id"],
-            "source_project_name": best_clip.get("source_project_name", ""),
-            "source_clip_title": best_clip.get("title", ""),
-            "matched_video_path": best_clip["video_path"],
-            "source_type": best_clip.get("source_type", "project"),  # v2.2.5: project/library
-            "source_start": float(start),
-            "source_end": float(end),
-            "clip_duration": use_dur,
-            "match_score": float(best_score),
-        })
+        results.append(
+            {
+                "position": seg["position"],
+                "text": seg["text"],
+                "keywords": keywords,
+                "matched_clip_id": best_clip["clip_id"],
+                "source_project_id": best_clip["source_project_id"],
+                "source_project_name": best_clip.get("source_project_name", ""),
+                "source_clip_title": best_clip.get("title", ""),
+                "matched_video_path": best_clip["video_path"],
+                "source_type": best_clip.get(
+                    "source_type", "project"
+                ),  # v2.2.5: project/library
+                "source_start": float(start),
+                "source_end": float(end),
+                "clip_duration": use_dur,
+                "match_score": float(best_score),
+            }
+        )
 
     logger.info(f"匹配完成: {len(results)}/{len(segments)} 段")
     return results
@@ -398,9 +438,20 @@ def _is_valid_mp4(path: Path) -> bool:
     """
     try:
         r = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "csv=p=0", str(path)],
-            capture_output=True, text=True, timeout=10, check=False,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
         if r.returncode != 0:
             return False
@@ -425,12 +476,28 @@ def _make_placeholder_video(path: Path, duration: int = 5) -> bool:
     try:
         # ffmpeg testsrc = color bars + 时间戳叠加, smptebars 也可
         cmd = [
-            "ffmpeg", "-y",
-            "-f", "lavfi", "-i", f"testsrc=duration={duration}:size=1280x720:rate=30",
-            "-f", "lavfi", "-i", f"sine=frequency=440:duration={duration}",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "64k",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc=duration={duration}:size=1280x720:rate=30",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:duration={duration}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "64k",
             "-shortest",
             str(path),
         ]
@@ -502,28 +569,42 @@ def assemble_mix_video(
                     f"用 placeholder 兜底"
                 )
                 # 生成 placeholder (color bars + 时间戳)
-                _make_placeholder_video(part_path, int(seg.get("source_end", 5) - seg.get("source_start", 0)))
+                _make_placeholder_video(
+                    part_path,
+                    int(seg.get("source_end", 5) - seg.get("source_start", 0)),
+                )
                 if part_path.exists() and part_path.stat().st_size > 0:
                     part_files.append(part_path)
                 continue
 
             cmd_extract = [
-                "ffmpeg", "-y",
-                "-ss", str(seg["source_start"]),
-                "-to", str(seg["source_end"]),
-                "-i", str(src_video),
-                "-c", "copy",
-                "-avoid_negative_ts", "make_zero",
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(seg["source_start"]),
+                "-to",
+                str(seg["source_end"]),
+                "-i",
+                str(src_video),
+                "-c",
+                "copy",
+                "-avoid_negative_ts",
+                "make_zero",
                 str(part_path),
             ]
             try:
-                subprocess.run(cmd_extract, check=True, capture_output=True, timeout=120)
+                subprocess.run(
+                    cmd_extract, check=True, capture_output=True, timeout=120
+                )
                 if part_path.exists() and part_path.stat().st_size > 0:
                     part_files.append(part_path)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 logger.warning(f"extract part {i} 失败: {e}, 用 placeholder 兜底")
                 # v2.2.27: extract 失败也走 placeholder, 不让整个 task 挂
-                _make_placeholder_video(part_path, int(seg.get("source_end", 5) - seg.get("source_start", 0)))
+                _make_placeholder_video(
+                    part_path,
+                    int(seg.get("source_end", 5) - seg.get("source_start", 0)),
+                )
                 if part_path.exists() and part_path.stat().st_size > 0:
                     part_files.append(part_path)
 
@@ -535,12 +616,26 @@ def assemble_mix_video(
 
         # 用 libx264 (稳), 不用 h264_videotoolbox (v2.2.1 merge bug)
         cmd_concat = [
-            "ffmpeg", "-y",
-            "-f", "concat", "-safe", "0",
-            "-i", str(concat_list),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "128k",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_list),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
             str(output_path),
         ]
         subprocess.run(cmd_concat, check=True, capture_output=True, timeout=600)
@@ -620,11 +715,22 @@ def burn_mix_subtitle(
     # 用 ffprobe 实时算 total_duration (如果 caller 没传)
     if total_duration is None or total_duration <= 0:
         import subprocess
+
         try:
             result = subprocess.run(
-                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                 "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
-                capture_output=True, text=True, timeout=30,
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(video_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             total_duration = float(result.stdout.strip() or 0)
         except Exception:
@@ -657,6 +763,7 @@ def burn_mix_subtitle(
 def build_script_srt_from_text(srt_text: str, total_duration: float) -> str:
     """给已有 srt 加 buffer (最后一 segment end_time < total_duration)"""
     import re
+
     # 简单实现: 解析最后一行 SRT, 限制 end_time
     lines = srt_text.strip().split("\n")
     if not lines:
@@ -673,11 +780,18 @@ def build_script_srt_from_text(srt_text: str, total_duration: float) -> str:
         return srt_text
 
     ts_line = lines[last_ts_idx]
-    match = re.match(r"(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})", ts_line)
+    match = re.match(
+        r"(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> (\d{2}):(\d{2}):(\d{2}),(\d{3})", ts_line
+    )
     if not match:
         return srt_text
 
-    h, m, s, ms = int(match.group(5)), int(match.group(6)), int(match.group(7)), int(match.group(8))
+    h, m, s, ms = (
+        int(match.group(5)),
+        int(match.group(6)),
+        int(match.group(7)),
+        int(match.group(8)),
+    )
     end_sec = h * 3600 + m * 60 + s + ms / 1000.0
     if end_sec >= total_duration:
         new_end = total_duration - 0.1
@@ -693,7 +807,9 @@ def build_script_srt_from_text(srt_text: str, total_duration: float) -> str:
     return "\n".join(lines) + "\n"
 
 
-def generate_thumbnail(video_path: Path, thumbnail_path: Path, ss_seconds: float = 1.0) -> bool:
+def generate_thumbnail(
+    video_path: Path, thumbnail_path: Path, ss_seconds: float = 1.0
+) -> bool:
     """抽视频某一秒作为缩略图 (mix project list card 用)
 
     v2.2.4: ffmpeg -ss 1s -frames:v 1 -vf scale=720:-2 (16:9 cover 等比)
@@ -709,9 +825,19 @@ def generate_thumbnail(video_path: Path, thumbnail_path: Path, ss_seconds: float
         # 边界: video 时长 < ss_seconds 时取一半
         try:
             result = subprocess.run(
-                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                 "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
-                capture_output=True, text=True, timeout=30,
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(video_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             vid_duration = float(result.stdout.strip() or 0)
         except Exception:
@@ -722,12 +848,18 @@ def generate_thumbnail(video_path: Path, thumbnail_path: Path, ss_seconds: float
             actual_ss = max(0.5, vid_duration / 2)
 
         cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(actual_ss),
-            "-i", str(video_path),
-            "-frames:v", "1",
-            "-vf", "scale=720:-2",
-            "-q:v", "3",
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(actual_ss),
+            "-i",
+            str(video_path),
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=720:-2",
+            "-q:v",
+            "3",
             str(thumbnail_path),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)

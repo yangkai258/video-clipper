@@ -5,16 +5,15 @@
 
 词库: backend/data/risk_words.json (版本化, 可热加载)
 """
+
 import json
-import re
 from pathlib import Path
-from typing import Dict, List
 
 _RISK_WORDS_PATH = Path(__file__).parent.parent / "data" / "risk_words.json"
-_cache: Dict = {"mtime": 0, "data": None}
+_cache: dict = {"mtime": 0, "data": None}
 
 
-def _load_risk_words() -> Dict:
+def _load_risk_words() -> dict:
     """懒加载 + mtime 缓存 (避免每次请求都 IO)"""
     if not _RISK_WORDS_PATH.exists():
         return {"categories": {}}
@@ -33,7 +32,7 @@ def _load_risk_words() -> Dict:
         return {"categories": {}}
 
 
-def check_script_risk(text: str) -> Dict:
+def check_script_risk(text: str) -> dict:
     """扫描文本中的风险词
 
     返回:
@@ -49,7 +48,13 @@ def check_script_risk(text: str) -> Dict:
     }
     """
     if not text or not text.strip():
-        return {"total_risk_count": 0, "has_risk": False, "level": "none", "hits": [], "version": ""}
+        return {
+            "total_risk_count": 0,
+            "has_risk": False,
+            "level": "none",
+            "hits": [],
+            "version": "",
+        }
 
     data = _load_risk_words()
     categories = data.get("categories", {})
@@ -70,21 +75,25 @@ def check_script_risk(text: str) -> Dict:
                 # context: 前后 5 个字符
                 ctx_start = max(0, idx - 5)
                 ctx_end = min(len(text), idx + len(word) + 5)
-                positions.append({
-                    "start": idx,
-                    "end": idx + len(word),
-                    "context": text[ctx_start:ctx_end],
-                })
+                positions.append(
+                    {
+                        "start": idx,
+                        "end": idx + len(word),
+                        "context": text[ctx_start:ctx_end],
+                    }
+                )
                 start = idx + len(word)
                 total += 1
 
             if positions:
-                hits.append({
-                    "category": category,
-                    "word": word,
-                    "count": len(positions),
-                    "positions": positions,
-                })
+                hits.append(
+                    {
+                        "category": category,
+                        "word": word,
+                        "count": len(positions),
+                        "positions": positions,
+                    }
+                )
 
     # 风险等级 (跟数量挂钩, 不看严重度 — 因为当前词库所有词都同权重)
     if total == 0:

@@ -689,7 +689,8 @@ class TestZeroClipGuard:
         content = processing_path.read_text()
 
         # 找 guard 调 (logger.warning "0-clip guard: project ... 跑完")
-        guard_idx = content.find('logger.warning(f"0-clip guard: project')
+        # v2.2.45: ruff format 拆 logger.warning(...) 多行, 不再单行
+        guard_idx = content.find('0-clip guard: project')
         # 找 status db.commit 锚点
         commit_idx = content.find("db.commit()  # 先提交 clips/collections")
         assert guard_idx > 0, "0-clip guard call anchor not found"

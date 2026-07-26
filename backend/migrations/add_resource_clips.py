@@ -11,14 +11,14 @@ target DB:
   data/video_clipper.db             release
   data/video_clipper_beta.db        beta
 """
+
 import sys
 from pathlib import Path
 
 # 让脚本能从 repo root 直接跑 (跟其他 migrations 一样)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from sqlalchemy import inspect
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 
 from backend.models.database import Base, ResourceClip
 
@@ -33,7 +33,9 @@ def migrate_one(db_path: Path) -> None:
         return
 
     # 1) 用 inspector 查表是否存在 (不依赖 ORM 自动建)
-    engine = create_engine(_engine_url_for_sqlite(db_path), connect_args={"check_same_thread": False})
+    engine = create_engine(
+        _engine_url_for_sqlite(db_path), connect_args={"check_same_thread": False}
+    )
     try:
         inspector = inspect(engine)
         if "resource_clips" in inspector.get_table_names():
@@ -44,7 +46,6 @@ def migrate_one(db_path: Path) -> None:
 
     # 2) 用 Base.metadata.create_all 创建 (只建不存在的表 — SQLAlchemy 标准行为)
     #    用 sync engine 跑, 避开 aiosqlite 的 async loop 复杂性
-    from backend.core.config import settings
     from sqlalchemy import create_engine as _ce
 
     sync_url = f"sqlite:///{db_path.resolve()}"
@@ -59,7 +60,7 @@ def migrate_one(db_path: Path) -> None:
 def main():
     base = Path("data")
     targets = [
-        base / "video_clipper.db",       # release
+        base / "video_clipper.db",  # release
         base / "video_clipper_beta.db",  # beta
     ]
     for db_path in targets:

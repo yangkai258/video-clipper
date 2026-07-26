@@ -14,6 +14,7 @@ tasks that were already running when this migration ran.
 
 Idempotent: safe to run multiple times.
 """
+
 import os
 import sqlite3
 
