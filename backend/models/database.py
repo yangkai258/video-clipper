@@ -264,6 +264,8 @@ class ResourceClip(Base):
     source_clip_id = Column(String(36), nullable=True)
     source_project_name = Column(String(255), nullable=True)  # 冗余便于展示
     tags = Column(JSON, default=list)  # [{"category": "防水", "score": 0.85}, ...]
+    # v2.2.47: 视觉属性标签 (色调/亮度/动静/边缘密度, 0 依赖自动跑出)
+    visual_tags = Column(JSON, default=list)  # ["暖色调", "明亮", "繁复", "动态"]
     description = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

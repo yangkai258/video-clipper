@@ -243,6 +243,10 @@ def build_clip_library_from_slice_db(
                         "tags": list(rc.tags or [])
                         if isinstance(rc.tags, list)
                         else [],  # v2.2.33: tag overlap match
+                        # v2.2.47: 视觉属性也参与 match (色调/亮度/动静/边缘密度)
+                        "visual_tags": list(rc.visual_tags or [])
+                        if isinstance(rc.visual_tags, list)
+                        else [],
                     }
                 )
                 continue
@@ -321,6 +325,31 @@ def match_clips_for_segments(
                             break  # 1 个 seg_keyword 最多命中 1 个 clip_tag
                 tag_overlap = hits / len(keywords_norm)  # 0.0 - 1.0
 
+            # v2.2.47: visual_tags 跟 tags 合并参与 match (色调/亮度/动静/边缘密度
+            # 跟 LLM auto-tag 互不重叠, 视觉属性 + 主题词 双维度覆盖)
+            # 0 依赖自动跑出, 跟 substring 公式直接复用
+            clip_visual_tags = clip.get("visual_tags") or []
+            clip_visual_tags_norm = {
+                t.strip().lower()
+                for t in clip_visual_tags
+                if isinstance(t, str) and t.strip()
+            }
+            visual_tag_overlap = 0.0
+            if keywords_norm and clip_visual_tags_norm:
+                vhits = 0
+                for kw in keywords_norm:
+                    for vt in clip_visual_tags_norm:
+                        if kw == vt or kw in vt or vt in kw:
+                            vhits += 1
+                            break
+                visual_tag_overlap = vhits / len(keywords_norm)
+
+            # v2.2.47: combined tag overlap = max(tags_overlap, visual_overlap)
+            # 例: 播音稿"防水材料" → tags 命中 0.5, visual_overlap 0 → 取 0.5
+            # 播音稿"动态" → tags 0, visual 命中"动态" → 1.0 (visual 帮上忙)
+            # 不用 avg (visual 0 拉低), 用 max 让单维度命中也能算
+            combined_tag_overlap = max(tag_overlap, visual_tag_overlap)
+
             # v2.2.33: embed 降到 0.3 (text-to-text 相似, 当作辅助)
             # tag 主导是因为: user 明确"画面匹配"而不是"语义匹配"
             embed_score = 0.0
@@ -339,7 +368,8 @@ def match_clips_for_segments(
                 )
 
             # 最终 score: tag 主导 (0.7) + embed 辅助 (0.3)
-            score = 0.7 * tag_overlap + 0.3 * embed_score
+            # v2.2.47: combined_tag_overlap 替代原 tag_overlap (含 visual_tags)
+            score = 0.7 * combined_tag_overlap + 0.3 * embed_score
 
             # v2.2.33: 0 阈值改成 0.05 (tag_overlap=0 但 embed>0.1 仍进)
             if score < 0.05:

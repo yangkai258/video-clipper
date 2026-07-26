@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.database import get_db, sync_get_db
 from ..models.database import Clip, Project, ResourceClip
 from ..services.library_tag_service import generate_tags_for_resource
+from ..services.visual_tag_service import generate_visual_tags
 
 router = APIRouter(tags=["library"])
 logger = logging.getLogger(__name__)
@@ -207,6 +208,7 @@ def _serialize(rc: ResourceClip) -> dict:
         "source_clip_id": rc.source_clip_id,
         "source_project_name": rc.source_project_name,
         "tags": rc.tags or [],
+        "visual_tags": rc.visual_tags or [],  # v2.2.47: 视觉属性 (色调/亮度/动静/边缘密度)
         "description": rc.description or "",
         "thumbnail_path": rc.thumbnail_path,
         "has_video": bool(rc.file_path and Path(rc.file_path).exists()),
@@ -345,6 +347,13 @@ async def upload_resource(
     thumb_path = _resources_dir() / f"{resource_id}.jpg"
     has_thumb = _generate_thumbnail(save_path, thumb_path, t_seconds=1.0)
 
+    # v2.2.47: 视觉打标 (0 依赖 ~0.3s, 跟 upload 主流程同步跑, 失败不致命)
+    visual_tags = []
+    try:
+        visual_tags = generate_visual_tags(save_path) or []
+    except Exception as e:
+        logger.warning(f"upload visual_tag 失败 (非致命): {e}")
+
     rc = ResourceClip(
         id=resource_id,
         name=base_name,
@@ -356,6 +365,7 @@ async def upload_resource(
         size=written,
         source_type="upload",
         tags=[],
+        visual_tags=visual_tags,  # v2.2.47: 视觉属性 (色调/亮度/动静/边缘密度)
         description=description or "",
     )
     db.add(rc)
@@ -363,7 +373,8 @@ async def upload_resource(
     await db.refresh(rc)
 
     logger.info(
-        f"library upload: id={resource_id} name={base_name} size={written} duration={meta['duration']:.1f}s"
+        f"library upload: id={resource_id} name={base_name} size={written} "
+        f"duration={meta['duration']:.1f}s visual_tags={visual_tags}"
     )
 
     # v2.2.38: auto-tag 默认关闭 (user 反馈: 抽过来的规则不准, 暂时不用)
@@ -468,6 +479,13 @@ async def from_clip_resource(
 
         size = new_video_path.stat().st_size if new_video_path.exists() else 0
 
+        # v2.2.47: 同步跑视觉打标 (0 依赖 ~0.3s, 不放 background, 没 mp4/没 ffmpeg 返空 list)
+        visual_tags = []
+        try:
+            visual_tags = generate_visual_tags(new_video_path) or []
+        except Exception as e:
+            logger.warning(f"from-clip visual_tag 失败 (非致命): {e}")
+
         rc = ResourceClip(
             id=new_id,
             name=clip_title,
@@ -482,6 +500,7 @@ async def from_clip_resource(
             source_clip_id=source_clip_id,
             source_project_name=source_project_name,
             tags=clip_tags,  # v2.2.38: 从源 clip_metadata 抽 (visual match 用)
+            visual_tags=visual_tags,  # v2.2.47: 视觉属性 (色调/亮度/动静/边缘密度)
             description=f"从项目「{source_project_name}」提取",
         )
         db.add(rc)
@@ -489,7 +508,8 @@ async def from_clip_resource(
         await db.refresh(rc)
 
         logger.info(
-            f"library from-clip: new_id={new_id} src_clip={source_clip_id} src_proj={source_project_id}"
+            f"library from-clip: new_id={new_id} src_clip={source_clip_id} src_proj={source_project_id} "
+            f"visual_tags={visual_tags}"
         )
 
         # v2.2.38: auto-tag 默认关闭 (user 反馈: 规则不准, 暂时不用)
@@ -573,6 +593,8 @@ async def auto_tag_resource_endpoint(
 
     跟 upload/from-clip 异步 background task 一样逻辑, 同步等结果返.
     适合 user 在前端 ✨ 按钮 retry 场景.
+
+    v2.2.47: 同时刷 visual_tags (视觉属性, 0 依赖 ~0.3s, 跟 LLM auto-tag 同步返).
     """
     rid = _safe_id(resource_id)
     result = await db.execute(select(ResourceClip).where(ResourceClip.id == rid))
@@ -582,9 +604,23 @@ async def auto_tag_resource_endpoint(
     if rc.deleted_at:
         raise HTTPException(status_code=410, detail="资源已删除")
 
-    # 调 service (sync, 写 sync db)
+    # 调 service (sync, 写 sync db) — LLM auto-tag
     tags = generate_tags_for_resource(rid)
-    return {"id": rid, "tags": tags, "count": len(tags)}
+    # v2.2.47: 同步刷 visual_tags (0 依赖)
+    visual_tags = []
+    if rc.file_path and Path(rc.file_path).exists():
+        try:
+            visual_tags = generate_visual_tags(Path(rc.file_path)) or []
+            rc.visual_tags = visual_tags
+            await db.commit()
+        except Exception as e:
+            logger.warning(f"auto-tag 刷 visual_tags 失败 (非致命): {e}")
+    return {
+        "id": rid,
+        "tags": tags,
+        "visual_tags": visual_tags,
+        "count": len(tags) + len(visual_tags),
+    }
 
 
 # ──────────────────────────── v2.2.5: 一键从项目批量导入 ────────────────────────────
@@ -690,6 +726,22 @@ async def from_project_batch_resource(
                     except Exception:
                         new_thumb = None
 
+            # v2.2.47: 视觉打标 (0 依赖, batch 跑 ~N*0.3s 整体 ~5s 内, 失败不致命)
+            visual_tags = []
+            try:
+                visual_tags = generate_visual_tags(new_video) or []
+            except Exception as e:
+                logger.warning(f"from-project visual_tag 失败 (非致命): {e}")
+
+            # v2.2.47: 抽源 clip_metadata.tags (跟 from-clip 一致, visual match 用)
+            clip_tags = []
+            if sc.clip_metadata and isinstance(sc.clip_metadata, dict):
+                for t in sc.clip_metadata.get("tags") or []:
+                    if isinstance(t, str):
+                        clip_tags.append(t)
+                    elif isinstance(t, dict) and "category" in t:
+                        clip_tags.append(t["category"])
+
             row = ResourceClip(
                 id=new_id,
                 name=sc.title or f"clip-{sc.id[:8]}",
@@ -703,6 +755,8 @@ async def from_project_batch_resource(
                 source_project_id=source_project_id,
                 source_clip_id=sc.id,
                 source_project_name=source_project_name,
+                tags=clip_tags,  # v2.2.47: 跟 from-clip 同步抽源 tags
+                visual_tags=visual_tags,  # v2.2.47: 视觉属性
                 description=f"一键从项目「{source_project_name}」批量导入",
             )
             new_rows.append(row)
