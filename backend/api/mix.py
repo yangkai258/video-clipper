@@ -660,6 +660,42 @@ async def ai_help_write_script_endpoint(payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=f"AI 帮写失败: {str(e)[:300]}")
 
 
+# ──────────────────────────── v2.2.35: 脚本分段预览 ────────────────────────────
+
+
+@router.post("/parse-script")
+async def parse_script_endpoint(payload: dict = Body(...)):
+    """v2.2.35: LLM 解析脚本分段 (wizard Step 1 实时预览)
+
+    输入:
+        script_text: str 直播脚本
+        target_duration_seconds: int (默认 60) 目标时长
+
+    输出:
+        {segments: [{position, text, keywords}, ...], model: "..."}
+
+    失败返 500 + 中文原因. 跟 POST /mix 内部的 parse_script 一样, 但单独暴露让前端 preview 调.
+    """
+    from ..services.mix_service import parse_script
+
+    script_text = payload.get("script_text", "")
+    target_duration = int(payload.get("target_duration_seconds") or 60)
+
+    if not script_text.strip():
+        raise HTTPException(status_code=400, detail="script_text 不能为空")
+
+    try:
+        segments = parse_script(script_text=script_text, target_duration=target_duration)
+        if not segments:
+            raise HTTPException(status_code=500, detail="LLM 解析脚本失败, 返空")
+        return {"segments": segments, "count": len(segments)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"parse-script 失败: {e}")
+        raise HTTPException(status_code=500, detail=f"解析失败: {str(e)[:300]}")
+
+
 # ──────────────────────────── v2.2.4: 风险词检测 ────────────────────────────
 
 @router.post("/script-risk-check")

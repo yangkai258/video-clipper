@@ -54,6 +54,36 @@ export default function MixWizardPage() {
     return () => clearTimeout(t)
   }, [scriptText])
 
+  // v2.2.35: 实时脚本分段预览 (debounced 1.5s, 走 /mix/parse-script)
+  const [segmentPreview, setSegmentPreview] = useState(null)  // [{position, text, keywords}, ...]
+  const [parsingSegments, setParsingSegments] = useState(false)
+  const [segmentParseError, setSegmentParseError] = useState(null)
+  useEffect(() => {
+    if (!scriptText.trim() || scriptText.length < 20) {
+      setSegmentPreview(null)
+      setSegmentParseError(null)
+      return
+    }
+    const t = setTimeout(async () => {
+      setParsingSegments(true)
+      setSegmentParseError(null)
+      try {
+        const r = await axios.post(`${API_BASE}/mix/parse-script`, {
+          script_text: scriptText,
+          target_duration_seconds: targetDuration,
+        })
+        setSegmentPreview(r.data.segments || [])
+      } catch (e) {
+        console.error('parse-script failed:', e)
+        setSegmentParseError(e.response?.data?.detail || e.message)
+        setSegmentPreview(null)
+      } finally {
+        setParsingSegments(false)
+      }
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [scriptText, targetDuration])
+
   // 加载素材库
   useEffect(() => {
     if (step === 2) {
@@ -295,6 +325,48 @@ export default function MixWizardPage() {
               <div className="risk-warn-tip">
                 提交时仍会确认。建议替换为合规表达（如下方建议），降低被平台拒审风险。
               </div>
+            </div>
+          )}
+
+          {/* v2.2.35: 实时脚本分段预览 — 帮 user 看到 LLM 抽的关键词, 不对可以改 */}
+          {(parsingSegments || segmentPreview || segmentParseError) && (
+            <div className="segment-preview-box">
+              <div className="segment-preview-head">
+                <Icon name="list" size={14} />
+                <span>实时分段预览 (LLM 抽视觉关键词)</span>
+                {parsingSegments && <span className="segment-preview-loading"><Icon name="spinner" size={11} /> 解析中...</span>}
+                {segmentPreview && !parsingSegments && (
+                  <span className="segment-preview-count">{segmentPreview.length} 段</span>
+                )}
+              </div>
+              {segmentParseError && (
+                <div className="segment-preview-error">
+                  <Icon name="warning" size={11} /> 解析失败: {segmentParseError}
+                </div>
+              )}
+              {segmentPreview && segmentPreview.length > 0 && (
+                <div className="segment-preview-list">
+                  {segmentPreview.map((seg, i) => (
+                    <div key={i} className="segment-preview-item">
+                      <div className="segment-preview-pos">{i + 1}</div>
+                      <div className="segment-preview-body">
+                        <div className="segment-preview-text">{seg.text}</div>
+                        {seg.keywords && seg.keywords.length > 0 && (
+                          <div className="segment-preview-keywords">
+                            {seg.keywords.map((kw, j) => (
+                              <span key={j} className="segment-keyword-tag">{kw}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="segment-preview-tip">
+                    关键词会用来从资源库匹配画面 (v2.2.33 视觉匹配).
+                    如果关键词偏向"主题/概念" (如"防水/品质"), 改写脚本强调"画面/视觉" (如"屋顶/瓦片/雨").
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
