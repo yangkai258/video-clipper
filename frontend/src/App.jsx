@@ -27,6 +27,8 @@ import MixBatchWizardPage from './pages/MixBatchWizardPage'
 import MixBatchDetailPage from './pages/MixBatchDetailPage'
 // v2.2.5: 资源库独立路由页面
 import LibraryPage from './pages/LibraryPage'
+// v2.2.30: ErrorBoundary 兜底 — 任一子组件崩了显示"刷新重试", 不让 Topbar 全挂
+import { ErrorBoundary } from './ErrorBoundary'
 import './index.css'
 
 function App() {
@@ -118,15 +120,17 @@ function App() {
           ) : location.pathname === '/styles' ? (
             <StyleManager navigate={navigate} location={location} />
           ) : showWatchFolders ? (
-            <WatchFolders />
+            <ErrorBoundary><WatchFolders /></ErrorBoundary>
           ) : showTrash ? (
-          <TrashView
-            trashProjects={trashProjects}
-            onPurgeAll={purgeAllTrash}
-            onPurgeOld={purgeTrash}
-            onRestore={restoreProject}
-            onPermanentDelete={(id, name) => deleteProject(id, name, true)}
-          />
+          <ErrorBoundary>
+            <TrashView
+              trashProjects={trashProjects}
+              onPurgeAll={purgeAllTrash}
+              onPurgeOld={purgeTrash}
+              onRestore={restoreProject}
+              onPermanentDelete={(id, name) => deleteProject(id, name, true)}
+            />
+          </ErrorBoundary>
           ) : (
             // === 正常项目列表 ===
             <>
@@ -203,16 +207,18 @@ function App() {
               </div>
 
               {filteredProjects.length > 0 ? (
-                <div className="reel-grid">
-                  {filteredProjects.map(p => (
-                    <ProjectCard
-                      key={p.id}
-                      project={p}
-                      onStart={startProcessing}
-                      onDelete={deleteProject}
-                    />
-                  ))}
-                </div>
+                <ErrorBoundary>
+                  <div className="reel-grid">
+                    {filteredProjects.map(p => (
+                      <ProjectCard
+                        key={p.id}
+                        project={p}
+                        onStart={startProcessing}
+                        onDelete={deleteProject}
+                      />
+                    ))}
+                  </div>
+                </ErrorBoundary>
               ) : (
                 <div className="empty">
                   <div className="empty-icon">∅</div>
