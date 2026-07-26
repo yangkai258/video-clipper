@@ -55,7 +55,7 @@ export class ChunkedUploader {
           this.receivedBytes = status.received_bytes
           this.setState('resuming', { uploadId: this.uploadId, received: this.receivedBytes })
         }
-      } catch (e) {
+      } catch (_e) {
         // status 查询失败——重新上传
         this._clearProgress()
       }
@@ -216,7 +216,7 @@ export class ChunkedUploader {
               speed: this.speedBps,
             })
             resolve(data)
-          } catch (e) {
+          } catch (_e) {
             reject(new Error('解析响应失败'))
           }
         } else {
@@ -224,7 +224,7 @@ export class ChunkedUploader {
           try {
             const err = JSON.parse(xhr.responseText)
             msg = err.detail || msg
-          } catch (e) { /* 忽略 */ }
+          } catch (_e) { /* 忽略 */ }
           reject(new Error(msg))
         }
       }
@@ -275,7 +275,7 @@ export class ChunkedUploader {
     // 中断所有进行中的 XHR
     if (this._currentXHRs) {
       for (const xhr of this._currentXHRs) {
-        try { xhr.abort() } catch (e) { /* 忽略 */ }
+        try { xhr.abort() } catch (_e) { /* 忽略 */ }
       }
     }
     if (this.uploadId) {
@@ -284,7 +284,7 @@ export class ChunkedUploader {
           method: 'DELETE',
           headers: this._authHeaders()
         })
-      } catch (e) { /* 忽略 */ }
+      } catch (_e) { /* 忽略 */ }
     }
     this._clearProgress()
   }
@@ -298,7 +298,7 @@ export class ChunkedUploader {
         filename: this.file.name,
         saved_at: Date.now()
       }))
-    } catch (e) { /* localStorage 满了就忽略 */ }
+    } catch (_e) { /* localStorage 满了就忽略 */ }
   }
 
   _loadProgress() {
@@ -312,7 +312,7 @@ export class ChunkedUploader {
         return null
       }
       return data
-    } catch (e) { return null }
+    } catch (_e) { return null }
   }
 
   _clearProgress() {

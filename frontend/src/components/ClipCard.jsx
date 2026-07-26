@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import axios from 'axios'
+import _axios from 'axios'
 import Icon from '../Icon'
 import { API_BASE, getOrientation, formatTime } from '../projectView'
 

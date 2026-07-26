@@ -16,7 +16,7 @@ export default function Topbar({
   uploadState,
   uploadProgress,
   uploadError,
-  handleUpload,
+  _handleUpload,
   handlePause,
   handleResume,
   handleCancel,

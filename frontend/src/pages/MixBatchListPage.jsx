@@ -3,7 +3,7 @@ import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../Icon'
 import EmptyState from '../components/EmptyState'
-import { statusLabel, formatTC, formatDate } from '../projectView'
+import { statusLabel,formatDate } from '../projectView'
 
 // ponytail: 批量混剪列表 (v2.2.6)
 // 数据: GET /api/v1/mix/batch → {batches: [{id, name, status, total_count, completed_count, failed_count, ...}]}

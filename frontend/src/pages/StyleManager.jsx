@@ -36,8 +36,8 @@ function StyleManager({ navigate: navProp, location: locProp }) {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(defaultStyle)
   const [tab, setTab] = useState('basic')
-  const navigate = navProp || _navHook
-  const location = locProp || _locHook
+  const _navigate = navProp || _navHook
+  const _location = locProp || _locHook
 
   const loadStyles = async () => {
     try {

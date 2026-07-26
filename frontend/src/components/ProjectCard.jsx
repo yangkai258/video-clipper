@@ -7,7 +7,7 @@ import { statusLabel, formatTC, formatDate, formatDuration } from '../projectVie
 export default function ProjectCard({ project, onStart, onDelete, onSaveToLibrary }) {
   const navigate = useNavigate()
   const p = project
-  const orientation = p.orientation  // 上游计算过的, 默认 landscape
+  const _orientation = p.orientation  // 上游计算过的, 默认 landscape
   const hasSubtitle = p.has_subtitle
   // v2.2.40: 列表卡片"存到资源库"按钮 — 完成项目 + 有切片才能存
   const canSaveToLibrary = p.status === 'completed' && (p.clip_count || 0) > 0

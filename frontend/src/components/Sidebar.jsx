@@ -16,7 +16,7 @@ export default function Sidebar({
   onMixBatch,
   onLibrary,
 }) {
-  const navigate = useNavigate()
+  const _navigate = useNavigate()
   const location = useLocation()
 
   const isProjectsActive = (location.pathname === '/' || location.pathname.startsWith('/project/')) && !showTrash && !showWatchFolders

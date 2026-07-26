@@ -3,7 +3,7 @@ import Icon from '../Icon'
 // ponytail: 选择处理策略的 modal
 // 收 7 个 props: state/handler 全部从 App 传入 (避免 useStrategy hook 内部闭包)
 export default function StrategyModal({
-  pendingProject,
+  _pendingProject,
   setPendingProject,
   presets,
   customStyles,
@@ -82,7 +82,7 @@ export default function StrategyModal({
             预设策略
           </div>
           <div className="strategy-grid">
-            {presets.map((p, i) => (
+            {presets.map((p, _i) => (
               <button key={p.id} className="strategy-item" onClick={() => onSelect(p)}>
                 <div className="strategy-icon">{p.name.split(' ')[0]}</div>
                 <div className="strategy-body">

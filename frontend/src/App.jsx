@@ -3,7 +3,7 @@ import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import axios from 'axios'
 
 const API_BASE = '/api/v1'
-import { ChunkedUploader, formatBytes, formatSpeed, formatTime } from './ChunkedUploader'
+import {formatBytes,formatTime } from './ChunkedUploader'
 import WatchFolders from './pages/WatchFolders'
 import StyleManager from './pages/StyleManager'
 import ProjectDetail from './pages/ProjectDetail'
@@ -15,7 +15,7 @@ import { useProjects } from './hooks/useProjects'
 import { useUpload } from './hooks/useUpload'
 import { useStrategy } from './hooks/useStrategy'
 import Icon from './Icon'
-import { formatDuration, formatTC, formatDate, statusLabel } from './projectView'
+import {statusLabel } from './projectView'
 import ProjectCard from './components/ProjectCard'
 import StrategyModal from './components/StrategyModal'
 import TrashView from './components/TrashView'
@@ -30,7 +30,7 @@ import MixBatchDetailPage from './pages/MixBatchDetailPage'
 // v2.2.5: 资源库独立路由页面
 import LibraryPage from './pages/LibraryPage'
 // v2.2.30: ErrorBoundary 兜底 — 任一子组件崩了显示"刷新重试", 不让 Topbar 全挂
-import { ErrorBoundary } from './ErrorBoundary'
+import {} from './ErrorBoundary'
 import './index.css'
 
 function App() {
@@ -41,9 +41,9 @@ function App() {
 
   // 3 hooks split out projects/upload/strategy logic (see hooks/*.js)
   const projectsApi = useProjects()
-  const { projects, setProjects, trashProjects, showTrash, setShowTrash, activeTab, setActiveTab, search, setSearch, filteredProjects, counts, loadProjects, loadTrash, deleteProject, restoreProject, purgeTrash, purgeAllTrash } = projectsApi
+  const { projects, _setProjects, trashProjects, showTrash, setShowTrash, activeTab, setActiveTab, search, setSearch, filteredProjects, counts, loadProjects, loadTrash, deleteProject, restoreProject, purgeTrash, purgeAllTrash } = projectsApi
   const strategyApi = useStrategy({ onAfterProcess: loadProjects })
-  const { showStrategyModal, setShowStrategyModal, presets, customStyles, withSubtitle, setWithSubtitle, outputFormat, setOutputFormat, loadStrategies, openStrategyModal, closeStrategyModal, selectStrategy, startProcessing } = strategyApi
+  const { showStrategyModal, _setShowStrategyModal, presets, customStyles, withSubtitle, setWithSubtitle, outputFormat, setOutputFormat, loadStrategies, openStrategyModal, closeStrategyModal, selectStrategy, startProcessing } = strategyApi
   const uploadApi = useUpload({
     onDone: ({ projectId, name }) => {
       setPendingProject({ id: projectId, name })

@@ -28,7 +28,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
   const navigate = navProp || _navHook
   const id = projectId
   const [showReport, setShowReport] = useState(false)
-  const [showRerun, setShowRerun] = useState(false)
+  const [_showRerun, setShowRerun] = useState(false)
 
   // ponytail: 必须在所有 hook 之前且无条件执行,避免 hooks 顺序违规
   useEffect(() => {

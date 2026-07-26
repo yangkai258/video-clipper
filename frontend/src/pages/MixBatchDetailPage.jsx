@@ -68,7 +68,7 @@ export default function MixBatchDetailPage({ batchId, navigate: navProp }) {
 
   const projects = data.projects || []
   const isRunning = data.status === 'running' || data.status === 'pending'
-  const isCompleted = data.status === 'completed'
+  const _isCompleted = data.status === 'completed'
   const isPartial = data.status === 'partial'
   const totalDone = data.completed_count + data.failed_count
   const progress = data.total_count > 0 ? (totalDone / data.total_count) * 100 : 0
