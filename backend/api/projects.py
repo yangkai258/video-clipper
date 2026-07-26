@@ -780,11 +780,10 @@ def _task_to_dict(task: Task, video_duration_seconds: float = None) -> dict:
         "error_message": task.error_message,
         "started_at": to_iso_utc(task.started_at),
         "completed_at": to_iso_utc(task.completed_at),
-        # v2.2.1: 预估 vs 实际归集 — estimated_total_at_start_seconds 是启动时
-        # 一次性算的 (不被 progress 涨影响), actual_total_seconds 是完成后
-        # (completed_at - started_at) 的真实秒数。后续做预估模型直接用这俩。
-        "estimated_total_at_start_seconds": task.estimated_total_at_start_seconds,
-        "actual_total_seconds": task.actual_total_seconds,
+        # v2.2.1: 预估 vs 实际归集 — v2.2.28 fix: task 表没这俩字段, 用 getattr 兜底
+        # (v2.2.x 删了 Task 字段但 router 没改, 500 错). 后续做预估模型时加回字段.
+        "estimated_total_at_start_seconds": getattr(task, "estimated_total_at_start_seconds", None),
+        "actual_total_seconds": getattr(task, "actual_total_seconds", None),
         **_build_timing_info(task, video_duration_seconds),
     }
 
