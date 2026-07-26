@@ -7,6 +7,7 @@
 4. POST /uploads/{uid}/complete → 合并 + 创建 project
 """
 
+import contextlib
 import json
 import logging
 import shutil
@@ -135,7 +136,7 @@ async def init_upload(
         existing_offset: 已上传偏移（0 表示新会话）
     """
     # 验证文件类型
-    ext = filename.split(".")[-1].lower()
+    ext = filename.rsplit(".", maxsplit=1)[-1].lower()
     if not settings.is_allowed_video_ext(ext):
         raise HTTPException(
             status_code=400,
@@ -316,10 +317,8 @@ async def complete_upload(upload_id: str, db: AsyncSession = Depends(get_db)):
 
     # cleanup part files (keep meta for status queries)
     for p in _upload_dir(upload_id).glob(f"*{PART_SUFFIX}"):
-        try:
+        with contextlib.suppress(OSError):
             p.unlink()
-        except OSError:
-            pass
 
     # create project record (v2.1.26: ffprobe width/height for orientation)
     subtitle_style = await get_last_subtitle_style(db)

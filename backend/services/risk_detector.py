@@ -23,7 +23,7 @@ def _load_risk_words() -> dict:
         return _cache["data"]
 
     try:
-        with open(_RISK_WORDS_PATH, "r", encoding="utf-8") as f:
+        with open(_RISK_WORDS_PATH, encoding="utf-8") as f:
             data = json.load(f)
         _cache["mtime"] = mtime
         _cache["data"] = data

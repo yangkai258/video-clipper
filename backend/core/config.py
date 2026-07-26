@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Video Clipper"
     # v2.2.12: bump APP_VERSION 跟 git tag 同步 (之前 v1.0.0 卡 1 年)
     # admin/system endpoint 用这个返给前端 (/admin/system → version 字段)
-    APP_VERSION: str = "v2.2.49"
+    APP_VERSION: str = "v2.2.50"
     DEBUG: bool = True
 
     # 路径配置
@@ -134,7 +134,7 @@ def _load_encrypted_secrets() -> None:
 
         content = encrypted_path.read_text(encoding="utf-8")
         token = "\n".join(
-            l for l in content.splitlines() if not l.startswith("#")
+            line for line in content.splitlines() if not line.startswith("#")
         ).strip()
         plaintext = Fernet(master_key.encode()).decrypt(token.encode()).decode()
         env_path.write_text(plaintext, encoding="utf-8")
@@ -145,7 +145,7 @@ def _load_encrypted_secrets() -> None:
         _logger.error(
             "ENV_MASTER_KEY 错, 无法解密 .env.encrypted — 检查 1Password / Keychain"
         )
-    except Exception as e:  # noqa: BLE001 — decrypt 可能 IO/permission 错, 静默警告不阻塞启动
+    except Exception as e:
         _logger.error(f"解密 .env.encrypted 失败: {e}")
 
 

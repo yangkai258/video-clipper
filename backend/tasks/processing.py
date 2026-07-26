@@ -14,6 +14,7 @@
 process_video_pipeline 只做协调 + 异常处理 + 进度推进。
 """
 
+import contextlib
 import gc
 import logging
 import shutil
@@ -75,8 +76,8 @@ def process_video_pipeline(
     self,
     project_id: str,
     input_video_path: str,
-    input_srt_path: str = None,
-    task_id: str = None,
+    input_srt_path: str | None = None,
+    task_id: str | None = None,
 ) -> dict:
     """视频处理流水线（celery task）。"""
     logger.info(f"开始处理项目：{project_id}")
@@ -87,7 +88,7 @@ def process_video_pipeline(
         subtitle_config,
         project_dir,
         metadata_dir,
-        output_dir,
+        _output_dir,
         clips_dir,
         collections_dir,
     ) = _prepare_directories(project_id, input_video_path)
@@ -361,16 +362,16 @@ def _generate_or_copy_srt_to_tmp(
     input_video_path: str, input_srt_path: str, project_id: str, generate_subtitle
 ) -> Path:
     """Y 方案：写到 /tmp 临时文件，不污染项目目录。"""
-    tmp = tempfile.NamedTemporaryFile(
+    # v2.2.50: 用 with 替代裸 open, SIM115 修
+    with tempfile.NamedTemporaryFile(
         suffix=TEMP_SRT_SUFFIX,
         prefix=f"{TEMP_SRT_PREFIX}{project_id}_",
         delete=False,
         mode="w",
         encoding="utf-8",
         dir=TEMP_SRT_DIR,
-    )
-    tmp.close()
-    srt_path = Path(tmp.name)
+    ) as tmp:
+        srt_path = Path(tmp.name)
     logger.info(f"自动生成字幕（临时文件模式）：{srt_path}")
     if input_srt_path and Path(input_srt_path).exists():
         shutil.copy(input_srt_path, srt_path)
@@ -678,10 +679,8 @@ def _cleanup_temp_files(project_dir: Path) -> None:
             raw_size = raw_video.stat().st_size
             raw_video.unlink()
             logger.info(f"清理：删除 raw/input.mp4 ({raw_size / 1024 / 1024:.1f} MB)")
-            try:
+            with contextlib.suppress(OSError):
                 (project_dir / "raw").rmdir()
-            except OSError:
-                pass
 
         metadata_dir = project_dir / "metadata"
         for temp_name in TEMP_AUDIO_FILES:

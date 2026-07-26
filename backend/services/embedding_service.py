@@ -195,9 +195,9 @@ def get_embeddings_batch(texts: list[str]) -> list[list[float] | None] | None:
         # API 失败, 没缓存的位置都 None
         return results
     # 建 unique_texts → vec 映射
-    text_to_vec: dict[str, list[float]] = dict(zip(unique_texts, api_result))
+    text_to_vec: dict[str, list[float]] = dict(zip(unique_texts, api_result, strict=False))
     # 回填 results + 写 cache
-    for idx, t in zip(need_call, need_texts):
+    for idx, t in zip(need_call, need_texts, strict=False):
         if t in text_to_vec:
             vec = text_to_vec[t]
             results[idx] = vec
@@ -215,7 +215,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = sqrt(sum(x * x for x in a))
     norm_b = sqrt(sum(x * x for x in b))
     if norm_a == 0 or norm_b == 0:

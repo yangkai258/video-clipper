@@ -211,7 +211,7 @@ def _call_llm_for_tags(
             if p and 2 <= len(p) <= 8 and p not in STOP_WORDS:
                 tags.append(p)
         return tags if tags else None
-    except Exception as e:  # noqa: BLE001 — LLM 可抛任意异常, 静默走 fallback
+    except Exception as e:
         logger.warning(f"LLM auto-tag 失败 (fallback 走 keyword): {e}")
         return None
 

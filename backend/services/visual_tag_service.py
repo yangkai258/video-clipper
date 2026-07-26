@@ -22,12 +22,11 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def extract_one_frame(video_path: Path, t_seconds: float = 1.0) -> Optional[Path]:
+def extract_one_frame(video_path: Path, t_seconds: float = 1.0) -> Path | None:
     """ffmpeg 抽 1 帧到临时 jpg. 返临时路径 (caller 用完删).
 
     失败 (ffmpeg 不可用 / 文件 < t / 编解码器不支持) 返 None.
@@ -123,12 +122,9 @@ def _analyze_motion(video_path: Path) -> str:
             return "static"
         changed = sum(hist[30:])  # diff > 30 的 bucket
         ratio = changed / total
-        if ratio > 0.4:
+        if ratio > 0.4 or ratio > 0.1:
             return "moving"
-        elif ratio > 0.1:
-            return "moving"
-        else:
-            return "static"
+        return "static"
     except Exception as e:
         logger.debug(f"_analyze_motion 失败: {e}")
         return "unknown"
@@ -158,18 +154,15 @@ def _analyze_edge_density(jpg_path: Path) -> str:
         # edge 像素 (值 > 50)
         edge = sum(hist[50:])
         ratio = edge / total
-        if ratio > 0.25:
+        if ratio > 0.25 or ratio > 0.10:
             return "busy"
-        elif ratio > 0.10:
-            return "busy"
-        else:
-            return "clean"
+        return "clean"
     except Exception as e:
         logger.debug(f"_analyze_edge_density 失败: {e}")
         return "unknown"
 
 
-def _call_vision_api(jpg_path: Path) -> Optional[list[str]]:
+def _call_vision_api(jpg_path: Path) -> list[str] | None:
     """v2.2.45 占位: 真 vision API (OpenAI gpt-4o / doubao-vl / qwen-vl / moondream)
 
     没 API key 返 None. 有 key 走外部 API, 输出场景/物体/活动 tags.

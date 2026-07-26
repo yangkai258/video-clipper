@@ -67,14 +67,13 @@ class SpeechRecognizer:
         """生成字幕"""
         if method == SpeechRecognitionMethod.BCUT_ASR:
             return self._generate_bcut(video_path, output_path)
-        elif method == SpeechRecognitionMethod.MLX_WHISPER:
+        if method == SpeechRecognitionMethod.MLX_WHISPER:
             return self._generate_mlx_whisper(video_path, output_path, model, language)
-        elif method == SpeechRecognitionMethod.FASTER_WHISPER:
+        if method == SpeechRecognitionMethod.FASTER_WHISPER:
             return self._generate_faster_whisper(
                 video_path, output_path, model, language
             )
-        else:
-            raise ValueError(f"不支持的识别方法：{method}")
+        raise ValueError(f"不支持的识别方法：{method}")
 
     def _generate_bcut(self, video_path: Path, output_path: Path) -> Path:
         """使用 bcut-asr 生成字幕"""
@@ -249,9 +248,9 @@ class SpeechRecognizer:
         gc.collect()
 
         logger.info(f"字幕生成完成：{output_path}")
-        logger.info(
-            f"字幕行数：{len(list(open(output_path, 'r', encoding='utf-8').readlines()))}"
-        )
+        # v2.2.50: 用 Path().read_text() 替代裸 open, SIM115 修
+        _srt_text = Path(output_path).read_text(encoding="utf-8") if Path(output_path).exists() else ""
+        logger.info(f"字幕行数：{len(_srt_text.splitlines())}")
 
         # 刷新日志
         for handler in logger.handlers:

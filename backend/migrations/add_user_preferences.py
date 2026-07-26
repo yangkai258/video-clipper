@@ -27,7 +27,7 @@ def migrate():
 
     # 插入默认用户记录（如果不存在）
     cursor.execute("""
-        INSERT OR IGNORE INTO user_preferences (user_id, last_used_subtitle_style) 
+        INSERT OR IGNORE INTO user_preferences (user_id, last_used_subtitle_style)
         VALUES ('default', '{}')
     """)
 

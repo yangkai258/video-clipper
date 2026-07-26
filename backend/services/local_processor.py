@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_clips_from_subtitle(
-    srt_path: Path, metadata_dir: Path, strategy_config: dict = None
+    srt_path: Path, metadata_dir: Path, strategy_config: dict | None = None
 ) -> dict:
     """从字幕生成本地切片方案（不依赖 AI）
 
@@ -123,7 +123,7 @@ def generate_clips_from_subtitle(
 
 def parse_srt(srt_path: Path) -> list[dict]:
     """解析 SRT 文件"""
-    with open(srt_path, "r", encoding="utf-8") as f:
+    with open(srt_path, encoding="utf-8") as f:
         content = f.read()
 
     segments = []
@@ -281,7 +281,7 @@ def _split_long_segment(seg: dict, target_duration: float) -> list[dict]:
     duration = seg["end"] - seg["start"]
     if duration <= target_duration:
         return [seg]
-    n = max(2, int(round(duration / target_duration)))
+    n = max(2, round(duration / target_duration))
     piece = duration / n
     parts = []
     for i in range(n):
@@ -299,7 +299,7 @@ def _apply_buffers(
     clips: list[dict],
     pre_roll: float = 1.0,
     post_roll: float = 1.0,
-    video_end: float = None,
+    video_end: float | None = None,
 ) -> list[dict]:
     """给每个 clip 加前置 1s + 退出 1s 缓冲
 
@@ -330,13 +330,13 @@ def _apply_buffers(
 
 
 def generate_clips_even_split(
-    video_end: float, target_duration: float, segments: list[dict] = None
+    video_end: float, target_duration: float, segments: list[dict] | None = None
 ) -> list[dict]:
     """even_split 路径：按 target_duration 均匀切视频（教学/课程类内容）"""
     if video_end <= 0 or target_duration <= 0:
         return []
 
-    n = max(1, int(round(video_end / target_duration)))
+    n = max(1, round(video_end / target_duration))
     piece = video_end / n
     clips = []
     for i in range(n):
@@ -523,7 +523,7 @@ def _score_clip_local(
 
 
 def generate_simple_titles(
-    clips: list[dict], all_segments: list[dict] = None, strategy_config: dict = None
+    clips: list[dict], all_segments: list[dict] | None = None, strategy_config: dict | None = None
 ) -> list[dict]:
     """生成简单标题（从该 clip 时间范围覆盖最长的字幕段提取）+ 本地评分
 

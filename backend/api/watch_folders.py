@@ -84,7 +84,7 @@ async def list_watch_folders(
     """列出所有 watch folder（默认只显示启用的）"""
     query = select(WatchFolder).order_by(WatchFolder.created_at.desc())
     if not include_disabled:
-        query = query.where(WatchFolder.enabled == True)
+        query = query.where(WatchFolder.enabled)
     result = await db.execute(query)
     folders = result.scalars().all()
     return {"folders": [_to_dict(f) for f in folders]}
@@ -321,7 +321,7 @@ def scan_all_due_folders():
 
     db = SyncSessionLocal()
     try:
-        result = db.query(WatchFolder).filter(WatchFolder.enabled == True).all()
+        result = db.query(WatchFolder).filter(WatchFolder.enabled).all()
         now = datetime.utcnow()
         for wf in result:
             if wf.last_scan_at is None:

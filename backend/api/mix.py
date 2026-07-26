@@ -738,12 +738,11 @@ async def ai_help_write_script_endpoint(payload: dict = Body(...)):
     target_duration = int(payload.get("target_duration_seconds") or 60)
 
     try:
-        result = ai_help_write_script(
+        return ai_help_write_script(
             topic=topic,
             clips_context=clips_context,
             target_duration=target_duration,
         )
-        return result
     except Exception as e:
         logger.exception(f"AI 帮写脚本失败: {e}")
         raise HTTPException(status_code=500, detail=f"AI 帮写失败: {str(e)[:300]}")
@@ -903,5 +902,4 @@ async def check_script_risk_endpoint(payload: dict = Body(...)):
             str(s.get("text", "") if isinstance(s, dict) else s) for s in segments
         )
 
-    result = check_script_risk(text)
-    return result
+    return check_script_risk(text)

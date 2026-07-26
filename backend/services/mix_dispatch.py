@@ -50,7 +50,7 @@ def _resolve_mix_dispatch_queue() -> str:
     单独按 broker db 推算: db=0 → processing_mix (release), db=1 → processing_mix_beta (beta).
     """
     broker = _resolve_mix_dispatch_broker()
-    if broker.endswith("/1") or broker.endswith("/2"):  # 0=release, 1/2=beta
+    if broker.endswith(("/1", "/2")):  # 0=release, 1/2=beta
         return "processing_mix_beta"
     return "processing_mix"
 

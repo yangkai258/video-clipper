@@ -115,10 +115,7 @@ def ai_help_write_script(
         title = (c.get("title") or "").strip()
         if title:
             titles.append(title)
-    if not titles:
-        titles_block = "(素材库为空, 请基于常见直播带货场景自由发挥)"
-    else:
-        titles_block = "\n".join(f"- {t}" for t in titles)
+    titles_block = "(素材库为空, 请基于常见直播带货场景自由发挥)" if not titles else "\n".join(f"- {t}" for t in titles)
 
     prompt = f"""你是直播带货脚本撰写专家. 基于提供的素材库标题 + 用户主题, 生成一段 {target_duration} 秒左右的带货口播脚本.
 
@@ -146,10 +143,7 @@ def ai_help_write_script(
     if script_text.startswith("```"):
         parts = script_text.split("```")
         # parts: ['', 'language', 'content', '', ...]
-        if len(parts) >= 3:
-            script_text = parts[2].strip()
-        else:
-            script_text = script_text.strip("`").strip()
+        script_text = parts[2].strip() if len(parts) >= 3 else script_text.strip("`").strip()
 
     logger.info(f"AI 帮写脚本完成: {len(script_text)} 字")
     return {
@@ -298,7 +292,7 @@ def match_clips_for_segments(
         durations.append(seg_duration)
 
     results = []
-    for seg, seg_dur in zip(segments, durations):
+    for seg, seg_dur in zip(segments, durations, strict=False):
         keywords = seg.get("keywords", [])
         # 关键词归一化 (小写 + 去空格), 跟 clip_tags 对比
         keywords_norm = {k.strip().lower() for k in keywords if k and k.strip()}
@@ -425,10 +419,7 @@ def match_clips_for_segments(
         clip_dur = best_clip.get("duration", 0) or 10
 
         use_dur = min(seg_dur, clip_dur)
-        if clip_dur > use_dur:
-            start = (clip_dur - use_dur) / 2
-        else:
-            start = 0
+        start = (clip_dur - use_dur) / 2 if clip_dur > use_dur else 0
         end = start + use_dur
 
         results.append(
@@ -488,7 +479,7 @@ def _is_valid_mp4(path: Path) -> bool:
         # duration 应该是 "12.345678" 格式
         dur = r.stdout.strip()
         return bool(dur) and dur.replace(".", "").isdigit()
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:  # noqa: BLE001 — ffprobe 各种异常都当 invalid
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
         logger.debug(f"ffprobe 失败 ({path}): {e}")
         return False
 
@@ -533,7 +524,7 @@ def _make_placeholder_video(path: Path, duration: int = 5) -> bool:
         ]
         subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
         return path.exists() and path.stat().st_size > 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:  # noqa: BLE001 — ffmpeg 各种异常都当失败
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
         logger.warning(f"生成 placeholder 失败: {e}")
         return False
 
@@ -681,7 +672,7 @@ def assemble_mix_video(
 # ──────────────────────────── SRT 生成 ────────────────────────────
 
 
-def build_script_srt(segments: list[dict], total_duration: float = None) -> str:
+def build_script_srt(segments: list[dict], total_duration: float | None = None) -> str:
     """用脚本分段生成 SRT 字幕 (烧字幕用)
 
     按 segments[].clip_duration 比例分配 SRT 时间戳.
@@ -723,7 +714,7 @@ def burn_mix_subtitle(
     video_path: Path,
     srt_text: str,
     subtitle_style: dict | None = None,
-    total_duration: float = None,
+    total_duration: float | None = None,
 ) -> Path:
     """烧脚本原文本字幕到拼接视频
 

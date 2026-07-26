@@ -31,7 +31,7 @@ COVER_THUMB_QUALITY = 2  # q:v 值（封面比每片质量高）
 # ───────────────────────── 公开 API ─────────────────────────
 
 
-def _build_video_encoder_args(output_format: str, output_path: Path = None) -> list:
+def _build_video_encoder_args(output_format: str, output_path: Path | None = None) -> list:
     """根据 output_format 生成 ffmpeg 编码参数。
 
     Args:
@@ -73,11 +73,11 @@ def cut_clips(
     clips: list[dict],
     input_video: Path,
     output_dir: Path,
-    input_srt: Path = None,
-    task_id: str = None,
-    subtitle_config: dict = None,
+    input_srt: Path | None = None,
+    task_id: str | None = None,
+    subtitle_config: dict | None = None,
     with_subtitle: bool = True,
-    project_id: str = None,
+    project_id: str | None = None,
     output_format: str = "original",
 ) -> None:
     """切割视频切片（高层协调）。
@@ -128,7 +128,7 @@ def merge_collections(
     collections: list[dict],
     clips_dir: Path,
     output_dir: Path,
-    task_id: str = None,
+    task_id: str | None = None,
 ) -> None:
     """合并合集（高层协调）。
 

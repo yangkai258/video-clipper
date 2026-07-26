@@ -38,7 +38,7 @@ def _resolve_collection_video_path(collection: Collection) -> Path | None:
     return None
 
 
-def _serialize_collection(collection: Collection, clips_map: dict = None) -> dict:
+def _serialize_collection(collection: Collection, clips_map: dict | None = None) -> dict:
     """把 Collection 模型序列化为 API 响应
 
     Args:

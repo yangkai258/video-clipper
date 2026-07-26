@@ -141,5 +141,5 @@ def init_mix_db():
 # 自动初始化 (import 时)
 try:
     init_mix_db()
-except Exception as e:  # noqa: BLE001 — init 失败只 print, 不阻塞 import
+except Exception as e:
     print(f"[mix_db] 初始化失败: {e}")

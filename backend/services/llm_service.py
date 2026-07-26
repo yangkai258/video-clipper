@@ -84,8 +84,8 @@ def _call_llm(prompt: str, model: str | None = None) -> str | None:
 def extract_outline(
     srt_path: Path,
     metadata_dir: Path,
-    strategy_config: dict = None,
-    srt_text: str = None,
+    strategy_config: dict | None = None,
+    srt_text: str | None = None,
 ) -> list[dict]:
     """从字幕提取大纲
 
@@ -103,7 +103,7 @@ def extract_outline(
             logger.error("extract_outline 需要 srt_path 或 srt_text")
             return []
         logger.info("读取字幕文件...")
-        with open(srt_path, "r", encoding="utf-8") as f:
+        with open(srt_path, encoding="utf-8") as f:
             srt_content = f.read()
     else:
         srt_content = srt_text
@@ -235,8 +235,7 @@ def _parse_rules_to_keywords(rules_text: str) -> list[str]:
 
     # 用多种分隔符拆分
     parts = re.split(r"[、,，;；\n]+", rules_text)
-    keywords = [p.strip() for p in parts if p.strip() and len(p.strip()) >= 2]
-    return keywords
+    return [p.strip() for p in parts if p.strip() and len(p.strip()) >= 2]
 
 
 def _extract_text_from_srt(srt_content: str) -> str:
@@ -313,7 +312,7 @@ def create_timeline(
     outlines: list[dict],
     srt_path: Path,
     metadata_dir: Path,
-    strategy_config: dict = None,
+    strategy_config: dict | None = None,
 ) -> list[dict]:
     """创建时间线 - 让 LLM 把话题大纲映射到字幕中的具体时间段
 
@@ -469,7 +468,7 @@ def _parse_timeline_response(response: str) -> list[dict]:
 
 
 def score_clips(
-    timeline: list[dict], metadata_dir: Path, strategy_config: dict = None
+    timeline: list[dict], metadata_dir: Path, strategy_config: dict | None = None
 ) -> list[dict]:
     """切片评分
 
@@ -567,8 +566,8 @@ def score_clips(
 def generate_titles(
     scored_clips: list[dict],
     metadata_dir: Path,
-    srt_path: Path = None,
-    strategy_config: dict = None,
+    srt_path: Path | None = None,
+    strategy_config: dict | None = None,
 ) -> list[dict]:
     """生成标题 - 优先用 LLM 生成吸引人的标题，失败回退简化版
 
@@ -696,7 +695,7 @@ def _parse_titles_response(response: str) -> dict[int, str]:
 
 
 def cluster_collections(
-    titled_clips: list[dict], metadata_dir: Path, strategy_config: dict = None
+    titled_clips: list[dict], metadata_dir: Path, strategy_config: dict | None = None
 ) -> list[dict]:
     """主题聚类
 

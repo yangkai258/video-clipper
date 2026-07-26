@@ -102,7 +102,7 @@ def process_mix_pipeline(
     script_text: str,
     target_duration_seconds: int,
     candidate_clip_ids: list[str],
-    task_id: str = None,
+    task_id: str | None = None,
 ) -> dict:
     """混剪 pipeline (完全跟切片项目解耦)
 

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_subtitle(
-    video_path: Path, output_path: Path = None, in_memory: bool = False
+    video_path: Path, output_path: Path | None = None, in_memory: bool = False
 ) -> Path | str:
     """生成字幕
 
@@ -43,16 +43,16 @@ def generate_subtitle(
     actual_output = output_path
     temp_to_cleanup = None
     if in_memory:
-        tmp = tempfile.NamedTemporaryFile(
+        # v2.2.50: 用 with 替代裸 open, SIM115 修
+        with tempfile.NamedTemporaryFile(
             suffix=".srt",
             delete=False,
             mode="w",
             encoding="utf-8",
             dir="/tmp",
-        )
-        tmp.close()
-        actual_output = Path(tmp.name)
-        temp_to_cleanup = actual_output
+        ) as tmp:
+            actual_output = Path(tmp.name)
+            temp_to_cleanup = actual_output
     elif output_path is None:
         raise ValueError("非 in_memory 模式必须提供 output_path")
 

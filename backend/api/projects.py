@@ -7,8 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select
-from sqlalchemy import select as sa_select
+from sqlalchemy import func, select, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -294,7 +293,7 @@ async def start_processing(project_id: str, db: AsyncSession = Depends(get_db)):
 @router.post("/{project_id}/rerun")
 async def rerun_project(
     project_id: str,
-    config: dict = None,
+    config: dict | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """v2.2.1: 重新处理项目 (复用 raw, 改 with_subtitle/output_format/style/padding)
@@ -563,7 +562,7 @@ async def restore_project(project_id: str, db: AsyncSession = Depends(get_db)):
 # ───────────────────────── 进度/时间辅助 ─────────────────────────
 
 
-def _build_timing_info(task: Task, video_duration_seconds: float = None) -> dict:
+def _build_timing_info(task: Task, video_duration_seconds: float | None = None) -> dict:
     """从 task 状态推算 elapsed / total / eta 秒数。"""
     if not task.started_at:
         return {
@@ -605,7 +604,7 @@ def _build_timing_info(task: Task, video_duration_seconds: float = None) -> dict
     }
 
 
-def _estimate_eta_seconds(video_duration_seconds: float = None) -> int:
+def _estimate_eta_seconds(video_duration_seconds: float | None = None) -> int:
     """用典型切片数 + 时长估算总耗时（仅用于进度条 ETA 显示）。"""
     base = 60
     if video_duration_seconds and video_duration_seconds > 0:
@@ -752,7 +751,7 @@ def _dispatch_celery_task(
 
 def _validate_video_extension(filename: str) -> None:
     """校验视频扩展名。"""
-    ext = filename.split(".")[-1].lower()
+    ext = filename.rsplit(".", maxsplit=1)[-1].lower()
     if not settings.is_allowed_video_ext(ext):
         raise HTTPException(
             status_code=400,
@@ -824,7 +823,7 @@ def _project_summary(project: Project) -> dict:
     }
 
 
-def _task_to_dict(task: Task, video_duration_seconds: float = None) -> dict:
+def _task_to_dict(task: Task, video_duration_seconds: float | None = None) -> dict:
     """Task ORM → API 返回 dict（含 timing_info）。"""
     return {
         "status": task.status,

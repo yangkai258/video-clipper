@@ -45,7 +45,7 @@ def burn_subtitles_with_moviepy(
     srt_path: Path,
     start: float,
     duration: float,
-    subtitle_config: dict = None,
+    subtitle_config: dict | None = None,
 ) -> None:
     """烧录字幕到视频片段。
 
@@ -79,7 +79,7 @@ def burn_subtitles_with_moviepy(
     ]
 
     # 合成
-    final = CompositeVideoClip([video] + subclips)
+    final = CompositeVideoClip([video, *subclips])
     _write_video_no_subs(final, output_path, _codec="h264_videotoolbox")
     logger.info(f"字幕烧录完成：{output_path}")
 
@@ -91,7 +91,7 @@ def parse_srt(
     srt_path: Path, start_offset: float, duration: float
 ) -> list[tuple[float, float, str]]:
     """解析 SRT 文件，返回 (start, end, text) 列表，时间已按 start_offset 偏移并 clip 到 duration。"""
-    with open(srt_path, "r", encoding="utf-8") as f:
+    with open(srt_path, encoding="utf-8") as f:
         content = f.read()
 
     # SRT 格式：序号 \n 时间 --> 时间 \n 字幕文本
@@ -140,8 +140,10 @@ def _time_to_seconds(time_str: str) -> float:
 
 def _split_subtitle(s: float, e: float, text: str) -> list[tuple[float, float, str]]:
     """把长字幕按标点拆短句，单句过长自动换行，时间窗口均分。"""
-    # 1) 去尾部标点
-    text = text.strip().rstrip("。！？!?,，;；.!?")
+    # 1) 去尾部标点 (字符集合用 translate + str.maketrans, 避免 rstrip multi-char 误读)
+    _punct_chars = "。！？!?,，;；.!?"
+    _trans = str.maketrans("", "", _punct_chars)
+    text = text.translate(_trans).strip()
     if not text:
         return [(s, e, text)]
 
