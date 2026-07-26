@@ -163,17 +163,113 @@ def _analyze_edge_density(jpg_path: Path) -> str:
 
 
 def _call_vision_api(jpg_path: Path) -> list[str] | None:
-    """v2.2.45 占位: 真 vision API (OpenAI gpt-4o / doubao-vl / qwen-vl / moondream)
+    """v2.2.52 真 vision API 接入: MiniMax-Text-01 (兼容 OpenAI format)
 
-    没 API key 返 None. 有 key 走外部 API, 输出场景/物体/活动 tags.
+    优先级:
+    1. MINIMAX_API_KEY + MINIMAX_BASE_URL (项目当前主用, MiniMax-VL-01 视觉模型)
+    2. OPENAI_API_KEY + OPENAI_BASE_URL (fallback, 兼容 OpenAI gpt-4o)
+    3. 没 key / placeholder key → 返 None (走 0 依赖 fallback)
+
+    prompt: 中文 2-6 字短词 list, 跟 0 依赖属性同 schema (方便视觉匹配公式 substring 命中).
+    例: ["屋顶", "工人", "施工", "室外", "白天"]
     """
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    if not api_key or len(api_key) < 30 or "empty" in api_key.lower():
+    # 1. 找 key + base_url (按优先级)
+    api_key = ""
+    base_url = ""
+    model = "MiniMax-Text-01"  # v2.2.52: MiniMax text model 也支持 image input (vision)
+    if os.getenv("MINIMAX_API_KEY") and len(os.getenv("MINIMAX_API_KEY", "")) >= 30 \
+            and "empty" not in os.getenv("MINIMAX_API_KEY", "").lower():
+        api_key = os.getenv("MINIMAX_API_KEY", "")
+        base_url = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
+        # 默认用 MiniMax-Text-01 (实测支持 image, VL-01 不存在)
+        model = os.getenv("MINIMAX_VL_MODEL", "MiniMax-Text-01")
+    elif os.getenv("OPENAI_API_KEY") and len(os.getenv("OPENAI_API_KEY", "")) >= 30 \
+            and "empty" not in os.getenv("OPENAI_API_KEY", "").lower():
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        model = os.getenv("OPENAI_VL_MODEL", "gpt-4o-mini")
+    else:
+        return None  # 没 key 走 0 依赖
+
+    # 2. 读 jpg base64
+    try:
+        import base64
+
+        import httpx
+        with open(jpg_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("ascii")
+    except Exception as e:
+        logger.debug(f"_call_vision_api 读 jpg/base64 失败: {e}")
         return None
-    # TODO: 真调 API. 现在没真 key, 直接返 None
-    # import httpx
-    # r = httpx.post("https://api.openai.com/v1/chat/completions", ...)
-    return None
+
+    # 3. 调 API (OpenAI chat completions format, MiniMax + OpenAI 兼容)
+    prompt = (
+        "用 5-8 个中文短词 (2-4 字) 描述这张图: 场景 / 主要物体 / 活动 / "
+        "时间 / 氛围. 返 JSON array 格式, 例如 [\"屋顶\", \"工人\", \"施工\", "
+        "\"室外\", \"白天\"]. 不要数字 / 标点 / 解释, 只返 JSON array."
+    )
+    try:
+        r = httpx.post(
+            f"{base_url.rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{img_b64}",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                "max_tokens": 200,
+                "temperature": 0.3,
+            },
+            timeout=30,
+        )
+        if r.status_code != 200:
+            logger.debug(f"_call_vision_api HTTP {r.status_code}: {r.text[:200]}")
+            return None
+
+        body = r.json()
+        content = body.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not content:
+            return None
+
+        # 解析: 模型可能返 '["屋顶", "工人"]' 或 '["屋顶","工人"]'
+        # 取 [] 内容, split by ", " / "," / 中文逗号
+        import json
+        import re
+        m = re.search(r"\[(.*?)\]", content, re.DOTALL)
+        if m:
+            try:
+                tags = json.loads(f"[{m.group(1)}]")
+            except Exception:
+                # fallback: split by 逗号
+                tags = [t.strip().strip('"').strip("'")
+                        for t in m.group(1).split(",") if t.strip()]
+        else:
+            tags = [t.strip() for t in content.replace("\n", " ").split() if 2 <= len(t) <= 8]
+
+        # 清洗: 留 2-6 字中文 tag
+        cn_tags = []
+        for t in tags:
+            t = t.strip().strip('"').strip("'").strip("「」").strip("[]")
+            if 2 <= len(t) <= 6 and any('\u4e00' <= c <= '\u9fff' for c in t):
+                cn_tags.append(t)
+        return cn_tags[:8]  # 限 8 个, 太多稀释权重
+    except Exception as e:
+        logger.debug(f"_call_vision_api 调 API 失败: {e}")
+        return None
 
 
 # 中文 visual tag 命名 (跟 LLM auto-tag 同风格, 2-4 字短词)

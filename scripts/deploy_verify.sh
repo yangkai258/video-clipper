@@ -187,6 +187,24 @@ if [ -d "frontend" ]; then
     cd ..
 fi
 
+# ─────────────────────── 9. e2e 混剪 pipeline (可选, --e2e 显式开) ───────────────────────
+# v2.2.52: 跑真混剪 pipeline 验证 worker 活着, 默认 skip (deploy_verify --e2e 跑)
+h "9/9 e2e 混剪 pipeline (默认 skip, 显式 --e2e 跑)"
+if [ "${1:-}" = "--e2e" ] || [ "${DEPLOY_VERIFY_E2E:-0}" = "1" ]; then
+    if [ -x ".venv/bin/python" ]; then
+        E2E_RESULT=$(.venv/bin/python -m pytest tests/test_mix_e2e.py -q -m e2e 2>&1 | tail -1)
+        if [[ "$E2E_RESULT" == *"7 passed"* ]]; then
+            p "e2e: 7/7 pipeline 全过 (16s)"
+        else
+            f "e2e: $E2E_RESULT"
+        fi
+    else
+        w ".venv/bin/python 不在, skip e2e"
+    fi
+else
+    w "skip e2e (deploy_verify --e2e 或 DEPLOY_VERIFY_E2E=1 显式跑)"
+fi
+
 # ─────────────────────── 总结 ───────────────────────
 echo ""
 h "总结"
