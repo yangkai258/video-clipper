@@ -278,6 +278,39 @@ def match_clips_for_segments(
 
         if not scored:
             logger.warning(f"segment {seg['position']} 没匹配到任何 clip (keywords={keywords})")
+            # v2.2.26: 0 match fallback — 用第一个 candidate clip 兜底
+            # 之前 v2.2.3 strict 0 match → fail, user 卡 progress=30%.
+            # 现在: 0 match 时用第一个, score=0.0, warning log + project error_message 提示
+            # 实际: resource_clips 没相关 keyword 的素材 (e.g. test_speed_xxx),
+            #       fallback 让任务跑完, 给出可看的 video. user 后台上传真素材再重跑.
+            if clip_library:
+                fallback_clip = clip_library[0]
+                fallback_dur = fallback_clip.get("duration", 0) or 10
+                use_dur = min(seg_dur, fallback_dur)
+                start = 0 if fallback_dur <= use_dur else (fallback_dur - use_dur) / 2
+                end = start + use_dur
+                results.append({
+                    "position": seg["position"],
+                    "text": seg["text"],
+                    "keywords": keywords,
+                    "matched_clip_id": fallback_clip["clip_id"],
+                    "source_project_id": fallback_clip.get("source_project_id"),
+                    "source_project_name": fallback_clip.get("source_project_name", ""),
+                    "source_clip_title": fallback_clip.get("title", ""),
+                    "matched_video_path": fallback_clip["video_path"],
+                    "source_type": fallback_clip.get("source_type", "project"),
+                    "source_start": float(start),
+                    "source_end": float(end),
+                    "clip_duration": use_dur,
+                    "match_score": 0.0,  # 0 分, 标低质量 fallback
+                    "fallback": True,  # 标 fallback 区分真匹配
+                })
+                logger.info(
+                    f"segment {seg['position']} 用 fallback clip "
+                    f"({fallback_clip.get('title', '?')!r}) 兜底, 实际匹配度低"
+                )
+                continue
+            # 真的 0 candidate (没素材)
             continue
 
         scored.sort(key=lambda x: -x[0])
