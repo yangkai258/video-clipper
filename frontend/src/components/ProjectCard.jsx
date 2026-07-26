@@ -4,11 +4,13 @@ import { statusLabel, formatTC, formatDate, formatDuration } from '../projectVie
 
 // ponytail: 项目卡 (reel-card) 封装项目展示 + 三个动作按钮
 // onStart/onDelete 由 App 注入 (处理 / 删除) - 避免在组件里直接 import hooks
-export default function ProjectCard({ project, onStart, onDelete }) {
+export default function ProjectCard({ project, onStart, onDelete, onSaveToLibrary }) {
   const navigate = useNavigate()
   const p = project
   const orientation = p.orientation  // 上游计算过的, 默认 landscape
   const hasSubtitle = p.has_subtitle
+  // v2.2.40: 列表卡片"存到资源库"按钮 — 完成项目 + 有切片才能存
+  const canSaveToLibrary = p.status === 'completed' && (p.clip_count || 0) > 0
 
   return (
     <div
@@ -91,6 +93,16 @@ export default function ProjectCard({ project, onStart, onDelete }) {
         <div className="reel-card-actions" onClick={e => e.stopPropagation()}>
           {p.status === 'pending' && (
             <button className="btn btn-primary btn-sm" onClick={() => onStart && onStart(p.id)}>处理</button>
+          )}
+          {/* v2.2.40: 列表卡片快捷"存到资源库" — 不进 ProjectDetail 也能批量加 */}
+          {canSaveToLibrary && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => onSaveToLibrary && onSaveToLibrary(p)}
+              title="把这个项目所有切片批量加到资源库"
+            >
+              存到资源库
+            </button>
           )}
           <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/project/${p.id}`)}>打开</button>
           <button className="btn btn-ghost btn-sm btn-danger" onClick={() => onDelete && onDelete(p.id, p.name)} title="删除">删除</button>

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import axios from 'axios'
+
+const API_BASE = '/api/v1'
 import { ChunkedUploader, formatBytes, formatSpeed, formatTime } from './ChunkedUploader'
 import WatchFolders from './pages/WatchFolders'
 import StyleManager from './pages/StyleManager'
@@ -56,6 +58,21 @@ function App() {
   const currentProjectName = routeProjectId
     ? projects.find(p => p.id === routeProjectId)?.name || ''
     : ''
+
+  // v2.2.40: 列表卡片"存到资源库" — 调 POST /library/from-project 批量加
+  // (跟 ProjectDetail 页面的"批量存"是同一个 endpoint)
+  const saveProjectToLibrary = async (project) => {
+    if (!project || !project.id) return
+    if (!confirm(`把项目「${project.name}」的全部 ${project.clip_count || 0} 个切片批量存入资源库？`)) return
+    try {
+      const r = await axios.post(`${API_BASE}/library/from-project`, {
+        source_project_id: project.id,
+      })
+      alert(`批量导入完成:\n• 新增 ${r.data.imported} 个\n• 已存在跳过 ${r.data.skipped} 个\n• 失败 ${r.data.errors?.length || 0} 个\n去「资源库」页面查看`)
+    } catch (err) {
+      alert('批量导入失败: ' + (err.response?.data?.detail || err.message))
+    }
+  }
 
   useEffect(() => {
     loadProjects()
@@ -215,6 +232,7 @@ function App() {
                         project={p}
                         onStart={startProcessing}
                         onDelete={deleteProject}
+                        onSaveToLibrary={saveProjectToLibrary}  /* v2.2.40: 列表卡片快捷存到资源库 */
                       />
                     ))}
                   </div>

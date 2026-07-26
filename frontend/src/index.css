@@ -834,6 +834,10 @@ body {
   flex: 1;
   min-width: 0;
 }
+/* v2.2.40: 列表卡片多 1 按钮 (存到资源库) 时, 删除按钮不占 flex 1, 紧凑 */
+.reel-card-actions .btn-danger {
+  flex: 0 0 auto;
+}
 
 /* === Reel row (Linear-style compact) === */
 .reel-list {
