@@ -96,14 +96,17 @@ async def create_mix_project(
     try:
         # v2.2.24: 显式走 db=0 broker (跟 mix worker 一致, 跨 release/beta 模式)
         from ..services.mix_dispatch import dispatch_mix_task
-        dispatch_mix_task(
+        celery_id = dispatch_mix_task(
             mix_project_id=project_id,
             script_text=script_text,
             target_duration_seconds=target_duration,
             candidate_clip_ids=candidate_clip_ids,
             task_id=task_id,
         )
-        logger.info(f"混剪项目已派发: {project_id}, task_id={task_id}")
+        # v2.2.25: 写 celery_task_id 到 db (worker 收到时验证 + 卡死 stuck 排查)
+        task.celery_task_id = celery_id
+        await db.commit()
+        logger.info(f"混剪项目已派发: {project_id}, task_id={task_id}, celery_id={celery_id}")
     except Exception as e:
         logger.exception(f"派发混剪任务失败: {e}")
         project.status = "failed"
