@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 
 export default function Section({ title, icon, children }) {
   return (

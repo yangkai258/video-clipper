@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import _axios from 'axios'
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 import { API_BASE, getOrientation, formatTime } from '../projectView'
 
 export default function ClipCard({ clip, index, projectId, withSubtitle, onSaveToLibrary }) {

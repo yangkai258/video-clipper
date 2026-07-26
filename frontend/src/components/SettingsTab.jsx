@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 import { getOrientation, orientationLabel } from '../projectView'
 
 const OUTPUT_FORMAT_LABEL = {

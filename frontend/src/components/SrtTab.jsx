@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 import { API_BASE } from '../projectView'
 
 export default function SrtTab({ projectId, subtitlePath }) {

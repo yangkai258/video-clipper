@@ -4,7 +4,7 @@
  * 不用 emoji (看着糙 / 跨平台不一致), 全用 lucide-style 内联 SVG。
  * 风格: stroke-only, round cap, 14-18px, currentColor (跟父元素字色)。
  */
-import React from 'react'
+import React from 'react'  // eslint-disable-line no-unused-vars
 
 const PATHS = {
   // 导航

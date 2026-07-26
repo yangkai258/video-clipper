@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 import { getOrientation, orientationLabel } from '../projectView'
 
 // ponytail: 顶部 cover + 标题 + 主操作栏;start/delete 通过 props 注入

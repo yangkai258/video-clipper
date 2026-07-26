@@ -1,7 +1,7 @@
-import ClipCard from './ClipCard'
-import Pagination from './Pagination'
-import EmptyState from './EmptyState'
-import Icon from '../Icon'
+import ClipCard from './ClipCard'  // eslint-disable-line no-unused-vars
+import Pagination from './Pagination'  // eslint-disable-line no-unused-vars
+import EmptyState from './EmptyState'  // eslint-disable-line no-unused-vars
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 
 const ITEMS_PER_PAGE = 12
 

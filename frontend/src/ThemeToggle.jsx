@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import Icon from './Icon'
+import Icon from './Icon'  // eslint-disable-line no-unused-vars
 
 const STORAGE_KEY = 'video-clipper-theme'
 const DARK = 'dark'

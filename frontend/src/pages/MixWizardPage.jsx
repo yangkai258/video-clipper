@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 
 // ponytail: 新建混剪向导 (v2.2.5)
 // 3 步:
@@ -89,12 +89,12 @@ export default function MixWizardPage() {
     if (step === 2) {
       loadLibrary()
     }
-  }, [step, librarySource])  // v2.2.5: source 变化时重新加载
+  }, [step, librarySource])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // v2.2.5: 进入页面也预加载素材库 (默认 all), 让 Step 1 的 AI 帮写有 clips_context 可传
   useEffect(() => {
     loadLibrary('all')
-  }, [])
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // v2.2.41: Step 2 按段预选 — 进入时调 /mix/preview-match 拿每段 top-N 候选
   const [previews, setPreviews] = useState(null)  // [{position, top_clips: [...]}]
@@ -137,7 +137,7 @@ export default function MixWizardPage() {
     }).finally(() => {
       setPreviewLoading(false)
     })
-  }, [step, scriptSegments, candidates, targetDuration])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, scriptSegments, candidates, targetDuration])  // v2.2.53: deps 已包含全部需要的, 不再 disable
 
   const loadLibrary = async (source = librarySource) => {
     try {

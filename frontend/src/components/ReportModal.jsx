@@ -1,7 +1,7 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 import { getOrientation, orientationLabel, formatTC, formatDate, statusLabel } from '../projectView'
-import Row from './Row'
-import Section from './Section'
+import Row from './Row'  // eslint-disable-line no-unused-vars
+import Section from './Section'  // eslint-disable-line no-unused-vars
 
 export default function ReportModal({ project, onClose }) {
   if (!project) return null

@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 
 // ponytail: Sidebar 5 nav buttons + brand + user chip
 // v2.2.4: 加"混剪项目"入口

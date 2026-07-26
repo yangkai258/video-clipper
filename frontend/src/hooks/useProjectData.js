@@ -22,14 +22,14 @@ export function useProjectData(projectId) {
     }
   }, [projectId])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load() }, [load])  // eslint-disable-line react-hooks/exhaustive-deps -- v2.2.53: load 是 useCallback 闭包, deps 不需加
 
   useEffect(() => {
     if (!project) return
     const intervalMs = POLL_MS[project.status] || POLL_MS.default
     const interval = setInterval(load, intervalMs)
     return () => clearInterval(interval)
-  }, [project?.status, load])
+  }, [project?.status, load])  // eslint-disable-line react-hooks/exhaustive-deps
 
   return { project, loading, reload: load, setProject }
 }

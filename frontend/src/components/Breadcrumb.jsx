@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 
 // ponytail: 面包屑导航 (替代 Topbar 写死的简单实现)
 // 用法:

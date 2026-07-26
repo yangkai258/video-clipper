@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 
 const API_BASE = '/api/v1'
 

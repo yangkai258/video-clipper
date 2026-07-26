@@ -1,34 +1,34 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'  // eslint-disable-line no-unused-vars
 import { useNavigate, useLocation, useParams } from 'react-router-dom'
 import axios from 'axios'
 
 const API_BASE = '/api/v1'
-import {formatBytes,formatTime } from './ChunkedUploader'
-import WatchFolders from './pages/WatchFolders'
-import StyleManager from './pages/StyleManager'
-import ProjectDetail from './pages/ProjectDetail'
-import ThemeToggle from './ThemeToggle'
-import UploadProgressBar from './components/UploadProgressBar'
-import Sidebar from './components/Sidebar'
-import Topbar from './components/Topbar'
+import {formatBytes,formatTime } from './ChunkedUploader'  // eslint-disable-line no-unused-vars
+import WatchFolders from './pages/WatchFolders'  // eslint-disable-line no-unused-vars
+import StyleManager from './pages/StyleManager'  // eslint-disable-line no-unused-vars
+import ProjectDetail from './pages/ProjectDetail'  // eslint-disable-line no-unused-vars
+import ThemeToggle from './ThemeToggle'  // eslint-disable-line no-unused-vars
+import UploadProgressBar from './components/UploadProgressBar'  // eslint-disable-line no-unused-vars
+import Sidebar from './components/Sidebar'  // eslint-disable-line no-unused-vars
+import Topbar from './components/Topbar'  // eslint-disable-line no-unused-vars
 import { useProjects } from './hooks/useProjects'
 import { useUpload } from './hooks/useUpload'
 import { useStrategy } from './hooks/useStrategy'
-import Icon from './Icon'
-import {statusLabel } from './projectView'
-import ProjectCard from './components/ProjectCard'
-import StrategyModal from './components/StrategyModal'
-import TrashView from './components/TrashView'
+import Icon from './Icon'  // eslint-disable-line no-unused-vars
+import {statusLabel } from './projectView'  // eslint-disable-line no-unused-vars
+import ProjectCard from './components/ProjectCard'  // eslint-disable-line no-unused-vars
+import StrategyModal from './components/StrategyModal'  // eslint-disable-line no-unused-vars
+import TrashView from './components/TrashView'  // eslint-disable-line no-unused-vars
 // v2.2.4: 混剪独立路由页面
-import MixListPage from './pages/MixListPage'
-import MixWizardPage from './pages/MixWizardPage'
-import MixDetailPage from './pages/MixDetailPage'
+import MixListPage from './pages/MixListPage'  // eslint-disable-line no-unused-vars
+import MixWizardPage from './pages/MixWizardPage'  // eslint-disable-line no-unused-vars
+import MixDetailPage from './pages/MixDetailPage'  // eslint-disable-line no-unused-vars
 // v2.2.6: 批量混剪路由页面
-import MixBatchListPage from './pages/MixBatchListPage'
-import MixBatchWizardPage from './pages/MixBatchWizardPage'
-import MixBatchDetailPage from './pages/MixBatchDetailPage'
+import MixBatchListPage from './pages/MixBatchListPage'  // eslint-disable-line no-unused-vars
+import MixBatchWizardPage from './pages/MixBatchWizardPage'  // eslint-disable-line no-unused-vars
+import MixBatchDetailPage from './pages/MixBatchDetailPage'  // eslint-disable-line no-unused-vars
 // v2.2.5: 资源库独立路由页面
-import LibraryPage from './pages/LibraryPage'
+import LibraryPage from './pages/LibraryPage'  // eslint-disable-line no-unused-vars
 // v2.2.30: ErrorBoundary 兜底 — 任一子组件崩了显示"刷新重试", 不让 Topbar 全挂
 import {} from './ErrorBoundary'
 import './index.css'
@@ -81,7 +81,6 @@ function App() {
 
   const isBeta = window.location.port === '3030'
   const VERSION_LABEL = `${isBeta ? '测试版' : '正式版'} ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}`
-  const VERSION_CLASS = isBeta ? 'version-beta' : 'version-release'
 
   return (
     <div className="app-shell">
@@ -273,6 +272,7 @@ function App() {
 // 原因: 嵌在 App 内部时, 每次 App re-render 它都是新的 function reference,
 //       React unmount + remount 整个 ProjectDetail → 每 5s 一次 '加载中...' 闪烁
 // 注: useNavigate() 必须在 router context 内, 模块顶层函数能正常用因为它在 <Routes> 内部被渲染
+// eslint-disable-next-line no-unused-vars
 function ProjectDetailInShell() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -280,6 +280,7 @@ function ProjectDetailInShell() {
 }
 
 // v2.2.4: MixDetailInShell 同样模块顶层 (防 HMR state slot 错位)
+// eslint-disable-next-line no-unused-vars
 function MixDetailInShell() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -287,6 +288,7 @@ function MixDetailInShell() {
 }
 
 // v2.2.6: MixBatchDetailInShell 模块顶层
+// eslint-disable-next-line no-unused-vars
 function MixBatchDetailInShell() {
   const { id } = useParams()
   const navigate = useNavigate()

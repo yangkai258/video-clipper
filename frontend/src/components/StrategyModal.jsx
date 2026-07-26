@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 
 // ponytail: 选择处理策略的 modal
 // 收 7 个 props: state/handler 全部从 App 传入 (避免 useStrategy hook 内部闭包)

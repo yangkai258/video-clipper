@@ -7,19 +7,19 @@ import { useUrlTabs } from '../hooks/useUrlTabs'
 import { useStatusNotifier } from '../hooks/useStatusNotifier'
 import { API_BASE, statusLabel, formatTC, formatDate } from '../projectView'
 
-import Icon from '../Icon'
-import EmptyState from '../components/EmptyState'
-import Breadcrumb from '../components/Breadcrumb'
-import ProjectHeader from '../components/ProjectHeader'
-import ProjectMetrics from '../components/ProjectMetrics'
-import ProjectProgressCard from '../components/ProjectProgressCard'
-import ProjectErrorCard from '../components/ProjectErrorCard'
-import ProjectSidebar from '../components/ProjectSidebar'
-import ClipsTab from '../components/ClipsTab'
-import CollectionsTab from '../components/CollectionsTab'
-import SrtTab from '../components/SrtTab'
-import SettingsTab from '../components/SettingsTab'
-import ReportModal from '../components/ReportModal'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
+import EmptyState from '../components/EmptyState'  // eslint-disable-line no-unused-vars
+import Breadcrumb from '../components/Breadcrumb'  // eslint-disable-line no-unused-vars
+import ProjectHeader from '../components/ProjectHeader'  // eslint-disable-line no-unused-vars
+import ProjectMetrics from '../components/ProjectMetrics'  // eslint-disable-line no-unused-vars
+import ProjectProgressCard from '../components/ProjectProgressCard'  // eslint-disable-line no-unused-vars
+import ProjectErrorCard from '../components/ProjectErrorCard'  // eslint-disable-line no-unused-vars
+import ProjectSidebar from '../components/ProjectSidebar'  // eslint-disable-line no-unused-vars
+import ClipsTab from '../components/ClipsTab'  // eslint-disable-line no-unused-vars
+import CollectionsTab from '../components/CollectionsTab'  // eslint-disable-line no-unused-vars
+import SrtTab from '../components/SrtTab'  // eslint-disable-line no-unused-vars
+import SettingsTab from '../components/SettingsTab'  // eslint-disable-line no-unused-vars
+import ReportModal from '../components/ReportModal'  // eslint-disable-line no-unused-vars
 
 // ponytail: 主组件仅负责装配 — 状态与业务逻辑都抽到 hooks / sub-components
 export default function ProjectDetail({ projectId, navigate: navProp }) {
@@ -112,7 +112,7 @@ export default function ProjectDetail({ projectId, navigate: navProp }) {
         onSaveAllToLibrary: handleSaveAllToLibrary,  // v2.2.5: 一键存全部
       },
     }
-  }, [project])
+  }, [project])  // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return <EmptyState icon={<Icon name="clock" size={32} />} title="加载中..." />

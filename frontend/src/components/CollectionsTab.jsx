@@ -1,6 +1,6 @@
-import CollectionCard from './CollectionCard'
-import EmptyState from './EmptyState'
-import Icon from '../Icon'
+import CollectionCard from './CollectionCard'  // eslint-disable-line no-unused-vars
+import EmptyState from './EmptyState'  // eslint-disable-line no-unused-vars
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 
 export default function CollectionsTab({ projectId, collections }) {
   if (collections.length === 0) {

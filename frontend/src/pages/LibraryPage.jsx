@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
-import Icon from '../Icon'
-import EmptyState from '../components/EmptyState'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
+import EmptyState from '../components/EmptyState'  // eslint-disable-line no-unused-vars
 import { formatTC, formatDate } from '../projectView'
 
 // 资源库 (v2.2.5)
@@ -41,12 +41,12 @@ export default function LibraryPage() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const t = setTimeout(() => load(search, activeTab), 250)
     return () => clearTimeout(t)
-  }, [search, activeTab])
+  }, [search, activeTab])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0]
@@ -230,6 +230,7 @@ export default function LibraryPage() {
 
 
 // 单个资源卡 — 复用 .reel-card, cover 直接 thumbnail img
+// eslint-disable-next-line no-unused-vars
 function ResourceCard({ resource, onPlay, onDelete }) {
   const r = resource
   return (

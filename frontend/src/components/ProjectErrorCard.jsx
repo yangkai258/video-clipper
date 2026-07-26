@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 import { friendlyError } from '../projectView'
 
 export default function ProjectErrorCard({ errorMessage, onRetry }) {

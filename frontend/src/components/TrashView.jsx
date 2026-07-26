@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 import { formatTC, formatDate } from '../projectView'
 
 // ponytail: 回收站视图 - content-header + reel-list (trash rows)

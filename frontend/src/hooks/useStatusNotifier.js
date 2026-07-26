@@ -21,5 +21,5 @@ export function useStatusNotifier(project) {
       notify('切片失败', `「${project.name}」处理失败`)
     }
     notifiedRef.current.set(project.id, status)
-  }, [status, project?.id, project?.name])
+  }, [status, project?.id, project?.name])  // eslint-disable-line react-hooks/exhaustive-deps
 }

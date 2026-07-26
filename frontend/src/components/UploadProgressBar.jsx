@@ -1,4 +1,4 @@
-import Icon from '../Icon'
+import Icon from '../Icon'  // eslint-disable-line no-unused-vars
 import { formatBytes, formatSpeed, formatTime } from '../ChunkedUploader'
 
 export default function UploadProgressBar({ state, progress, error, onPause, onResume, onCancel }) {
