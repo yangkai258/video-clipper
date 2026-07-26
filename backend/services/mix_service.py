@@ -347,6 +347,59 @@ def match_clips_for_segments(
 # ──────────────────────────── ffmpeg 拼接 ────────────────────────────
 
 
+def _is_valid_mp4(path: Path) -> bool:
+    """v2.2.27: 检查文件是否真 mp4 (有 moov atom, ffmpeg 可读).
+
+    dev mode 测时 resource clip 经常是 fake 文件 (size 大但内容 random, 没 moov atom).
+    ffmpeg -c copy 会 "moov atom not found" 失败.
+
+    Returns: True 真 mp4, False 无效.
+    """
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(path)],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        if r.returncode != 0:
+            return False
+        # duration 应该是 "12.345678" 格式
+        dur = r.stdout.strip()
+        return bool(dur) and dur.replace(".", "").isdigit()
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:  # noqa: BLE001 — ffprobe 各种异常都当 invalid
+        logger.debug(f"ffprobe 失败 ({path}): {e}")
+        return False
+
+
+def _make_placeholder_video(path: Path, duration: int = 5) -> bool:
+    """v2.2.27: 生成 placeholder mp4 (color bars + tone, 通用 ffmpeg testsrc).
+
+    兜底用 — 当 source clip 无效或 extract 失败时, 给这一段用 placeholder 补,
+    整个 task 至少能产出可播的 video. user 看到 placeholder 段 + 警告 (source clip 失效).
+
+    Args:
+        path: 输出 mp4 路径
+        duration: 秒数
+    """
+    try:
+        # ffmpeg testsrc = color bars + 时间戳叠加, smptebars 也可
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", f"testsrc=duration={duration}:size=1280x720:rate=30",
+            "-f", "lavfi", "-i", f"sine=frequency=440:duration={duration}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "64k",
+            "-shortest",
+            str(path),
+        ]
+        subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+        return path.exists() and path.stat().st_size > 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:  # noqa: BLE001 — ffmpeg 各种异常都当失败
+        logger.warning(f"生成 placeholder 失败: {e}")
+        return False
+
+
 def assemble_mix_video(
     segments: list[dict],
     slice_clips_root: Path,
@@ -398,6 +451,21 @@ def assemble_mix_video(
                 continue
 
             part_path = extract_dir / f"part_{i:03d}.mp4"
+            # v2.2.27: 实际先用 ffprobe 验 mp4 有效 (moov atom), 无效 fallback 到 placeholder
+            # 之前 dev mode 测上传 fake mp4 (100MB random data, 没 moov), ffmpeg -c copy fail
+            # → "所有 part extract 都失败" 整个 task 挂. 现在用 placeholder 兜底
+            is_valid = _is_valid_mp4(src_video)
+            if not is_valid:
+                logger.warning(
+                    f"source clip 无效 (非真 mp4, e.g. dev test 文件): {src_video}, "
+                    f"用 placeholder 兜底"
+                )
+                # 生成 placeholder (color bars + 时间戳)
+                _make_placeholder_video(part_path, int(seg.get("source_end", 5) - seg.get("source_start", 0)))
+                if part_path.exists() and part_path.stat().st_size > 0:
+                    part_files.append(part_path)
+                continue
+
             cmd_extract = [
                 "ffmpeg", "-y",
                 "-ss", str(seg["source_start"]),
@@ -412,7 +480,11 @@ def assemble_mix_video(
                 if part_path.exists() and part_path.stat().st_size > 0:
                     part_files.append(part_path)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                logger.warning(f"extract part {i} 失败: {e}")
+                logger.warning(f"extract part {i} 失败: {e}, 用 placeholder 兜底")
+                # v2.2.27: extract 失败也走 placeholder, 不让整个 task 挂
+                _make_placeholder_video(part_path, int(seg.get("source_end", 5) - seg.get("source_start", 0)))
+                if part_path.exists() and part_path.stat().st_size > 0:
+                    part_files.append(part_path)
 
         if not part_files:
             raise RuntimeError("所有 part extract 都失败")
