@@ -696,6 +696,88 @@ async def parse_script_endpoint(payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=f"解析失败: {str(e)[:300]}")
 
 
+# ──────────────────────────── v2.2.41: 按段预选预览 (Step 2) ────────────────────────────
+
+
+@router.post("/preview-match")
+async def preview_match_endpoint(payload: dict = Body(...)):
+    """v2.2.41: Step 2 按段预选 — 每段给 top-N matched clips
+
+    输入:
+        segments: [{position, text, keywords}, ...]  来自 /parse-script
+        candidate_clip_ids: list[str]  候选 source clip (从 /mix/clips/library 拿)
+        top_n: int (默认 3) 每段返 top-N
+        target_duration: int (默认 60)
+
+    输出:
+        {previews: [{position, top_clips: [{clip_id, title, project_name, duration,
+                                            match_score, matched_keywords}, ...]}, ...]}
+
+    不写 db, 不派 task, 纯计算. Step 2 用户界面: "段 0 屋顶/外墙/阳台" → 显示 top-3 缩略图,
+    自动勾选 top-1, user 可改选.
+
+    比 match_clips_for_segments 简化: 不算 embed (避免 100+ log 噪音), 纯 tag overlap substring
+    (跟 v2.2.36 substring 公式一致, score 0.0-1.0). matched_keywords 列出该 clip 命中了哪些 kw,
+    UI 标绿让 user 知道为什么这个 clip 排第一.
+    """
+    from ..services.mix_service import build_clip_library_from_slice_db
+
+    segments = payload.get("segments") or []
+    candidate_clip_ids = payload.get("candidate_clip_ids") or []
+    top_n = int(payload.get("top_n") or 3)
+    target_duration = int(payload.get("target_duration") or 60)
+
+    if not segments:
+        raise HTTPException(status_code=400, detail="segments 不能为空")
+    if not candidate_clip_ids:
+        raise HTTPException(status_code=400, detail="candidate_clip_ids 不能为空")
+
+    # 加载候选库
+    clip_library = build_clip_library_from_slice_db(candidate_clip_ids)
+    if not clip_library:
+        return {"previews": [], "warning": "素材库为空, 跑完批量入库后重试"}
+
+    def _tag_overlap_substring(seg_keywords, clip_tags):
+        """v2.2.36 substring 公式 (client-side 简化版, 跟 backend 一致)"""
+        kw_norm = {k.strip().lower() for k in (seg_keywords or []) if k and k.strip()}
+        ct_norm = {t.strip().lower() for t in (clip_tags or []) if isinstance(t, str) and t.strip()}
+        if not kw_norm or not ct_norm:
+            return 0.0, []
+        hits = []
+        for kw in kw_norm:
+            for ct in ct_norm:
+                if kw == ct or kw in ct or ct in kw:
+                    hits.append(kw)
+                    break
+        return (len(hits) / len(kw_norm)) if kw_norm else 0.0, hits
+
+    previews = []
+    for seg in segments:
+        seg_kw = seg.get("keywords", [])
+        scored = []
+        for clip in clip_library:
+            score, hits = _tag_overlap_substring(seg_kw, clip.get("tags") or [])
+            if score < 0.05:  # 0 阈值跟 v2.2.33 一致
+                continue
+            scored.append({
+                "clip_id": clip["clip_id"],
+                "title": clip.get("title", ""),
+                "source_project_name": clip.get("source_project_name", ""),
+                "duration": clip.get("duration", 0),
+                "match_score": round(score, 3),
+                "matched_keywords": hits,
+            })
+        scored.sort(key=lambda x: -x["match_score"])
+        previews.append({
+            "position": seg.get("position"),
+            "text": seg.get("text", ""),
+            "keywords": seg_kw,
+            "top_clips": scored[:top_n],
+        })
+
+    return {"previews": previews}
+
+
 # ──────────────────────────── v2.2.4: 风险词检测 ────────────────────────────
 
 @router.post("/script-risk-check")

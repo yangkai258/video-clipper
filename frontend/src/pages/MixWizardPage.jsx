@@ -96,6 +96,49 @@ export default function MixWizardPage() {
     loadLibrary('all')
   }, [])
 
+  // v2.2.41: Step 2 按段预选 — 进入时调 /mix/preview-match 拿每段 top-N 候选
+  const [previews, setPreviews] = useState(null)  // [{position, top_clips: [...]}]
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState(null)
+  const [showSegments, setShowSegments] = useState(true)  // 默认展开按段预选
+  useEffect(() => {
+    // 仅在 Step 2 + 有 segments + 有 candidates 时才调
+    if (step !== 2 || !scriptSegments || scriptSegments.length === 0) return
+    if (candidates.length === 0) {
+      setPreviews(null)
+      return
+    }
+    setPreviewLoading(true)
+    setPreviewError(null)
+    const candidateIds = candidates.map(c => c.id)
+    axios.post(`${API_BASE}/mix/preview-match`, {
+      segments: scriptSegments,
+      candidate_clip_ids: candidateIds,
+      top_n: 3,
+      target_duration_seconds: targetDuration,
+    }).then(r => {
+      setPreviews(r.data.previews || [])
+      // v2.2.41: 自动预选 top-1 (user 可改)
+      const preselected = new Set()
+      ;(r.data.previews || []).forEach(p => {
+        if (p.top_clips && p.top_clips.length > 0) {
+          preselected.add(p.top_clips[0].clip_id)
+        }
+      })
+      // 合并到现有 selectedClipIds (不覆盖 user 手选的)
+      setSelectedClipIds(prev => {
+        const merged = new Set(prev)
+        preselected.forEach(id => merged.add(id))
+        return Array.from(merged)
+      })
+    }).catch(e => {
+      console.error('preview-match failed:', e)
+      setPreviewError(e.response?.data?.detail || e.message)
+    }).finally(() => {
+      setPreviewLoading(false)
+    })
+  }, [step, scriptSegments, candidates, targetDuration])  // eslint-disable-line
+
   const loadLibrary = async (source = librarySource) => {
     try {
       const r = await axios.get(`${API_BASE}/mix/clips/library`, { params: { source } })
@@ -388,6 +431,79 @@ export default function MixWizardPage() {
             <h2>选择素材片段</h2>
             <p className="wizard-hint">从切片项目 / 资源库勾选素材（{selectedClipIds.length} 已选）</p>
           </div>
+
+          {/* v2.2.41: 按段预选 — 每段显示 top-3 候选, 自动勾选 top-1 */}
+          {(previewLoading || previewError || previews) && scriptSegments && scriptSegments.length > 0 && (
+            <div className="segment-preselect-box">
+              <div className="segment-preselect-head" onClick={() => setShowSegments(!showSegments)} style={{ cursor: 'pointer' }}>
+                <Icon name={showSegments ? 'chevronDown' : 'chevronRight'} size={12} />
+                <span>按段预选（v2.2.41 视觉匹配）</span>
+                {previewLoading && <span className="segment-preselect-loading"><Icon name="spinner" size={11} /> 计算中...</span>}
+                {previews && !previewLoading && (
+                  <span className="segment-preselect-count">{previews.length} 段 · 自动预选 {previews.filter(p => p.top_clips.length > 0).length} 个</span>
+                )}
+                <button
+                  type="button"
+                  className="segment-preselect-toggle"
+                  onClick={(e) => { e.stopPropagation(); setShowSegments(!showSegments) }}
+                  style={{ marginLeft: 'auto' }}
+                >
+                  {showSegments ? '折叠' : '展开'}
+                </button>
+              </div>
+              {previewError && (
+                <div className="segment-preselect-error">
+                  <Icon name="warning" size={11} /> 预选失败: {previewError}
+                </div>
+              )}
+              {showSegments && previews && previews.length > 0 && (
+                <div className="segment-preselect-list">
+                  {previews.map((p) => (
+                    <div key={p.position} className="segment-preselect-item">
+                      <div className="segment-preselect-pos">{p.position + 1}</div>
+                      <div className="segment-preselect-body">
+                        <div className="segment-preselect-text">{p.text}</div>
+                        {p.keywords && p.keywords.length > 0 && (
+                          <div className="segment-preselect-keywords">
+                            {p.keywords.map((kw, j) => (
+                              <span key={j} className="segment-preselect-keyword">{kw}</span>
+                            ))}
+                          </div>
+                        )}
+                        {p.top_clips.length === 0 ? (
+                          <div className="segment-preselect-empty">该段无匹配素材, 提交时会用 fallback 占位</div>
+                        ) : (
+                          <div className="segment-preselect-top-clips">
+                            {p.top_clips.map((tc, j) => {
+                              const selected = selectedClipIds.includes(tc.clip_id)
+                              return (
+                                <div
+                                  key={tc.clip_id}
+                                  className={`segment-preselect-thumb ${selected ? 'selected' : ''} ${j === 0 ? 'top1' : ''}`}
+                                  onClick={() => toggleClip(tc.clip_id)}
+                                  title={`${tc.title} (匹配分 ${(tc.match_score * 100).toFixed(0)}% · 命中: ${tc.matched_keywords.join(', ')})`}
+                                >
+                                  {selected && <div className="segment-preselect-check"><Icon name="check" size={12} /></div>}
+                                  {j === 0 && <div className="segment-preselect-rank">top-1</div>}
+                                  <div className="segment-preselect-thumb-score">{(tc.match_score * 100).toFixed(0)}%</div>
+                                  <div className="segment-preselect-thumb-title">{tc.title || '(未命名)'}</div>
+                                  <div className="segment-preselect-thumb-keywords">
+                                    {tc.matched_keywords.slice(0, 3).map((kw, k) => (
+                                      <span key={k} className="segment-preselect-hit">{kw}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* v2.2.5: 第一层 source 切换 — 切片项目 / 资源库 */}
           <div className="tabs">
