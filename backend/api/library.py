@@ -322,9 +322,9 @@ async def upload_resource(
 
     logger.info(f"library upload: id={resource_id} name={base_name} size={written} duration={meta['duration']:.1f}s")
 
-    # v2.2.19: fire-and-forget auto-tag (LLM + keyword fallback)
-    # 失败不影响主流程, 静默
-    background_tasks.add_task(_auto_tag_in_thread, resource_id)
+    # v2.2.38: auto-tag 默认关闭 (user 反馈: 抽过来的规则不准, 暂时不用)
+    # 留 _auto_tag_in_thread + POST /library/{id}/auto-tag manual endpoint, 想用时手跑
+    # background_tasks.add_task(_auto_tag_in_thread, resource_id)
     return _serialize(rc)
 
 
@@ -368,12 +368,22 @@ async def from_clip_resource(
         source_project_name = sp.name or ""
         clip_title = sc.title or f"clip-{source_clip_id[:8]}"
 
+        # v2.2.38: 抽源 clip 的 tags (从 clip_metadata 提取, 跟 v2.2.21 visual match 配套)
+        # 没 tags 就空 list (auto-tag 默认关闭, user 不想用)
+        clip_tags = []
+        if sc.clip_metadata and isinstance(sc.clip_metadata, dict):
+            for t in (sc.clip_metadata.get("tags") or []):
+                if isinstance(t, str):
+                    clip_tags.append(t)
+                elif isinstance(t, dict) and "category" in t:
+                    clip_tags.append(t["category"])
+
         # 复制 mp4
         new_id = str(uuid.uuid4())
         new_video_path = _resources_dir() / f"{new_id}.mp4"
         shutil.copy2(source_video_path, new_video_path)
 
-        # 复制 thumbnail (如果有)
+        # 复制 thumbnail (优先源 thumbnail, 兜底 ffmpeg 抽 1 帧)
         new_thumb_path = None
         if sc.thumbnail_path:
             src_thumb = Path(sc.thumbnail_path)
@@ -387,6 +397,15 @@ async def from_clip_resource(
                 except Exception as e:
                     logger.warning(f"thumbnail 复制失败 (非致命): {e}")
                     new_thumb_path = None
+        # v2.2.38: 兜底 — 源 thumbnail 不存在/复制失败时, ffmpeg 抽 1 帧
+        if new_thumb_path is None or not new_thumb_path.exists():
+            fallback_thumb = _resources_dir() / f"{new_id}.jpg"
+            if _generate_thumbnail(new_video_path, fallback_thumb, t_seconds=1.0):
+                new_thumb_path = fallback_thumb
+                logger.info(f"from-clip 兜底抽 thumbnail: {fallback_thumb}")
+            else:
+                new_thumb_path = None
+                logger.warning(f"from-clip thumbnail 全失败: {new_id} (新资源将无封面)")
 
         size = new_video_path.stat().st_size if new_video_path.exists() else 0
 
@@ -403,7 +422,7 @@ async def from_clip_resource(
             source_project_id=source_project_id,
             source_clip_id=source_clip_id,
             source_project_name=source_project_name,
-            tags=[],
+            tags=clip_tags,  # v2.2.38: 从源 clip_metadata 抽 (visual match 用)
             description=f"从项目「{source_project_name}」提取",
         )
         db.add(rc)
@@ -412,8 +431,9 @@ async def from_clip_resource(
 
         logger.info(f"library from-clip: new_id={new_id} src_clip={source_clip_id} src_proj={source_project_id}")
 
-        # v2.2.19: fire-and-forget auto-tag
-        background_tasks.add_task(_auto_tag_in_thread, new_id)
+        # v2.2.38: auto-tag 默认关闭 (user 反馈: 规则不准, 暂时不用)
+        # 想用时手跑 POST /library/{id}/auto-tag
+        # background_tasks.add_task(_auto_tag_in_thread, new_id)
         return _serialize(rc)
 
 
@@ -617,9 +637,10 @@ async def from_project_batch_resource(
             sdb.commit()
             logger.info(f"library from-project batch: imported={imported}, skipped={skipped}, errors={len(errors)}")
 
-        # v2.2.19: fire-and-forget auto-tag 每个 imported 资源
-        for row in new_rows:
-            background_tasks.add_task(_auto_tag_in_thread, row.id)
+        # v2.2.38: auto-tag 默认关闭 (user 反馈: 规则不准, 暂时不用)
+        # 想用时手跑 POST /library/{id}/auto-tag (循环每个)
+        # for row in new_rows:
+        #     background_tasks.add_task(_auto_tag_in_thread, row.id)
 
     return {
         "source_project_id": source_project_id,
