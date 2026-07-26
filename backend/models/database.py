@@ -164,6 +164,12 @@ class Task(Base):
     completed_at = Column(DateTime, nullable=True)
     # 最近一次进度/心跳变化时间, task_health watchdog 用来判断真卡死
     progress_changed_at = Column(DateTime, nullable=True)
+    # 预估 vs 实际耗时 (v2.2.1 数据归集, 8f1ec24 加; 4afb777 refactor 漏 model 字段 2 个月)
+    estimated_total_at_start_seconds = Column(Float, nullable=True)
+    actual_total_seconds = Column(Float, nullable=True)
+    # 字幕子任务状态 (v2.2.2 fail-tolerant, 9c84a6f 加)
+    subtitle_status = Column(String(50), default="", nullable=True)
+    subtitle_error = Column(Text, default="", nullable=True)
     
     # 关系
     project = relationship("Project", back_populates="tasks")
