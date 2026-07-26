@@ -67,6 +67,36 @@ def test_纯_视觉_关键词_无_embed_也命中():
     assert 0.6 < results[0]["match_score"] <= 0.7
 
 
+def test_substring_命中_v2_2_36():
+    """v2.2.36: 关键词 vs tag 严格相等 + substring 都算命中.
+    例: kw='防水材料' 包含 '防水' (tag) → 命中 (LLM 抽长词, tag 是短词, 严格相等会 0)."""
+    from backend.services.mix_service import match_clips_for_segments
+
+    segments = [_make_segment(0, "x", ["防水材料"])]  # 长词
+    clip_library = [
+        _make_clip("a", tags=["防水"]),  # 短词, 是 "防水材料" 子串
+        _make_clip("b", tags=["瓦片"]),  # 无关
+    ]
+    results = match_clips_for_segments(segments, clip_library, target_duration=30)
+    # a 应得高分 (substring 命中)
+    assert results[0]["matched_clip_id"] == "a"
+    assert results[0]["match_score"] > 0.5
+
+
+def test_substring_反向_v2_2_36():
+    """v2.2.36: 反向 substring — kw='屋顶' (短), tag='屋顶防水' (长) → 命中."""
+    from backend.services.mix_service import match_clips_for_segments
+
+    segments = [_make_segment(0, "x", ["屋顶"])]
+    clip_library = [
+        _make_clip("a", tags=["屋顶防水"]),  # 长 tag, 包含 "屋顶"
+        _make_clip("b", tags=["外墙"]),
+    ]
+    results = match_clips_for_segments(segments, clip_library, target_duration=30)
+    assert results[0]["matched_clip_id"] == "a"
+    assert results[0]["match_score"] > 0.5
+
+
 def test_关键词_大小写_空格_容错():
     """关键词 vs tag 大小写/空格 normalize 后能命中."""
     from backend.services.mix_service import match_clips_for_segments

@@ -283,8 +283,16 @@ def match_clips_for_segments(
             clip_tags_norm = {t.strip().lower() for t in clip_tags if isinstance(t, str) and t.strip()}
             tag_overlap = 0.0
             if keywords_norm and clip_tags_norm:
-                hit = keywords_norm & clip_tags_norm
-                tag_overlap = len(hit) / len(keywords_norm)  # 0.0 - 1.0
+                # v2.2.36: 严格相等 + substring 都算命中
+                # 例: seg_keyword="防水材料" 包含 "防水" (clip_tag) → 算中
+                # 反之: seg_keyword="屋顶" 是 "屋顶防水" (clip_tag) 的子串 → 算中
+                hits = 0
+                for kw in keywords_norm:
+                    for ct in clip_tags_norm:
+                        if kw == ct or kw in ct or ct in kw:
+                            hits += 1
+                            break  # 1 个 seg_keyword 最多命中 1 个 clip_tag
+                tag_overlap = hits / len(keywords_norm)  # 0.0 - 1.0
 
             # v2.2.33: embed 降到 0.3 (text-to-text 相似, 当作辅助)
             # tag 主导是因为: user 明确"画面匹配"而不是"语义匹配"
