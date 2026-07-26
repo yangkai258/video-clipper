@@ -318,13 +318,14 @@ def match_clips_for_segments(
 
         if not scored:
             logger.warning(f"segment {seg['position']} 没匹配到任何 clip (keywords={keywords})")
-            # v2.2.26: 0 match fallback — 用第一个 candidate clip 兜底
-            # 之前 v2.2.3 strict 0 match → fail, user 卡 progress=30%.
-            # 现在: 0 match 时用第一个, score=0.0, warning log + project error_message 提示
-            # 实际: resource_clips 没相关 keyword 的素材 (e.g. test_speed_xxx),
-            #       fallback 让任务跑完, 给出可看的 video. user 后台上传真素材再重跑.
+            # v2.2.42: 0 match fallback — round-robin 选, 不再用 clip_library[0] 固定
+            # 之前 v2.2.26/v2.2.36 永远用第一个 candidate, 多段 fallback 全用同一个 clip,
+            # user 看到 "选了多个视频但只有一个在循环" (root cause: bc65f840 14:32 阿甘
+            # 8 段 7 段都 fallback 到同一 clip "从迷茫到成熟").
+            # 现在: round-robin 按 segment position % len(clip_library) 选, 每个段不同 clip.
             if clip_library:
-                fallback_clip = clip_library[0]
+                fallback_idx = seg['position'] % len(clip_library)
+                fallback_clip = clip_library[fallback_idx]
                 fallback_dur = fallback_clip.get("duration", 0) or 10
                 use_dur = min(seg_dur, fallback_dur)
                 start = 0 if fallback_dur <= use_dur else (fallback_dur - use_dur) / 2

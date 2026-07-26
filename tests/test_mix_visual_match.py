@@ -124,6 +124,33 @@ def test_0_match_fallback_保留_v2_2_26():
     assert results[0]["match_score"] == 0.0
 
 
+def test_多段_fallback_round_robin_v2_2_42():
+    """v2.2.42: 多段 0 match fallback 不再用同一 clip (user 报 '选了多个但只循环 1 个')
+
+    之前 v2.2.26/v2.2.36 永远 fallback 到 clip_library[0], 7 段都同一 clip.
+    现在: round-robin 按 position % len 选, 每段不同 clip.
+    """
+    from backend.services.mix_service import match_clips_for_segments
+
+    # 8 段, 4 候选 clip, 0 匹配 (keywords 不命中 tag)
+    segments = [_make_segment(i, f"段{i}", [f"unknown{i}"]) for i in range(8)]
+    clip_library = [
+        _make_clip("a", tags=["x"]),
+        _make_clip("b", tags=["x"]),
+        _make_clip("c", tags=["x"]),
+        _make_clip("d", tags=["x"]),
+    ]
+    results = match_clips_for_segments(segments, clip_library, target_duration=60)
+    assert len(results) == 8
+
+    # 8 段 fallback 应覆盖 4 个 clip, 每个出现 2 次 (round-robin)
+    fallback_clips = [r["matched_clip_id"] for r in results]
+    assert len(set(fallback_clips)) == 4, f"应该 fallback 到 4 个不同 clip, 实 {set(fallback_clips)}"
+    # 按段位置 % 4 应该匹配
+    expected = ["a", "b", "c", "d", "a", "b", "c", "d"]
+    assert fallback_clips == expected, f"round-robin 顺序错, 实 {fallback_clips}"
+
+
 def test_多段_各自_匹配_top1():
     """3 段不同视觉关键词, 各自匹配最相关的 clip."""
     from backend.services.mix_service import match_clips_for_segments
